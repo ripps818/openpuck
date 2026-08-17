@@ -21,18 +21,12 @@ class Adafruit_USBD_Audio_UAC1 : public Adafruit_USBD_Interface {
 // UAC1 Audio Streaming interface helper to register the second interface with USBDevice.
 class Adafruit_USBD_Audio_UAC1_AS : public Adafruit_USBD_Interface {
     public:
+	Adafruit_USBD_Audio_UAC1_AS();
+
 	uint16_t getInterfaceDescriptor(uint8_t itfnum, uint8_t *buf,
-					uint16_t bufsize) override
-	{
-		(void)itfnum;
-		(void)buf;
-		(void)bufsize;
-		return 0; // Descriptors written by AC interface object
-	}
-	bool begin()
-	{
-		return TinyUSBDevice.addInterface(*this);
-	}
+					uint16_t bufsize) override;
+
+	bool begin();
 };
 
 extern Adafruit_USBD_Audio_UAC1 g_ps5Audio;

@@ -1,5 +1,6 @@
 #include "wake_hid.h"
 #include "usb_tx.h"
+#include "gamepad_util.h"
 #include <Adafruit_TinyUSB.h>
 
 // Boot MOUSE descriptor -- proven to enumerate and wake Windows. The host enumerates a "HID-compliant mouse"
@@ -10,11 +11,24 @@ static const uint8_t WAKE_HID_DESC[] = { TUD_HID_REPORT_DESC_MOUSE() };
 static Adafruit_USBD_HID g_wakeHid;
 static bool g_wakeHidPresent = false;
 
+static uint16_t wakeGetCb(uint8_t report_id, hid_report_type_t report_type,
+			  uint8_t *buffer, uint16_t reqlen)
+{
+	if (report_type == HID_REPORT_TYPE_FEATURE && buffer && reqlen > 0) {
+		memset(buffer, 0, reqlen);
+		if ((report_id == 0x05 || report_id == 0x02) && reqlen >= 34)
+			psNeutralCalib(buffer);
+		return reqlen;
+	}
+	return 0;
+}
+
 void wakeHidBegin()
 {
 	// boot mouse = a wake device class honored by Windows + Linux
 	g_wakeHid.setBootProtocol(HID_ITF_PROTOCOL_MOUSE);
 	g_wakeHid.setStringDescriptor("OpenPuck Wake");
+	g_wakeHid.setReportCallback(wakeGetCb, NULL);
 	g_wakeHid.setReportDescriptor(WAKE_HID_DESC, sizeof WAKE_HID_DESC);
 	g_wakeHid.setPollInterval(10);
 	g_wakeHid.begin();

@@ -78,6 +78,7 @@ static bool s_dynWantWebusb = false, s_dynWantWakeMouse = false;
 // g_usbToBond must already be built for k connected controllers. Called at boot and by usb_mount's watcher.
 void usbReenumerate(uint8_t k)
 {
+	uartPrintf("[UART] usbReenumerate(k=%u, mode=%u)\r\n", k, g_usbMode);
 	USBDevice.detach();
 	delay(20);
 	USBDevice.clearConfiguration();
@@ -109,6 +110,7 @@ void usbReenumerate(uint8_t k)
 // Used by every user-facing mode change (back-4 chord, WebUSB panel, CDC console).
 void modeSwitchReboot(uint8_t mode)
 {
+	uartPrintf("[UART] modeSwitchReboot to mode %u\r\n", mode);
 	if (modeValid(mode))
 		saveMode(
 			mode); // 0xFF / invalid => keep the current mode (bond-import reboot)
@@ -279,6 +281,10 @@ void setup()
 	Serial.printf("# copycat up: unit=%s board=%s, mode=%s\n", g_unit,
 		      g_board,
 		      MODE_NAME[g_usbMode <= MODE_MAX ? g_usbMode : 0]);
+	uartPrintf(
+		"[UART] OpenPuck startup: unit=%s board=%s mode=%s (g_usbMode=%u)\r\n",
+		g_unit, g_board,
+		MODE_NAME[g_usbMode <= MODE_MAX ? g_usbMode : 0], g_usbMode);
 	// Classify why we (re)booted: distinguishes a watchdog hang from a HardFault from an intentional reboot
 	// (issue #72 -- those are conflated in the field). Surfaced on the WebUSB panel too.
 	faultDiagBoot();

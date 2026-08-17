@@ -3,6 +3,7 @@
 #include "gamepad_util.h"
 #include "config.h"
 #include "haptics.h"
+#include "fault_diag.h"
 #include "bonds.h"
 #include "usb_mount.h"
 #include "usb_tx.h"
@@ -66,6 +67,9 @@ static uint16_t ps5GetCommon(uint8_t slot, uint8_t rid, hid_report_type_t type,
 			     uint8_t *buf, uint16_t reqlen)
 {
 	(void)slot;
+	uartPrintf(
+		"[UART] PS5 getFeature: slot=%u rid=0x%02X type=%u reqlen=%u\r\n",
+		slot, rid, type, reqlen);
 	if (type != HID_REPORT_TYPE_FEATURE || !buf || reqlen == 0)
 		return 0;
 	memset(buf, 0, reqlen);
@@ -230,8 +234,6 @@ void Ps5Controller::usbIdentity()
 void Ps5Controller::beginPool()
 {
 	initPs5Macs();
-	g_ps5Audio.begin();
-	g_ps5AudioAs.begin();
 	uint8_t pool = maxSlots();
 	for (uint8_t s = 0; s < pool; s++) {
 		g_ps5[s].enableOutEndpoint(true);
@@ -240,10 +242,13 @@ void Ps5Controller::beginPool()
 		g_ps5[s].setPollInterval(1);
 		g_ps5[s].begin();
 	}
+	g_ps5Audio.begin();
+	g_ps5AudioAs.begin();
 }
 void Ps5Controller::mountSlots(uint8_t k)
 {
-	for (uint8_t u = 0; u < k; u++)
+	uint8_t count = (k > 0) ? k : 1;
+	for (uint8_t u = 0; u < count; u++)
 		USBDevice.addInterface(g_ps5[u]);
 	USBDevice.addInterface(g_ps5Audio);
 	USBDevice.addInterface(g_ps5AudioAs);

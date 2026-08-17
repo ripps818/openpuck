@@ -149,5 +149,8 @@ void usbMountTask()
 		return; // same set already mounted (order is preserved across joins/leaves)
 	commitOrder(tmp, n);
 	faultDiagTrace(FR_MOUNT, g_usbMountCount);
+	uartPrintf(
+		"[UART] usbMountTask: re-enumerating g_usbMountCount=%u (connectedMask=0x%02X)\r\n",
+		g_usbMountCount, connectedMask());
 	usbReenumerate(g_usbMountCount);
 }
