@@ -82,17 +82,84 @@ static const char *const REASON_STR[RR_COUNT] = {
 	"HARDFAULT", "reboot",	 "soft reset", "wake-from-off",
 };
 
-// HardFault override. The Adafruit core's default handler (cores/.../debug.cpp) already does NVIC_SystemReset();
-// we replace it to first stamp the fault marker so the NEXT boot classifies this SREQ as RR_HARDFAULT rather
-// than an intentional reboot. The core's strong symbol is only linked to satisfy the vector table, so our own
-// strong definition takes its place. Keep this MINIMAL: we are in fault context on a possibly-corrupt stack --
-// no Serial, no allocations, just stamp and reset.
-extern "C" void HardFault_Handler(void)
+// Physical hardware UART debug path (UARTE1 on P0.17 TXD / P0.20 RXD, 115200 8N1).
+#define UART_TX_PIN NRF_GPIO_PIN_MAP(0, 17)
+#define UART_RX_PIN NRF_GPIO_PIN_MAP(0, 20)
+
+void uartDebugInit(void)
 {
+	nrf_gpio_cfg_output(UART_TX_PIN);
+	nrf_gpio_pin_set(UART_TX_PIN);
+	nrf_gpio_cfg_input(UART_RX_PIN, NRF_GPIO_PIN_NOPULL);
+
+	NRF_UARTE1->PSEL.TXD = 17;
+	NRF_UARTE1->PSEL.RXD = 20;
+	NRF_UARTE1->PSEL.CTS = 0xFFFFFFFF;
+	NRF_UARTE1->PSEL.RTS = 0xFFFFFFFF;
+	NRF_UARTE1->BAUDRATE = UARTE_BAUDRATE_BAUDRATE_Baud115200;
+	NRF_UARTE1->CONFIG = 0;
+	NRF_UARTE1->ENABLE = UARTE_ENABLE_ENABLE_Enabled;
+
+	uartPuts("[UART] OpenPuck boot ok\r\n");
+}
+
+void uartPuts(const char *s)
+{
+	if (!s || !*s)
+		return;
+	uint32_t len = strlen(s);
+
+	NRF_UARTE1->TXD.PTR = (uint32_t)s;
+	NRF_UARTE1->TXD.MAXCNT = len;
+	NRF_UARTE1->EVENTS_ENDTX = 0;
+	NRF_UARTE1->TASKS_STARTTX = 1;
+	while (!NRF_UARTE1->EVENTS_ENDTX) {
+	}
+	NRF_UARTE1->TASKS_STOPTX = 1;
+}
+
+void uartPrintf(const char *fmt, ...)
+{
+	char buf[128];
+	va_list args;
+	va_start(args, fmt);
+	int n = vsnprintf(buf, sizeof buf, fmt, args);
+	va_end(args);
+	if (n > 0)
+		uartPuts(buf);
+}
+
+// HardFault override. Captures PC and SCB fault registers over physical UART before resetting.
+extern "C" void HardFault_Handler_C(uint32_t *frame)
+{
+	uint32_t pc = frame ? frame[6] : 0;
+	uint32_t cfsr = SCB->CFSR;
+	uint32_t hfsr = SCB->HFSR;
+	uint32_t mmfar = SCB->MMFAR;
+	uint32_t bfar = SCB->BFAR;
+
 	NRF_POWER->GPREGRET2 = G2_FAULT;
+
+	uartPuts("\r\n=== HARD FAULT ===\r\n");
+	uartPrintf("  PC:    0x%08lX\r\n", (unsigned long)pc);
+	uartPrintf("  CFSR:  0x%08lX\r\n", (unsigned long)cfsr);
+	uartPrintf("  HFSR:  0x%08lX\r\n", (unsigned long)hfsr);
+	uartPrintf("  MMFAR: 0x%08lX\r\n", (unsigned long)mmfar);
+	uartPrintf("  BFAR:  0x%08lX\r\n", (unsigned long)bfar);
+	uartPuts("==================\r\n");
+
 	NVIC_SystemReset();
 	while (1) {
 	}
+}
+
+extern "C" __attribute__((naked)) void HardFault_Handler(void)
+{
+	__asm volatile("tst lr, #4            \n"
+		       "ite eq                \n"
+		       "mrseq r0, msp         \n"
+		       "mrsne r0, psp         \n"
+		       "b HardFault_Handler_C \n");
 }
 
 void faultDiagArmIntentionalReset()
@@ -488,7 +555,11 @@ void faultDiagBoot()
 		reason = RR_POWERON; // all bits clear == power-on / brownout
 	else
 		reason = RR_UNKNOWN;
-	g_reason = reason;
+	NRF_POWER->RESETREAS = 0xFFFFFFFF; // clear RESETREAS
+	g_resetReas = rr;
+
+	uartPrintf("[UART] RESETREAS: 0x%08lX (reason: %s, g2: 0x%02X)\r\n",
+		   (unsigned long)rr, REASON_STR[reason], g2);
 
 	Serial.printf(
 		"# reset cause: %s (RESETREAS=0x%08lX gpregret2=0x%02X)\n",

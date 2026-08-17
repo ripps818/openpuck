@@ -135,6 +135,7 @@ void setup()
 #endif
 	genSerial();
 	ledInit();
+	uartDebugInit();
 
 	// seed defaults so unbonded slots don't share the discovery address
 	for (int s = 0; s < NSLOT; s++)

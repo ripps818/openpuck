@@ -31,6 +31,11 @@ enum {
 	RR_COUNT,
 };
 
+// Physical hardware UART debug path (UARTE1 on P0.17 TXD / P0.20 RXD, 115200 8N1).
+void uartDebugInit();
+void uartPuts(const char *s);
+void uartPrintf(const char *fmt, ...);
+
 // Classify + log the cause of THIS boot. Call once, early in setup() (after Serial.begin so the line lands).
 void faultDiagBoot();
 // Stamp "the reset about to happen is intentional" -- call immediately before a deliberate NVIC_SystemReset so

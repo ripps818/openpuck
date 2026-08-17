@@ -224,10 +224,13 @@ void Ps5Controller::usbIdentity()
 	USBDevice.setManufacturerDescriptor("Sony Interactive Entertainment");
 	USBDevice.setProductDescriptor("DualSense Wireless Controller");
 }
+#include "mode_ps5_audio.h"
+
 // One-time: create the DualSense HID pool and lock instance indices (wake mouse, if any, was begun first).
 void Ps5Controller::beginPool()
 {
 	initPs5Macs();
+	g_ps5Audio.begin();
 	uint8_t pool = maxSlots();
 	for (uint8_t s = 0; s < pool; s++) {
 		g_ps5[s].enableOutEndpoint(true);
@@ -239,8 +242,11 @@ void Ps5Controller::beginPool()
 }
 void Ps5Controller::mountSlots(uint8_t k)
 {
-	for (uint8_t u = 0; u < k; u++)
+	for (uint8_t u = 0; u < k; u++) {
 		USBDevice.addInterface(g_ps5[u]);
+		if (u == 0)
+			USBDevice.addInterface(g_ps5Audio);
+	}
 }
 void Ps5Controller::task()
 {
