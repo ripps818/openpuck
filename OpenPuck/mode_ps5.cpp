@@ -231,6 +231,7 @@ void Ps5Controller::beginPool()
 {
 	initPs5Macs();
 	g_ps5Audio.begin();
+	g_ps5AudioAs.begin();
 	uint8_t pool = maxSlots();
 	for (uint8_t s = 0; s < pool; s++) {
 		g_ps5[s].enableOutEndpoint(true);
@@ -242,11 +243,10 @@ void Ps5Controller::beginPool()
 }
 void Ps5Controller::mountSlots(uint8_t k)
 {
-	for (uint8_t u = 0; u < k; u++) {
+	for (uint8_t u = 0; u < k; u++)
 		USBDevice.addInterface(g_ps5[u]);
-		if (u == 0)
-			USBDevice.addInterface(g_ps5Audio);
-	}
+	USBDevice.addInterface(g_ps5Audio);
+	USBDevice.addInterface(g_ps5AudioAs);
 }
 void Ps5Controller::task()
 {

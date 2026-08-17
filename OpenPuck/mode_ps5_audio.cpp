@@ -4,7 +4,7 @@
 #include <Arduino.h>
 #include <string.h>
 
-#define UAC1_DESC_LEN 114
+#define UAC1_DESC_LEN 111
 #define UAC1_ISO_EP_BUFSIZE 384
 
 static uint8_t g_uac1ItfAc = 0xFF;
@@ -15,6 +15,7 @@ static uint8_t g_uac1AltSetting = 0;
 CFG_TUD_MEM_SECTION static uint8_t g_isoOutBuf[UAC1_ISO_EP_BUFSIZE];
 
 Adafruit_USBD_Audio_UAC1 g_ps5Audio;
+Adafruit_USBD_Audio_UAC1_AS g_ps5AudioAs;
 
 Adafruit_USBD_Audio_UAC1::Adafruit_USBD_Audio_UAC1()
 {
@@ -24,61 +25,61 @@ uint16_t Adafruit_USBD_Audio_UAC1::getInterfaceDescriptor(uint8_t itfnum,
 							  uint8_t *buf,
 							  uint16_t bufsize)
 {
-	(void)itfnum;
 	if (!buf)
 		return UAC1_DESC_LEN;
 	if (bufsize < UAC1_DESC_LEN)
 		return 0;
 
-	uint8_t ac_itf = TinyUSBDevice.allocInterface(2);
-	uint8_t as_itf = (uint8_t)(ac_itf + 1);
-	uint8_t ep_out = TinyUSBDevice.allocEndpoint(TUSB_DIR_OUT);
+	uint8_t ac_itf = itfnum;
+	uint8_t as_itf = (uint8_t)(itfnum + 1);
+	if (g_uac1EpOut == 0)
+		g_uac1EpOut = TinyUSBDevice.allocEndpoint(TUSB_DIR_OUT);
+	uint8_t ep_out = g_uac1EpOut;
 
 	g_uac1ItfAc = ac_itf;
 	g_uac1ItfAs = as_itf;
-	g_uac1EpOut = ep_out;
 
 	const uint8_t desc[UAC1_DESC_LEN] = {
-		// Interface Association Descriptor (IAD)
+		// Interface Association Descriptor (IAD) - 8 bytes
 		8, TUSB_DESC_INTERFACE_ASSOCIATION, ac_itf, 2, TUSB_CLASS_AUDIO,
 		0x00, 0x00, 0,
 
-		// Audio Control (AC) Standard Interface Descriptor
+		// Audio Control (AC) Standard Interface Descriptor - 9 bytes
 		9, TUSB_DESC_INTERFACE, ac_itf, 0, 0, TUSB_CLASS_AUDIO, 0x01,
 		0x00, 0,
 
-		// AC Class-Specific Header Descriptor
+		// AC Class-Specific Header Descriptor - 9 bytes
 		9, 0x24, 0x01, 0x00, 0x01, 42, 0x00, 1, as_itf,
 
-		// Input Terminal Descriptor (USB Streaming, 4ch)
+		// Input Terminal Descriptor (USB Streaming, 4ch) - 12 bytes
 		12, 0x24, 0x02, 0x01, 0x01, 0x01, 0x00, 4, 0x33, 0x00, 0x00, 0,
 
-		// Feature Unit Descriptor (Mute / Volume)
+		// Feature Unit Descriptor (Mute / Volume) - 12 bytes
 		12, 0x24, 0x06, 0x02, 0x01, 0x01, 0x01, 0x02, 0x02, 0x02, 0x02,
 		0,
 
-		// Output Terminal Descriptor (Speaker)
+		// Output Terminal Descriptor (Speaker) - 9 bytes
 		9, 0x24, 0x03, 0x03, 0x01, 0x03, 0x00, 0x02, 0,
 
-		// Audio Streaming (AS) Standard Interface Descriptor (Alt 0)
+		// Audio Streaming (AS) Standard Interface Descriptor (Alt 0) - 9 bytes
 		9, TUSB_DESC_INTERFACE, as_itf, 0, 0, TUSB_CLASS_AUDIO, 0x02,
 		0x00, 0,
 
-		// Audio Streaming (AS) Standard Interface Descriptor (Alt 1)
+		// Audio Streaming (AS) Standard Interface Descriptor (Alt 1) - 9 bytes
 		9, TUSB_DESC_INTERFACE, as_itf, 1, 1, TUSB_CLASS_AUDIO, 0x02,
 		0x00, 0,
 
-		// AS Class-Specific General Descriptor
+		// AS Class-Specific General Descriptor - 7 bytes
 		7, 0x24, 0x01, 0x01, 0x01, 0x01, 0x00,
 
-		// AS Class-Specific Format Type I Descriptor (PCM 4ch 16-bit 48kHz)
-		14, 0x24, 0x02, 0x01, 4, 2, 16, 1, 0x80, 0xBB, 0x00,
+		// AS Class-Specific Format Type I Descriptor (PCM 4ch 16-bit 48kHz) - 11 bytes
+		11, 0x24, 0x02, 0x01, 4, 2, 16, 1, 0x80, 0xBB, 0x00,
 
-		// Standard Isochronous Audio Data Endpoint Descriptor
+		// Standard Isochronous Audio Data Endpoint Descriptor - 9 bytes
 		9, TUSB_DESC_ENDPOINT, ep_out, 0x09,
 		U16_TO_U8S_LE(UAC1_ISO_EP_BUFSIZE), 1, 0, 0,
 
-		// Class-Specific Audio Data Endpoint Descriptor
+		// Class-Specific Audio Data Endpoint Descriptor - 7 bytes
 		7, 0x25, 0x01, 0x01, 0, 0, 0
 	};
 

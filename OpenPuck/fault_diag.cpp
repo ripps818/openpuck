@@ -103,17 +103,27 @@ void uartDebugInit(void)
 	uartPuts("[UART] OpenPuck boot ok\r\n");
 }
 
+static char g_uartRamBuf[128];
+
 void uartPuts(const char *s)
 {
 	if (!s || !*s)
 		return;
 	uint32_t len = strlen(s);
+	if (len >= sizeof g_uartRamBuf)
+		len = sizeof g_uartRamBuf - 1;
 
-	NRF_UARTE1->TXD.PTR = (uint32_t)s;
+	memcpy(g_uartRamBuf, s, len);
+	g_uartRamBuf[len] = '\0';
+
+	NRF_UARTE1->TXD.PTR = (uint32_t)g_uartRamBuf;
 	NRF_UARTE1->TXD.MAXCNT = len;
 	NRF_UARTE1->EVENTS_ENDTX = 0;
+	NRF_UARTE1->EVENTS_TXSTARTED = 0;
 	NRF_UARTE1->TASKS_STARTTX = 1;
-	while (!NRF_UARTE1->EVENTS_ENDTX) {
+
+	uint32_t timeout = 1000000;
+	while (!NRF_UARTE1->EVENTS_ENDTX && --timeout) {
 	}
 	NRF_UARTE1->TASKS_STOPTX = 1;
 }
