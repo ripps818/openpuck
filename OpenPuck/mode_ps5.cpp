@@ -60,19 +60,37 @@ static void initPs5Macs()
 	g_ps5MacInit = true;
 }
 
-// GET_FEATURE handler. Per-slot dispatch via per-instance callback. Sizes per drivers/hid/hid-playstation.c:
-// 0x05=41, 0x09=20, 0x20=64. TinyUSB writes the report id itself and hands us the buffer PAST it, so we
+static void ps5Build(uint8_t usbSlot, uint8_t slot, uint8_t out[63]);
+
+// GET_REPORT handler (feature and input). Per-slot dispatch via per-instance callback.
+// Sizes per drivers/hid/hid-playstation.c: 0x05=41, 0x09=20, 0x20=64.
+// TinyUSB writes the report id itself and hands us the buffer PAST it, so we
 // fill only the PAYLOAD and return size-1.
 static uint16_t ps5GetCommon(uint8_t slot, uint8_t rid, hid_report_type_t type,
 			     uint8_t *buf, uint16_t reqlen)
 {
 	(void)slot;
 	uartPrintf(
-		"[UART] PS5 getFeature: slot=%u rid=0x%02X type=%u reqlen=%u\r\n",
+		"[UART] PS5 getReport: slot=%u rid=0x%02X type=%u reqlen=%u\r\n",
 		slot, rid, type, reqlen);
-	if (type != HID_REPORT_TYPE_FEATURE || !buf || reqlen == 0)
+	if (!buf || reqlen == 0)
 		return 0;
 	memset(buf, 0, reqlen);
+
+	// DirectInput and game polling via GET_REPORT(INPUT, 0x01)
+	if (type == HID_REPORT_TYPE_INPUT) {
+		if ((rid == 0x01 || rid == 0) && reqlen >= 63) {
+			int bond = (slot < NSLOT) ? g_usbToBond[slot] : -1;
+			if (bond >= 0)
+				ps5Build(slot, (uint8_t)bond, buf);
+			return 63;
+		}
+		return 0;
+	}
+
+	if (type != HID_REPORT_TYPE_FEATURE)
+		return 0;
+
 	switch (rid) {
 	// capabilities: identify as DualSense-capable (SDL-only probe; hid-playstation never reads 0x03)
 	case 0x03: {
@@ -229,7 +247,7 @@ void Ps5Controller::usbIdentity()
 	USBDevice.setID(0x054C, 0x0CE6);
 	USBDevice.setDeviceVersion(0x0110);
 	USBDevice.setManufacturerDescriptor("Sony Interactive Entertainment");
-	USBDevice.setProductDescriptor("Wireless Controller");
+	USBDevice.setProductDescriptor("DualSense Wireless Controller");
 }
 #include "mode_ps5_audio.h"
 
