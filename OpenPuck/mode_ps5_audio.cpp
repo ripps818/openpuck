@@ -181,8 +181,10 @@ static const tusb_desc_endpoint_t s_iso_ep_out = {
 
 static void uac1_init(void)
 {
-	// ISOSPLIT_OneDir: full 512-byte DPRAM to ISO OUT (no ISO IN endpoint).
-	NRF_USBD->ISOSPLIT = USBD_ISOSPLIT_SPLIT_OneDir;
+	// USBD_ISOSPLIT_SPLIT_OneDir (0x0000) is the hardware reset default;
+	// writing it here races with the USBD power-on sequence and causes the
+	// host's first GET_DESCRIPTOR to stall (-71 EPROTO). TinyUSB's own
+	// dcd_nrf5x.c sets ISOSPLIT when ISO endpoints are opened.
 }
 
 static void uac1_reset(uint8_t rhport)
@@ -314,7 +316,6 @@ static bool uac1_xfer_cb(uint8_t rhport, uint8_t ep_addr, xfer_result_t result,
 	if (ep_addr == g_uac1EpOut && result == XFER_RESULT_SUCCESS) {
 		if (xferred_bytes > 0)
 			processAudioSamples(g_isoOutBuf, xferred_bytes);
-		NRF_USBD->ISOSPLIT = USBD_ISOSPLIT_SPLIT_HalfIN;
 		usbd_edpt_xfer(rhport, g_uac1EpOut, g_isoOutBuf,
 			       UAC1_ISO_EP_BUFSIZE);
 		return true;
