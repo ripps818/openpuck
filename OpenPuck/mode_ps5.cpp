@@ -82,7 +82,10 @@ static uint16_t ps5GetCommon(uint8_t slot, uint8_t rid, hid_report_type_t type,
 		buf[1] = 0x28;
 		buf[2] = 0x01;
 		buf[3] = 0x00;
-		buf[4] = 0x0E; // sensors + lightbar + vibration capability bits
+		// Bit 0 (0x01): haptic audio endpoint present; bit 1-3: lightbar,
+		// vibration, sensors. hid-playstation and SDL2 check bit 0 before
+		// enabling the 4-channel audio-haptic path.
+		buf[4] = 0x0F;
 		return 47;
 	}
 	case 0x05: // motion calibration (41 incl id)

@@ -4,9 +4,11 @@
 #include <Arduino.h>
 #include <string.h>
 
-#define UAC1_AC_DESC_LEN 57
+// 4-channel layout: IAD(8)+AC_std(9)+CS_hdr(9)+input_term(12)+feat_unit(12)+out_term(9) = 59
+#define UAC1_AC_DESC_LEN 59
 #define UAC1_AS_DESC_LEN 52
-#define UAC1_ISO_EP_BUFSIZE 192
+// 4ch * 2 bytes * 48 frames/ms = 384 bytes per 1ms isochronous packet
+#define UAC1_ISO_EP_BUFSIZE 384
 
 static uint8_t g_uac1ItfAc = 0xFF;
 static uint8_t g_uac1ItfAs = 0xFF;
@@ -50,13 +52,17 @@ uint16_t Adafruit_USBD_Audio_UAC1::getInterfaceDescriptor(uint8_t itfnum,
 		0x00, 0,
 
 		// AC Class-Specific Header Descriptor - 9 bytes
-		9, 0x24, 0x01, 0x00, 0x01, 40, 0x00, 1, as_itf,
+		// wTotalLength = CS_hdr(9)+input_term(12)+feat_unit(12)+out_term(9) = 42
+		9, 0x24, 0x01, 0x00, 0x01, 42, 0x00, 1, as_itf,
 
-		// Input Terminal Descriptor (USB Streaming, 2ch) - 12 bytes
-		12, 0x24, 0x02, 0x01, 0x01, 0x01, 0x00, 2, 0x03, 0x00, 0x00, 0,
+		// Input Terminal Descriptor (USB Streaming, 4ch) - 12 bytes
+		// wChannelConfig 0x0033: FL + FR + BL(haptic-L) + BR(haptic-R)
+		12, 0x24, 0x02, 0x01, 0x01, 0x01, 0x00, 4, 0x33, 0x00, 0x00, 0,
 
-		// Feature Unit Descriptor (Mute / Volume, 2ch) - 10 bytes
-		10, 0x24, 0x06, 0x02, 0x01, 0x01, 0x01, 0x02, 0x02, 0,
+		// Feature Unit Descriptor (Mute / Volume, 4ch) - 12 bytes
+		// bControlSize=1: master mute(0x01), ch1-4 volume(0x02 each)
+		12, 0x24, 0x06, 0x02, 0x01, 0x01, 0x01, 0x02, 0x02, 0x02, 0x02,
+		0,
 
 		// Output Terminal Descriptor (Speaker) - 9 bytes
 		9, 0x24, 0x03, 0x03, 0x01, 0x03, 0x00, 0x02, 0
@@ -103,11 +109,12 @@ uint16_t Adafruit_USBD_Audio_UAC1_AS::getInterfaceDescriptor(uint8_t itfnum,
 		// AS Class-Specific General Descriptor - 7 bytes
 		7, 0x24, 0x01, 0x01, 0x01, 0x01, 0x00,
 
-		// AS Class-Specific Format Type I Descriptor (PCM 2ch 16-bit 48kHz) - 11 bytes
-		11, 0x24, 0x02, 0x01, 2, 2, 16, 1, 0x80, 0xBB, 0x00,
+		// AS Class-Specific Format Type I Descriptor (PCM 4ch 16-bit 48kHz) - 11 bytes
+		11, 0x24, 0x02, 0x01, 4, 2, 16, 1, 0x80, 0xBB, 0x00,
 
 		// Standard Isochronous Audio Data Endpoint Descriptor - 9 bytes (EP 0x08)
-		9, TUSB_DESC_ENDPOINT, 0x08, 0x09,
+		// bmAttributes 0x05: isochronous (01b) + asynchronous sync (01b)
+		9, TUSB_DESC_ENDPOINT, 0x08, 0x05,
 		U16_TO_U8S_LE(UAC1_ISO_EP_BUFSIZE), 1, 0, 0,
 
 		// Class-Specific Audio Data Endpoint Descriptor - 7 bytes
@@ -123,66 +130,39 @@ bool Adafruit_USBD_Audio_UAC1_AS::begin()
 	return TinyUSBDevice.addInterface(*this);
 }
 
-// 16-bit linear PCM to 8-bit u-law conversion (ITU-T G.711)
-static uint8_t pcm2ulaw(int16_t pcm_val)
-{
-	int16_t mask;
-	int16_t seg;
-	uint8_t uval;
-
-	pcm_val = (int16_t)(pcm_val >> 2);
-	if (pcm_val < 0) {
-		pcm_val = (int16_t)(-pcm_val);
-		mask = 0x7F;
-	} else {
-		mask = 0xFF;
-	}
-	if (pcm_val > 8159)
-		pcm_val = 8159;
-
-	pcm_val = (int16_t)(pcm_val + 0x84);
-
-	if (pcm_val >= 0x4000)
-		seg = 7;
-	else if (pcm_val >= 0x2000)
-		seg = 6;
-	else if (pcm_val >= 0x1000)
-		seg = 5;
-	else if (pcm_val >= 0x0800)
-		seg = 4;
-	else if (pcm_val >= 0x0400)
-		seg = 3;
-	else if (pcm_val >= 0x0200)
-		seg = 2;
-	else if (pcm_val >= 0x0100)
-		seg = 1;
-	else
-		seg = 0;
-
-	uval = (uint8_t)((seg << 4) | ((pcm_val >> (seg + 3)) & 0x0F));
-	return (uint8_t)(uval ^ mask);
-}
-
 static void processAudioSamples(const uint8_t *data, uint32_t len)
 {
-	if (len < 4)
+	// 4-channel 16-bit PCM: 8 bytes per frame.
+	// ch1(s[0]), ch2(s[1]) = speaker (discarded).
+	// ch3(s[2]) = left LRA, ch4(s[3]) = right LRA.
+	if (len < 8)
 		return;
 
-	uint32_t num_frames = len / 4;
-	uint8_t ulaw_out[16];
-	uint32_t out_cnt = 0;
-
-	// 12:1 decimation (48kHz -> 4kHz)
-	for (uint32_t i = 0; i < num_frames; i += 12) {
-		const int16_t *s = (const int16_t *)(data + i * 4);
-		// Mix Left (ch0) and Right (ch1) haptic channels
-		int32_t mixed = ((int32_t)s[0] + (int32_t)s[1]) / 2;
-		if (out_cnt < sizeof ulaw_out)
-			ulaw_out[out_cnt++] = pcm2ulaw((int16_t)mixed);
+	uint32_t num_frames = len / 8;
+	int32_t peak = 0;
+	for (uint32_t i = 0; i < num_frames; i++) {
+		const int16_t *s = (const int16_t *)(data + i * 8);
+		int32_t l = s[2] < 0 ? -s[2] : s[2];
+		int32_t r = s[3] < 0 ? -s[3] : s[3];
+		int32_t v = l > r ? l : r;
+		if (v > peak)
+			peak = v;
 	}
 
-	if (out_cnt > 0)
-		relayEnqueue(0x82, ulaw_out, (uint8_t)out_cnt, 0xFF);
+	// Map 0..32767 peak amplitude to SC2 0x82 gain byte 0..255.
+	uint8_t gain = (uint8_t)((peak * 255u) / 32767u);
+	static uint8_t s_lastGain = 0;
+
+	// Pass on/off transitions immediately; use 4-count dead-band for
+	// mid-range changes to avoid flooding the relay queue on noise.
+	bool was_on = s_lastGain > 0;
+	bool is_on = gain > 0;
+	if (was_on != is_on ||
+	    (is_on && (gain > s_lastGain + 4 || s_lastGain > gain + 4))) {
+		s_lastGain = gain;
+		uint8_t p[3] = { 0x01, (uint8_t)(gain ? 0x01 : 0x00), gain };
+		relayEnqueue(0x82, p, sizeof p, 0xFF);
+	}
 }
 
 // TinyUSB class driver implementation for UAC1
@@ -193,15 +173,16 @@ static const tusb_desc_endpoint_t s_iso_ep_out = {
 	.bLength = sizeof(tusb_desc_endpoint_t),
 	.bDescriptorType = TUSB_DESC_ENDPOINT,
 	.bEndpointAddress = 0x08,
-	// bmAttributes 0x09: isochronous (01b) + adaptive sync (10b)
-	.bmAttributes = { .xfer = TUSB_XFER_ISOCHRONOUS, .sync = 2, .usage = 0 },
+	// bmAttributes 0x05: isochronous (01b) + asynchronous sync (01b)
+	.bmAttributes = { .xfer = TUSB_XFER_ISOCHRONOUS, .sync = 1, .usage = 0 },
 	.wMaxPacketSize = UAC1_ISO_EP_BUFSIZE,
 	.bInterval = 1,
 };
 
 static void uac1_init(void)
 {
-	NRF_USBD->ISOSPLIT = USBD_ISOSPLIT_SPLIT_HalfIN;
+	// ISOSPLIT_OneDir: full 512-byte DPRAM to ISO OUT (no ISO IN endpoint).
+	NRF_USBD->ISOSPLIT = USBD_ISOSPLIT_SPLIT_OneDir;
 }
 
 static void uac1_reset(uint8_t rhport)
@@ -227,9 +208,10 @@ static uint16_t uac1_open(uint8_t rhport, tusb_desc_interface_t const *itf_desc,
 		 * and AS to this driver before calling open(). We must
 		 * consume both interfaces' bytes here so the scanner doesn't
 		 * hit AS again and fail the already-bound slot assertion.
-		 * AC (49) + AS (52) = 101 bytes past the standard-interface ptr.
+		 * AC (51) + AS (52) = 103 bytes past the standard-interface ptr.
+		 * AC = std(9)+CS_hdr(9)+input_term(12)+feat_unit(12)+out_term(9).
 		 */
-		return (9 + 9 + 12 + 10 + 9) + UAC1_AS_DESC_LEN;
+		return (9 + 9 + 12 + 12 + 9) + UAC1_AS_DESC_LEN;
 	}
 	return 0;
 }
@@ -248,7 +230,7 @@ static bool uac1_control_xfer_cb(uint8_t rhport, uint8_t stage,
 		if (itf == g_uac1ItfAs) {
 			g_uac1AltSetting = alt;
 			if (alt == 1) {
-				NRF_USBD->ISOSPLIT = USBD_ISOSPLIT_SPLIT_HalfIN;
+				NRF_USBD->ISOSPLIT = USBD_ISOSPLIT_SPLIT_OneDir;
 				usbd_edpt_open(rhport, &s_iso_ep_out);
 				usbd_edpt_xfer(rhport, g_uac1EpOut, g_isoOutBuf,
 					       UAC1_ISO_EP_BUFSIZE);
