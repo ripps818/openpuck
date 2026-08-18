@@ -226,7 +226,7 @@ void Ps5Controller::usbIdentity()
 	USBDevice.setID(0x054C, 0x0CE6);
 	USBDevice.setDeviceVersion(0x0110);
 	USBDevice.setManufacturerDescriptor("Sony Interactive Entertainment");
-	USBDevice.setProductDescriptor("DualSense Wireless Controller");
+	USBDevice.setProductDescriptor("Wireless Controller");
 }
 #include "mode_ps5_audio.h"
 
