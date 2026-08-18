@@ -245,8 +245,11 @@ void Ps5Controller::beginPool()
 		g_ps5[s].setPollInterval(1);
 		g_ps5[s].begin();
 	}
-	g_ps5Audio.begin();
-	g_ps5AudioAs.begin();
+	// Audio interfaces are registered in mountSlots() via addInterface().
+	// Do NOT call begin() here: our UAC1 begin() calls addInterface() immediately,
+	// and mountSlots() also calls addInterface() — double-registering an interface
+	// appends duplicate entries to the USB config descriptor, corrupting its total
+	// length and breaking SDL2/host config-descriptor parsing.
 }
 void Ps5Controller::mountSlots(uint8_t k)
 {
