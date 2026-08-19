@@ -17,6 +17,7 @@ uint8_t g_chordBtn[3] = {
 // to Steam. Configurable like g_chordBtn (WebUSB fields 34..37).
 uint8_t g_chordDpad[4] = { MODE_PS3, MODE_DS4_GAME, MODE_PS5_GAME,
 			   MODE_SW_HORI };
+bool g_touchpadDisabled = false;
 bool g_persistMode = false;
 uint8_t g_bootMode = 0xFF;
 

@@ -625,6 +625,12 @@ uint8_t rfConnTx(uint8_t ch, uint8_t s1, const uint8_t *payload, uint8_t plen,
 									  TB_DLF |
 									  TB_DUP) >>
 									 8);
+							((uint8_t *)rep)[4] &= ~(
+								uint8_t)(TB_RPADC >>
+									 16);
+							((uint8_t *)rep)[5] &= ~(
+								uint8_t)(TB_LPADC >>
+									 24);
 						}
 						// Hand the report to the active controller. STREAM modes ignore it (they emit from task() reading
 						// g_in); PUSH modes (Xbox, puck/lizard) build + send their host report here.
@@ -707,9 +713,33 @@ uint8_t rfConnTx(uint8_t ch, uint8_t s1, const uint8_t *payload, uint8_t plen,
 					};
 					static uint8_t chCnt[NSLOT] = { 0, 0, 0,
 									0 };
+					static bool chPadLatched[NSLOT] = {
+						false, false, false, false
+					};
 					uint8_t want = 0xFF;
 					if ((g_in[g_curSlot].buttons &
 					     CHORD_BACK4) == CHORD_BACK4) {
+						if (g_in[g_curSlot].buttons &
+						    (TB_LPADC | TB_RPADC)) {
+							if (!chPadLatched
+								    [g_curSlot]) {
+								chPadLatched[g_curSlot] =
+									true;
+								g_touchpadDisabled =
+									!g_touchpadDisabled;
+								hapticSteamRumble(
+									g_touchpadDisabled ?
+										0x2000 :
+										0x6000,
+									g_touchpadDisabled ?
+										0x2000 :
+										0x6000,
+									g_curSlot);
+							}
+						} else {
+							chPadLatched[g_curSlot] =
+								false;
+						}
 						if (g_in[g_curSlot].buttons &
 						    TB_A)
 							want = MODE_STEAM;

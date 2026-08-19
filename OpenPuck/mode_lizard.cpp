@@ -12,6 +12,8 @@ static void lizardEvalSlot(uint32_t buttons, uint8_t &outMod,
 			   uint8_t &consumerBits, bool &doRpadMouse,
 			   bool &doLpadScroll)
 {
+	if (g_touchpadDisabled)
+		buttons &= ~(TB_LPADT | TB_RPADT | TB_LPADC | TB_RPADC);
 	// kbdConsumed (per controller): trig bits claimed by a hold-modifier binding so simpler
 	// single-button bindings sharing those bits are suppressed for THIS controller.
 	uint32_t kbdConsumed = 0;
@@ -21,13 +23,13 @@ static void lizardEvalSlot(uint32_t buttons, uint8_t &outMod,
 			continue;
 
 		if (b.outType == LZ_OUT_MOUSE_AXIS) {
-			if (b.outData[0] == LZ_MSRC_RPAD)
+			if (b.outData[0] == LZ_MSRC_RPAD && !g_touchpadDisabled)
 				doRpadMouse = true;
 			// LZ_MSRC_LSTICK and LZ_MSRC_GYRO could be added later
 			continue;
 		}
 		if (b.outType == LZ_OUT_SCROLL) {
-			if (b.outData[0] == LZ_MSRC_LPAD)
+			if (b.outData[0] == LZ_MSRC_LPAD && !g_touchpadDisabled)
 				doLpadScroll = true;
 			continue;
 		}
@@ -139,7 +141,8 @@ void rfLizard(Adafruit_USBD_HID *mdev, Adafruit_USBD_HID *kdev, uint8_t mrid,
 				continue;
 			}
 			const PuckInput &in = g_in[s];
-			bool rtouch = (in.buttons & TB_RPADT) != 0;
+			bool rtouch = !g_touchpadDisabled &&
+				      ((in.buttons & TB_RPADT) != 0);
 			int rx = in.rpx, ry = in.rpy;
 			if (rtouch && prt[s]) {
 				vx[s] += (rx - prx[s]);
@@ -189,7 +192,8 @@ void rfLizard(Adafruit_USBD_HID *mdev, Adafruit_USBD_HID *kdev, uint8_t mrid,
 				continue;
 			}
 			const PuckInput &in = g_in[s];
-			bool ltouch = (in.buttons & TB_LPADT) != 0;
+			bool ltouch = !g_touchpadDisabled &&
+				      ((in.buttons & TB_LPADT) != 0);
 			int ly = in.lpy;
 			if (ltouch && plt[s])
 				sacc += (ly - ply[s]) / (float)(g_mDiv * 24);

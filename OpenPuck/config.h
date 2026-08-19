@@ -104,6 +104,10 @@ extern uint8_t g_chordBtn[3]; // back4+B/X/Y -> these modes (A always STEAM)
 #define CHD_DOWN 3
 extern uint8_t g_chordDpad[4];
 
+// Run-time toggle for Steam trackpad reporting (touch & click), flipped via
+// the Back-4 + Trackpad Click chord.
+extern bool g_touchpadDisabled;
+
 // Mode persistence policy: by DEFAULT every fresh power-on/reconnect lands in STEAM mode (0). An explicit
 // mode switch still works for the session via a ONE-SHOT bootMode (honored once, then cleared). g_persistMode
 // instead remembers the last selected mode across reboots.
