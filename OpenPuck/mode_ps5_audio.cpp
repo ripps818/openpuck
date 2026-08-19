@@ -1,5 +1,7 @@
 #include "mode_ps5_audio.h"
 #include "haptics.h"
+#include "bonds.h"
+#include "usb_mount.h"
 #include "fault_diag.h"
 #include <Arduino.h>
 #include <string.h>
@@ -130,6 +132,10 @@ bool Adafruit_USBD_Audio_UAC1_AS::begin()
 	return TinyUSBDevice.addInterface(*this);
 }
 
+static volatile uint16_t s_audioLeftAmp = 0;
+static volatile uint16_t s_audioRightAmp = 0;
+static volatile uint32_t s_audioLastPktMs = 0;
+
 static void processAudioSamples(const uint8_t *data, uint32_t len)
 {
 	// 4-channel 16-bit PCM: 8 bytes per frame.
@@ -139,29 +145,45 @@ static void processAudioSamples(const uint8_t *data, uint32_t len)
 		return;
 
 	uint32_t num_frames = len / 8;
-	int32_t peak = 0;
+	int32_t peak_l = 0, peak_r = 0;
 	for (uint32_t i = 0; i < num_frames; i++) {
 		const int16_t *s = (const int16_t *)(data + i * 8);
 		int32_t l = s[2] < 0 ? -s[2] : s[2];
 		int32_t r = s[3] < 0 ? -s[3] : s[3];
-		int32_t v = l > r ? l : r;
-		if (v > peak)
-			peak = v;
+		if (l > peak_l)
+			peak_l = l;
+		if (r > peak_r)
+			peak_r = r;
 	}
 
-	// Map 0..32767 peak amplitude to SC2 0x82 gain byte 0..255.
-	uint8_t gain = (uint8_t)((peak * 255u) / 32767u);
-	static uint8_t s_lastGain = 0;
+	s_audioLeftAmp = (uint16_t)((peak_l * 65535u) / 32767u);
+	s_audioRightAmp = (uint16_t)((peak_r * 65535u) / 32767u);
+	s_audioLastPktMs = millis();
+}
 
-	// Pass on/off transitions immediately; use 4-count dead-band for
-	// mid-range changes to avoid flooding the relay queue on noise.
-	bool was_on = s_lastGain > 0;
-	bool is_on = gain > 0;
-	if (was_on != is_on ||
-	    (is_on && (gain > s_lastGain + 4 || s_lastGain > gain + 4))) {
-		s_lastGain = gain;
-		uint8_t p[3] = { 0x01, (uint8_t)(gain ? 0x01 : 0x00), gain };
-		relayEnqueue(0x82, p, sizeof p, 0xFF);
+void ps5AudioTask(void)
+{
+	static uint16_t s_lastL = 0, s_lastR = 0;
+	static uint32_t s_lastSendMs = 0;
+
+	uint32_t now = millis();
+	// Silence timeout: if no audio packet in 50ms, force amplitude to 0
+	uint16_t l = (uint32_t)(now - s_audioLastPktMs) > 50u ? 0 :
+								s_audioLeftAmp;
+	uint16_t r = (uint32_t)(now - s_audioLastPktMs) > 50u ? 0 :
+								s_audioRightAmp;
+
+	if ((l != s_lastL || r != s_lastR) &&
+	    ((uint32_t)(now - s_lastSendMs) >= 8u ||
+	     (l == 0 && r == 0 && (s_lastL > 0 || s_lastR > 0)))) {
+		s_lastL = l;
+		s_lastR = r;
+		s_lastSendMs = now;
+		for (uint8_t u = 0; u < g_usbMountCount; u++) {
+			int bond = g_usbToBond[u];
+			if (bond >= 0)
+				hapticSteamRumble(l, r, (uint8_t)bond);
+		}
 	}
 }
 
@@ -205,6 +227,7 @@ static uint16_t uac1_open(uint8_t rhport, tusb_desc_interface_t const *itf_desc,
 		   itf_desc->bAlternateSetting);
 
 	if (itf_desc->bInterfaceSubClass == 0x01) {
+		usbd_edpt_open(rhport, &s_iso_ep_out);
 		/*
 		 * IAD has bInterfaceCount=2, so TinyUSB pre-binds both AC
 		 * and AS to this driver before calling open(). We must
@@ -230,10 +253,9 @@ static bool uac1_control_xfer_cb(uint8_t rhport, uint8_t stage,
 		uint8_t itf = tu_u16_low(request->wIndex);
 		uint8_t alt = tu_u16_low(request->wValue);
 		if (itf == g_uac1ItfAs) {
+			uint8_t prev_alt = g_uac1AltSetting;
 			g_uac1AltSetting = alt;
-			if (alt == 1) {
-				NRF_USBD->ISOSPLIT = USBD_ISOSPLIT_SPLIT_OneDir;
-				usbd_edpt_open(rhport, &s_iso_ep_out);
+			if (alt == 1 && prev_alt == 0) {
 				usbd_edpt_xfer(rhport, g_uac1EpOut, g_isoOutBuf,
 					       UAC1_ISO_EP_BUFSIZE);
 			}
@@ -314,10 +336,11 @@ static bool uac1_xfer_cb(uint8_t rhport, uint8_t ep_addr, xfer_result_t result,
 			 uint32_t xferred_bytes)
 {
 	if (ep_addr == g_uac1EpOut && result == XFER_RESULT_SUCCESS) {
-		if (xferred_bytes > 0)
+		if (xferred_bytes > 0 && g_uac1AltSetting == 1)
 			processAudioSamples(g_isoOutBuf, xferred_bytes);
-		usbd_edpt_xfer(rhport, g_uac1EpOut, g_isoOutBuf,
-			       UAC1_ISO_EP_BUFSIZE);
+		if (g_uac1AltSetting == 1)
+			usbd_edpt_xfer(rhport, g_uac1EpOut, g_isoOutBuf,
+				       UAC1_ISO_EP_BUFSIZE);
 		return true;
 	}
 	return false;

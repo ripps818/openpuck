@@ -32,5 +32,8 @@ class Adafruit_USBD_Audio_UAC1_AS : public Adafruit_USBD_Interface {
 extern Adafruit_USBD_Audio_UAC1 g_ps5Audio;
 extern Adafruit_USBD_Audio_UAC1_AS g_ps5AudioAs;
 
+// Background task to rate-limit audio haptics to the RF relay queue.
+void ps5AudioTask(void);
+
 // Application class driver registration for TinyUSB.
 const usbd_class_driver_t *uac1_get_driver(void);

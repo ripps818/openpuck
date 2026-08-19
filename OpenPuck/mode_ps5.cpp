@@ -3,7 +3,6 @@
 #include "gamepad_util.h"
 #include "config.h"
 #include "haptics.h"
-#include "fault_diag.h"
 #include "bonds.h"
 #include "usb_mount.h"
 #include "usb_tx.h"
@@ -60,19 +59,15 @@ static void initPs5Macs()
 	g_ps5MacInit = true;
 }
 
+// GET_FEATURE handler. Per-slot dispatch via per-instance callback. Sizes per drivers/hid/hid-playstation.c:
+// 0x05=41, 0x09=20, 0x20=64. TinyUSB writes the report id itself and hands us the buffer PAST it, so we
+// fill only the PAYLOAD and return size-1.
 static void ps5Build(uint8_t usbSlot, uint8_t slot, uint8_t out[63]);
 
-// GET_REPORT handler (feature and input). Per-slot dispatch via per-instance callback.
-// Sizes per drivers/hid/hid-playstation.c: 0x05=41, 0x09=20, 0x20=64.
-// TinyUSB writes the report id itself and hands us the buffer PAST it, so we
-// fill only the PAYLOAD and return size-1.
 static uint16_t ps5GetCommon(uint8_t slot, uint8_t rid, hid_report_type_t type,
 			     uint8_t *buf, uint16_t reqlen)
 {
 	(void)slot;
-	uartPrintf(
-		"[UART] PS5 getReport: slot=%u rid=0x%02X type=%u reqlen=%u\r\n",
-		slot, rid, type, reqlen);
 	if (!buf || reqlen == 0)
 		return 0;
 	memset(buf, 0, reqlen);
@@ -247,7 +242,7 @@ void Ps5Controller::usbIdentity()
 	USBDevice.setID(0x054C, 0x0CE6);
 	USBDevice.setDeviceVersion(0x0110);
 	USBDevice.setManufacturerDescriptor("Sony Interactive Entertainment");
-	USBDevice.setProductDescriptor("DualSense Wireless Controller");
+	USBDevice.setProductDescriptor("Wireless Controller");
 }
 #include "mode_ps5_audio.h"
 
@@ -263,11 +258,6 @@ void Ps5Controller::beginPool()
 		g_ps5[s].setPollInterval(1);
 		g_ps5[s].begin();
 	}
-	// Audio interfaces are registered in mountSlots() via addInterface().
-	// Do NOT call begin() here: our UAC1 begin() calls addInterface() immediately,
-	// and mountSlots() also calls addInterface() — double-registering an interface
-	// appends duplicate entries to the USB config descriptor, corrupting its total
-	// length and breaking SDL2/host config-descriptor parsing.
 }
 void Ps5Controller::mountSlots(uint8_t k)
 {
@@ -279,6 +269,7 @@ void Ps5Controller::mountSlots(uint8_t k)
 }
 void Ps5Controller::task()
 {
+	ps5AudioTask();
 	for (uint8_t u = 0; u < g_usbMountCount; u++) {
 		if (!g_ps5[u].ready())
 			continue;

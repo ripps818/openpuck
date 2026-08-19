@@ -13,7 +13,6 @@
 #include "triton.h"
 #include "gamepad_util.h"
 #include "config.h"
-#include "fault_diag.h"
 #include "haptics.h"
 #include "bonds.h"
 #include "usb_mount.h"
@@ -217,9 +216,6 @@ class Adafruit_USBD_XInput : public Adafruit_USBD_Interface {
 		uint8_t itfnum = TinyUSBDevice.allocInterface(1);
 		uint8_t epin = TinyUSBDevice.allocEndpoint(TUSB_DIR_IN),
 			epout = TinyUSBDevice.allocEndpoint(TUSB_DIR_OUT);
-		uartPrintf(
-			"[UART] XINPUT getInterfaceDescriptor: itf=%u epin=0x%02X epout=0x%02X\r\n",
-			itfnum, epin, epout);
 		const uint8_t t[XINPUT_DESC_LEN] = {
 			9, TUSB_DESC_INTERFACE, itfnum, 0x00, 0x02, 0xFF, 0x5D,
 			0x01, _strid, 0x11, 0x21, 0x00, 0x01, 0x01, 0x25, epin,
