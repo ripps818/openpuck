@@ -49,16 +49,40 @@ static void initDs4Macs()
 	g_ds4MacInit = true;
 }
 
-// GET_FEATURE handler. Per-slot dispatch via per-instance callback (ps5Get##N passes the slot index).
+static void hidGyroBuild(uint8_t usbSlot, uint8_t slot, uint8_t out[63]);
+
+// GET_FEATURE and GET_REPORT handler. Per-slot dispatch via per-instance callback.
 // Sizes per drivers/hid/hid-playstation.c: 0x02=37, 0x12=16, 0xA3=49; legacy hid-sony MAC 0x81=7.
 static uint16_t hidGyroGetCommon(uint8_t slot, uint8_t rid,
 				 hid_report_type_t type, uint8_t *buf,
 				 uint16_t reqlen)
 {
 	(void)slot;
-	if (type != HID_REPORT_TYPE_FEATURE || !buf || reqlen == 0)
+	if (!buf || reqlen == 0)
 		return 0;
 	memset(buf, 0, reqlen);
+
+	// DirectInput and game polling via GET_REPORT(INPUT, 0x01)
+	if (type == HID_REPORT_TYPE_INPUT) {
+		if ((rid == 0x01 || rid == 0) && reqlen >= 63) {
+			int bond = (slot < NSLOT) ? g_usbToBond[slot] : -1;
+			if (bond < 0 || !g_slot[bond].used) {
+				for (int s = 0; s < NSLOT; s++) {
+					if (g_slot[s].used) {
+						bond = s;
+						break;
+					}
+				}
+			}
+			if (bond >= 0)
+				hidGyroBuild(slot, (uint8_t)bond, buf);
+			return 63;
+		}
+		return 0;
+	}
+
+	if (type != HID_REPORT_TYPE_FEATURE)
+		return 0;
 	switch (rid) {
 	case 0x02: // motion calibration (37 incl id)
 		if (reqlen < 36)
@@ -172,6 +196,9 @@ static void hidGyroBuild(uint8_t usbSlot, uint8_t slot, uint8_t out[63])
 		 ((b & TB_STEAM) ? 0x01 : 0);
 	out[7] = g_in[slot].lt;
 	out[8] = g_in[slot].rt;
+	uint16_t ds4ts = (uint16_t)(micros() / 16);
+	out[9] = (uint8_t)(ds4ts & 0xFF);
+	out[10] = (uint8_t)((ds4ts >> 8) & 0xFF);
 	out[12] = g_in[slot].gx & 0xFF;
 	out[13] = g_in[slot].gx >> 8;
 	out[14] = g_in[slot].gz & 0xFF;

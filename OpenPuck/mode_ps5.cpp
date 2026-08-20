@@ -88,7 +88,8 @@ static uint16_t ps5GetCommon(uint8_t slot, uint8_t rid, hid_report_type_t type,
 
 	switch (rid) {
 	// capabilities: identify as DualSense-capable (SDL-only probe; hid-playstation never reads 0x03)
-	case 0x03: {
+	case 0x03:
+	case 0x08: {
 		if (reqlen < 47)
 			return 0;
 		buf[0] = 0x00;
@@ -112,16 +113,40 @@ static uint16_t ps5GetCommon(uint8_t slot, uint8_t rid, hid_report_type_t type,
 		// MAC at kernel buf[1..6] = payload[0..5]
 		memcpy(buf, g_ps5Mac[slot], 6);
 		return 19;
+	case 0x0A: // audio status / mic mute (27 incl id)
+		if (reqlen < 26)
+			return 0;
+		return 26;
 	case 0x20: // firmware info (64 incl id)
 		if (reqlen < 63)
 			return 0;
-		memcpy(buf, "Apr 28 202116:21:40", 19);
-		buf[23] = 0x01; // hw_version (le32 @ kernel buf[24]) non-zero
-		buf[27] = 0x01; // fw_version (le32 @ kernel buf[28]) non-zero
-		// update_version (le16 @ kernel buf[44]) set to 0x0630 (fw 6.48)
-		// so hid-playstation / SDL2 enable vibration v2 and audio haptics.
-		buf[43] = 0x30;
-		buf[44] = 0x06;
+		memcpy(buf, "Sep 10 202316:01:06", 19);
+		// hw_version le32 @ kernel payload offset 24 = our buf[24].
+		// 0x00000300 matches a DualSense hardware revision 3.
+		buf[24] = 0x00;
+		buf[25] = 0x03;
+		buf[26] = 0x00;
+		buf[27] = 0x00;
+		// fw_version le32 @ kernel payload offset 28 = our buf[28].
+		// 0x0228000B = fw 2.40 build 11 -- above hid-playstation's
+		// enhanced-haptics gate in kernel 6.3+.
+		buf[28] = 0x0B;
+		buf[29] = 0x00;
+		buf[30] = 0x28;
+		buf[31] = 0x02;
+		// update_version le16 @ kernel payload offset 44 = our buf[44].
+		// 0x0228 enables vibration-v2 and audio haptics in hid-playstation.
+		buf[44] = 0x28;
+		buf[45] = 0x02;
+		return 63;
+	case 0x21: // build info (5 incl id)
+		if (reqlen < 4)
+			return 0;
+		buf[0] = 0x01;
+		return 4;
+	case 0x22: // extra calibration / pairing (64 incl id)
+		if (reqlen < 63)
+			return 0;
 		return 63;
 	default:
 		return 0;
@@ -225,6 +250,12 @@ static void ps5Build(uint8_t usbSlot, uint8_t slot, uint8_t out[63])
 			  0x02 :
 			  0) |
 		 ((b & TB_MUTE) ? 0x04 : 0);
+	static uint32_t pktSeq[NSLOT] = { 0 };
+	uint32_t s = ++pktSeq[usbSlot];
+	out[11] = (uint8_t)(s & 0xFF);
+	out[12] = (uint8_t)((s >> 8) & 0xFF);
+	out[13] = (uint8_t)((s >> 16) & 0xFF);
+	out[14] = (uint8_t)((s >> 24) & 0xFF);
 	out[15] = g_in[slot].gx & 0xFF;
 	out[16] = g_in[slot].gx >> 8;
 	out[17] = g_in[slot].gz & 0xFF;
@@ -237,12 +268,18 @@ static void ps5Build(uint8_t usbSlot, uint8_t slot, uint8_t out[63])
 	out[24] = g_in[slot].ay >> 8;
 	out[25] = g_in[slot].az & 0xFF;
 	out[26] = g_in[slot].az >> 8;
+	uint32_t ts = micros();
+	out[27] = (uint8_t)(ts & 0xFF);
+	out[28] = (uint8_t)((ts >> 8) & 0xFF);
+	out[29] = (uint8_t)((ts >> 16) & 0xFF);
+	out[30] = (uint8_t)((ts >> 24) & 0xFF);
 	uint16_t tlx, tly, trx, trry;
 	steamPadsToTouch(b, PS5_TOUCH_H, g_in[slot].lpx, g_in[slot].lpy,
 			 g_in[slot].rpx, g_in[slot].rpy, &tlx, &tly, &trx,
 			 &trry);
 	touchPackPads(out + 32, lTouch, rTouch, tlx, tly, trx, trry);
 	out[52] = PS5_STATUS_USB;
+	out[53] = 0x08; // USB connected state
 }
 
 // Dynamic-mount mode: begin() is unused (setup() calls beginPool()+usbReenumerate instead).
