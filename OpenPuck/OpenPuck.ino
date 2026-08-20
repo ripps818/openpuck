@@ -80,7 +80,7 @@ void usbReenumerate(uint8_t k)
 {
 	uartPrintf("[UART] usbReenumerate(k=%u, mode=%u)\r\n", k, g_usbMode);
 	USBDevice.detach();
-	delay(20);
+	delay(100);
 	USBDevice.clearConfiguration();
 	USBDevice.setConfigurationBuffer(g_usbCfgDesc, sizeof g_usbCfgDesc);
 	g_active->usbIdentity(); // clearConfiguration reset VID/PID/strings -- restore them
@@ -141,6 +141,9 @@ void setup()
 	genSerial();
 	ledInit();
 	uartDebugInit();
+	// Drop the USB D+ line immediately on boot so the host doesn't attempt to
+	// enumerate the Adafruit core's default USB descriptor while we load flash config.
+	USBDevice.detach();
 
 	// seed defaults so unbonded slots don't share the discovery address
 	for (int s = 0; s < NSLOT; s++)
@@ -216,7 +219,7 @@ void setup()
 		}
 	} else {
 		USBDevice.detach();
-		delay(30);
+		delay(100);
 		if (keepCdc) {
 			USBDevice.setConfigurationBuffer(g_usbCfgDesc,
 							 sizeof g_usbCfgDesc);
