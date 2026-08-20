@@ -36,14 +36,40 @@ Similarly you can hold all 4 back buttons and press Y to switch (teehee) over to
 | back-4 + B | Lizard | Lizard mode, even if Steam is open |
 | back-4 + X | Xbox | Xbox 360 Controller |
 | back-4 + Y | Switch Pro | Switch Controller + Gyro + Haptics |
+| back-4 + Pad Click (L/R) | Toggle Touchpad | Toggles touchpad reporting on/off (distinct buzz tone feedback) |
 | WebUSB panel → mode 4 | Hori Pad | Switch mode with no gyro or haptics |
-| WebUSB panel → mode 5 | DualSense + Gyro + Trackpad | PC only |
+| WebUSB panel → mode 5 | DualSense + Gyro + Trackpad + Audio Haptics | PC (UAC1 4-channel audio sink for voice-coil haptics) |
 | WebUSB panel → mode 6 | DS4/HIDGYRO + Gyro + Trackpad | PC only |
 | WebUSB panel → mode 9 | PS3 DualShock 3 / Sixaxis | Enumerates on a real PS3 (+ gyro/haptics) |
 
 I'm also adding various QOL items as I go as well. For example having to hold the Steam button for like 6 seconds feels like an eternity. If Steam is open you can do Steam + Y for a shutdown. I'm adding Steam + Y for 2 seconds as a shutdown chort in ALL modes now.
 
 Note: to use the Switch mode on a real Switch you'll need to [enable the pro controller wired communication option](https://www.nintendo.com/en-gb/Support/Troubleshooting/How-to-Enable-Disable-Pro-Controller-Wired-Communication-1516284.html).
+
+### Enhancements in this Fork
+Compared to upstream OpenPuck, this fork adds:
+- **DualSense 4-Channel USB Audio & Real-Time Voice-Coil Haptics:** Implements a UAC1 4-channel isochronous audio stream on the puck. Channels 3 & 4 (rear surround) are decoded in real-time and converted to voice-coil/LRA haptic feedback on the Steam Controller over the 2.4GHz RF link.
+- **Enhanced PlayStation HID & Feature Reports:** Implements DualSense Feature Reports `0x03`, `0x08`, `0x09` (pairing & MAC), `0x0A`, `0x20` (accurate hardware revision and firmware version fields), `0x21`, and `0x22`, plus `GET_REPORT(0x01)` support for DirectInput game polling.
+- **Touchpad Toggle Chord:** Hold all 4 back buttons (`Back-4`) and click either trackpad (`LPADC` or `RPADC`) to toggle touchpad reporting on/off on the fly (high buzz = enabled, low buzz = disabled). Useful to prevent accidental trackpad touches when gripping in stick-only mode.
+- **WirePlumber 4.0 Surround Profile:** Includes `tools/wireplumber/60-openpuck-dualsense.conf` to automatically configure the USB Audio device as a 4.0 Analog Surround sink named `Wireless Controller` while preventing ALSA UCM channel-splitting conflicts.
+
+### DualSense Mode & Audio Haptics on Linux / Proton
+In DualSense mode, OpenPuck exposes a USB UAC1 4-channel audio device alongside the HID gamepad to emulate physical DualSense voice-coil haptics (channels 3+4 = rear channels = haptics):
+
+1. **PipeWire / WirePlumber setup:**
+   Install the provided configuration to ensure PipeWire configures the audio sink as a 4.0 surround device named `Wireless Controller`:
+   ```sh
+   mkdir -p ~/.config/wireplumber/wireplumber.conf.d/
+   cp tools/wireplumber/60-openpuck-dualsense.conf ~/.config/wireplumber/wireplumber.conf.d/
+   systemctl --user restart wireplumber pipewire
+   ```
+2. **Proton 11 / GE-Proton 11 Configuration (e.g. FFXIV):**
+   Proton 11.x uses `winepipewire.drv` by default, which can interfere with the 4-channel WASAPI endpoint matching. Add the following environment variables to your Steam or XIVLauncher launch arguments:
+   ```sh
+   PROTON_USE_PIPEWIRE=0 PROTON_SONY_DUALSENSE_AS_DUALSHOCK4=1 %command%
+   ```
+3. **In-game audio settings:**
+   In games that support DualSense audio haptics (such as *Final Fantasy XIV*), enable **"Play sound effects on controller speaker"** (SoundPad) in the sound settings.
 
 ### A note on the Lizard mode:
 The Lizard mode behaves similarly to how the controller behaves when Steam is closed, but this will work even when Steam is open. This has a few advantages
