@@ -116,7 +116,10 @@ void modeSwitchReboot(uint8_t mode)
 			mode); // 0xFF / invalid => keep the current mode (bond-import reboot)
 	if (USBDevice.mounted())
 		USBDevice.detach();
-	delay(60); // let the host see the disconnect before the pullup returns on reset
+
+	// USB hub disconnect debounce is 100ms. Waiting 120ms ensures the host
+	// xHCI controller tears down the previous device before the new one attaches.
+	delay(120);
 	faultDiagArmIntentionalReset();
 	NVIC_SystemReset();
 }
