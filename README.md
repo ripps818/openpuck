@@ -57,12 +57,11 @@ Compared to upstream OpenPuck, this fork adds:
 In DualSense mode, OpenPuck exposes a USB UAC1 4-channel audio device alongside the HID gamepad to emulate physical DualSense voice-coil haptics (channels 3+4 = rear channels = haptics):
 
 1. **PipeWire / WirePlumber setup:**
-   Install the provided configuration to ensure PipeWire configures the audio sink as a 4.0 surround device named `Wireless Controller`:
+   Install the provided configuration to ensure PipeWire configures the audio sink as a 4.0 surround device named `Wireless Controller` and automatically routes 4-channel haptic streams to the puck:
    ```sh
-   mkdir -p ~/.config/wireplumber/wireplumber.conf.d/
-   cp tools/wireplumber/60-openpuck-dualsense.conf ~/.config/wireplumber/wireplumber.conf.d/
-   systemctl --user restart wireplumber pipewire
+   make install-wireplumber
    ```
+   *(Or manually copy `tools/wireplumber/60-openpuck-dualsense.conf` to `~/.config/wireplumber/wireplumber.conf.d/` and run `systemctl --user restart wireplumber pipewire`)*
 2. **Proton 11 / GE-Proton 11 Configuration (e.g. FFXIV):**
    Proton 11.x uses `winepipewire.drv` by default, which can interfere with the 4-channel WASAPI endpoint matching. Add the following environment variables to your Steam or XIVLauncher launch arguments:
    ```sh
