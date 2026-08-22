@@ -625,15 +625,15 @@ function setTab(et){
     const sec=document.createElement("div"); sec.style.cssText="background:#0e1017;border:1px solid #232a3a;border-radius:8px;padding:12px 14px;display:none";
     const rec={sec,tab,activeDot:tab.querySelector(".active-dot"),back:[],qam:null,abSwap:null,pad:null,led:null,ledV:null,rumble:null,audioHaptics:null,padStick:[]};
     // A/B swap + trackpad haptics + rumble toggles
-    const tog=document.createElement("div"); tog.className="row";
-    tog.innerHTML='<label>A/B + X/Y swap</label>';
+    const tog=document.createElement("div"); tog.className="row"; tog.style.cssText="display:flex;align-items:center;gap:8px 10px;margin:12px 0;flex-wrap:wrap";
+    const abLbl=document.createElement("label"); abLbl.textContent="A/B + X/Y swap"; abLbl.style.cssText="flex:0 0 auto;margin:0"; tog.appendChild(abLbl);
     const ab=document.createElement("button"); ab.textContent="off"; tog.appendChild(ab);
-    const padLbl=document.createElement("label"); padLbl.textContent="Trackpad haptics"; padLbl.style.marginLeft="14px"; tog.appendChild(padLbl);
+    const padLbl=document.createElement("label"); padLbl.textContent="Trackpad haptics"; padLbl.style.cssText="flex:0 0 auto;margin:0 0 0 6px"; tog.appendChild(padLbl);
     const pad=document.createElement("button"); pad.textContent="on"; tog.appendChild(pad);
-    const rumbleLbl=document.createElement("label"); rumbleLbl.textContent="Rumble"; rumbleLbl.style.marginLeft="14px"; tog.appendChild(rumbleLbl);
+    const rumbleLbl=document.createElement("label"); rumbleLbl.textContent="Rumble"; rumbleLbl.style.cssText="flex:0 0 auto;margin:0 0 0 6px"; tog.appendChild(rumbleLbl);
     const rumble=document.createElement("button"); rumble.textContent="on"; tog.appendChild(rumble);
-    if(def.mode===8){
-      const audLbl=document.createElement("label"); audLbl.textContent="Audio Haptics"; audLbl.style.marginLeft="14px"; tog.appendChild(audLbl);
+    if(def.key==="DS5"){
+      const audLbl=document.createElement("label"); audLbl.textContent="Audio Haptics"; audLbl.style.cssText="flex:0 0 auto;margin:0 0 0 6px"; tog.appendChild(audLbl);
       const aud=document.createElement("button"); aud.textContent="on"; tog.appendChild(aud);
       rec.audioHaptics=aud;
       aud.onclick=()=>{ const on=aud.classList.contains("active"); setField(39, on?0:1); };
