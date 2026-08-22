@@ -180,7 +180,15 @@ void ps5AudioTask(void)
 		s_lastR = r;
 		s_lastSendMs = now;
 		for (uint8_t u = 0; u < g_usbMountCount; u++) {
-			int bond = g_usbToBond[u];
+			int bond = (u < NSLOT) ? g_usbToBond[u] : -1;
+			if (bond < 0 || !g_slot[bond].used) {
+				for (int s = 0; s < NSLOT; s++) {
+					if (g_slot[s].used) {
+						bond = s;
+						break;
+					}
+				}
+			}
 			if (bond >= 0)
 				hapticSteamRumble(l, r, (uint8_t)bond);
 		}
