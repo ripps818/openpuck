@@ -98,7 +98,8 @@ static bool boardCommand(uint8_t op)
 //                [v18: p[182..185] chordDpad left/up/right/down (back4+D-pad mode assignments)]
 //                [v19: p[186] swGyroLegacy (Switch Pro gyro mapping: 0 = corrected, 1 = legacy/pre-#189)]
 //                [v20: p[187..194] per-type trackpad->stick map, 4x2B {left pad, right pad} (PS_OFF/LEFT/RIGHT)]
-#define WB_PAYLEN 193
+//                [v20: p[195] audioHapticGain (DualSense audio-driven haptic gain %: 25..255)]
+#define WB_PAYLEN 194
 // The blob send is drop-on-full (never blocks loop), so the vendor TX FIFO MUST be able to hold a whole blob
 // -- otherwise tud_vendor_write_available() never reaches the frame size and EVERY frame is dropped (blank
 // panel / stale mappings). The Makefile sets -DCFG_TUD_VENDOR_TX_BUFSIZE=256; guard it here so a build without
@@ -312,6 +313,7 @@ static void webusbSendBlob()
 		p[187 + et * 2] = g_padStickCfg[et][0];
 		p[188 + et * 2] = g_padStickCfg[et][1];
 	}
+	p[195] = g_audioHapticGain;
 	// CRITICAL: usb_web.write() SPINS (`while (remain && _connected) yield();`) until the IN FIFO drains or the
 	// panel disconnects. If the panel holds the WebUSB interface open but stops reading its IN endpoint -- a
 	// backgrounded tab, or the host briefly not servicing transferIn under load -- the FIFO never empties and
@@ -1046,6 +1048,12 @@ void webusbPoll()
 				// DualSense audio-driven haptics toggle (0 = off, 1 = on)
 				case 39:
 					g_audioHaptics = v ? 1 : 0;
+					break;
+
+				// DualSense audio-driven haptic gain (25-255%)
+				case 30:
+					if (v >= 25 && v <= 255)
+						g_audioHapticGain = (uint8_t)v;
 					break;
 
 					// (field 22, rumble strength, removed -- fixed at RUMBLE_SCALE_PCT)

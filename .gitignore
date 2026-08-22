@@ -11,3 +11,5 @@ __pycache__/
 
 # generated build-provenance header (gen_version.sh); never commit
 OpenPuck/git_version.h
+test_haptic.wav
+test_all4_haptic.wav

@@ -51,6 +51,7 @@ uint8_t g_qamMap = 0;
 uint8_t g_padHaptics = 1;
 uint8_t g_rumble = 1;
 uint8_t g_audioHaptics = 1;
+uint8_t g_audioHapticGain = 100;
 uint8_t g_ledBright = 0;
 
 void applyActiveType()
@@ -123,7 +124,7 @@ void saveCfg()
 		  (uint8_t)(g_persistMode ? 1 : 0),
 		  g_bootMode,
 		  { g_chordBtn[0], g_chordBtn[1], g_chordBtn[2] },
-		  0, // rsvd1 (ex rumble strength)
+		  g_audioHapticGain, // rsvd1: audio haptic intensity gain %
 		  (uint8_t)(g_rxWin / 10),
 		  g_lizKeep,
 		  g_audioHaptics, // rsvd2: audio haptics enable
@@ -211,6 +212,8 @@ void loadCfg()
 				g_lizKeep = c.lizKeep;
 			if (c.rsvd2 <= 1)
 				g_audioHaptics = c.rsvd2;
+			if (c.rsvd1 >= 25 && c.rsvd1 <= 255)
+				g_audioHapticGain = c.rsvd1;
 			// The poll RX window is now FIXED (g_rxWin is const) -- any persisted rxWin10 is ignored.
 		}
 		f.close();

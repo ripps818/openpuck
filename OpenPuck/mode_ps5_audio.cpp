@@ -32,6 +32,7 @@ uint16_t Adafruit_USBD_Audio_UAC1::getInterfaceDescriptor(uint8_t itfnum,
 							  uint8_t *buf,
 							  uint16_t bufsize)
 {
+	(void)itfnum;
 	if (!buf)
 		return UAC1_AC_DESC_LEN;
 	if (bufsize < UAC1_AC_DESC_LEN)
@@ -88,6 +89,7 @@ uint16_t Adafruit_USBD_Audio_UAC1_AS::getInterfaceDescriptor(uint8_t itfnum,
 							     uint8_t *buf,
 							     uint16_t bufsize)
 {
+	(void)itfnum;
 	if (!buf)
 		return UAC1_AS_DESC_LEN;
 	if (bufsize < UAC1_AS_DESC_LEN)
@@ -133,126 +135,92 @@ bool Adafruit_USBD_Audio_UAC1_AS::begin()
 	return TinyUSBDevice.addInterface(*this);
 }
 
-static const uint8_t s_muLawTable[256] = {
-	0, 0, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 4, 4, 4, 4, 4, 4, 4, 4,
-	4, 4, 4, 4, 4, 4, 4, 4, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5,
-	5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 6, 6, 6, 6, 6, 6, 6, 6,
-	6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6,
-	6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6,
-	6, 6, 6, 6, 6, 6, 6, 6, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7,
-	7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7,
-	7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7,
-	7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7,
-	7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7,
-	7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7
-};
+#include <math.h>
 
-static inline uint8_t linearToMuLaw(int16_t sample)
-{
-	const int cBias = 0x84;
-	const int cClip = 32635;
-	int sign = (sample >> 8) & 0x80;
-	if (sign != 0)
-		sample = (int16_t)-sample;
-	if (sample > cClip)
-		sample = cClip;
-
-	sample = (int16_t)(sample + cBias);
-	int exponent = (int)s_muLawTable[(sample >> 7) & 0xFF];
-	int mantissa = (sample >> (exponent + 3)) & 0x0F;
-	return (uint8_t)(~(sign | (exponent << 4) | mantissa));
-}
-
-#define AUDIO_FIFO_CAP 64
-
-static volatile uint8_t s_pcmFifoL[AUDIO_FIFO_CAP];
-static volatile uint8_t s_pcmFifoR[AUDIO_FIFO_CAP];
-static volatile uint8_t s_pcmFifoHead = 0;
-static volatile uint8_t s_pcmFifoTail = 0;
+static volatile uint16_t s_audioLeftAmp = 0;
+static volatile uint16_t s_audioRightAmp = 0;
 static volatile uint32_t s_audioLastPktMs = 0;
-static volatile bool s_audioActive = false;
+
+static inline uint16_t hapticAmpScale(int32_t peak)
+{
+	// Noise gate: ignore background dither / ambient dither below ~1.2%
+	if (peak < 400)
+		return 0;
+	if (peak > 32767)
+		peak = 32767;
+
+	// Perceptual dynamic-range curve: sqrt(peak / 32767) * 65535 * (gain / 100)
+	// Boosts mid-level haptics (footsteps, spell effects, impacts) to feel punchy and crisp.
+	float norm = (float)peak / 32767.0f;
+	float curved = sqrtf(norm);
+	float gainFactor = (float)g_audioHapticGain / 100.0f;
+	uint32_t val = (uint32_t)(curved * 65535.0f * gainFactor);
+	return (val > 65535u) ? 65535u : (uint16_t)val;
+}
 
 static void processAudioSamples(const uint8_t *data, uint32_t len)
 {
 	// 4-channel 16-bit PCM: 8 bytes per frame (FL, FR, RL, RR)
-	// ch3 (s[2]) = Left LRA, ch4 (s[3]) = Right LRA
+	// ch3 (s[2]) = Left LRA, ch4 (s[3]) = Right LRA (dedicated haptic tracks)
 	if (len < 8)
 		return;
 
 	uint32_t num_frames = len / 8;
-	// 24:1 decimation: 48 kHz / 24 = 2 kHz (2 output samples per 1 ms)
-	for (uint32_t blk = 0; blk + 24 <= num_frames; blk += 24) {
-		int32_t sum_l = 0, sum_r = 0;
-		int32_t peak = 0;
-		for (uint32_t i = 0; i < 24; i++) {
-			const int16_t *s =
-				(const int16_t *)(data + (blk + i) * 8);
-			int16_t l = s[2];
-			int16_t r = s[3];
-			sum_l += l;
-			sum_r += r;
-			int32_t al = l < 0 ? -l : l;
-			int32_t ar = r < 0 ? -r : r;
-			if (al > peak)
-				peak = al;
-			if (ar > peak)
-				peak = ar;
-		}
-
-		uint8_t mu_l = linearToMuLaw((int16_t)(sum_l / 24));
-		uint8_t mu_r = linearToMuLaw((int16_t)(sum_r / 24));
-
-		uint8_t next_head = (s_pcmFifoHead + 1) % AUDIO_FIFO_CAP;
-		if (next_head != s_pcmFifoTail) {
-			s_pcmFifoL[s_pcmFifoHead] = mu_l;
-			s_pcmFifoR[s_pcmFifoHead] = mu_r;
-			s_pcmFifoHead = next_head;
-		}
-
-		if (peak > 200)
-			s_audioActive = true;
+	int32_t peak_l = 0, peak_r = 0;
+	for (uint32_t i = 0; i < num_frames; i++) {
+		const int16_t *s = (const int16_t *)(data + i * 8);
+		int16_t raw_l = s[2];
+		int16_t raw_r = s[3];
+		int32_t l = raw_l < 0 ? -raw_l : raw_l;
+		int32_t r = raw_r < 0 ? -raw_r : raw_r;
+		if (l > peak_l)
+			peak_l = l;
+		if (r > peak_r)
+			peak_r = r;
 	}
+
+	s_audioLeftAmp = hapticAmpScale(peak_l);
+	s_audioRightAmp = hapticAmpScale(peak_r);
 	s_audioLastPktMs = millis();
 }
 
 void ps5AudioTask(void)
 {
+	static uint16_t s_lastL = 0, s_lastR = 0;
+	static uint32_t s_lastSendMs = 0;
+	static bool s_wasPlaying = false;
+
 	uint32_t now = millis();
 	bool timedOut = (uint32_t)(now - s_audioLastPktMs) > 50u;
-	if (timedOut)
-		s_audioActive = false;
+	uint16_t l = (timedOut || !g_audioHaptics) ? 0 : s_audioLeftAmp;
+	uint16_t r = (timedOut || !g_audioHaptics) ? 0 : s_audioRightAmp;
+	bool isPlaying = (l > 0 || r > 0);
 
-	uint8_t count =
-		(s_pcmFifoHead >= s_pcmFifoTail) ?
-			(s_pcmFifoHead - s_pcmFifoTail) :
-			(AUDIO_FIFO_CAP - s_pcmFifoTail + s_pcmFifoHead);
-
-	// 8 samples per channel = 4 ms of 2 kHz stereo audio
-	if (count >= 8 && s_audioActive && g_audioHaptics) {
-		uint8_t p[17];
-		p[0] = 8;
-		for (uint8_t i = 0; i < 8; i++) {
-			uint8_t idx = (s_pcmFifoTail + i) % AUDIO_FIFO_CAP;
-			p[1 + i] = s_pcmFifoL[idx];
-			p[9 + i] = s_pcmFifoR[idx];
-		}
-		s_pcmFifoTail = (s_pcmFifoTail + 8) % AUDIO_FIFO_CAP;
-
-		for (uint8_t u = 0; u < g_usbMountCount; u++) {
-			int bond = (u < NSLOT) ? g_usbToBond[u] : -1;
-			if (bond < 0 || !g_slot[bond].used) {
-				for (int s = 0; s < NSLOT; s++) {
-					if (g_slot[s].used) {
-						bond = s;
-						break;
+	// Only transmit while PCM audio is actively streaming, or send a single stop frame
+	// when transitioning from active to idle. Never send idle frames when audio is
+	// silent, preserving standard HID Report 0x02 game motor rumble.
+	if (isPlaying || s_wasPlaying) {
+		if ((l != s_lastL || r != s_lastR) &&
+		    ((uint32_t)(now - s_lastSendMs) >= 8u ||
+		     (!isPlaying && s_wasPlaying))) {
+			s_lastL = l;
+			s_lastR = r;
+			s_lastSendMs = now;
+			s_wasPlaying = isPlaying;
+			for (uint8_t u = 0; u < g_usbMountCount; u++) {
+				int bond = (u < NSLOT) ? g_usbToBond[u] : -1;
+				if (bond < 0 || !g_slot[bond].used) {
+					for (int s = 0; s < NSLOT; s++) {
+						if (g_slot[s].used) {
+							bond = s;
+							break;
+						}
 					}
 				}
+				if (bond >= 0)
+					hapticAudioRumble(l, r, (uint8_t)bond);
 			}
-			if (bond >= 0)
-				hapticSendAudioPcm(p, sizeof p, (uint8_t)bond);
 		}
-	} else if (timedOut) {
-		s_pcmFifoTail = s_pcmFifoHead;
 	}
 }
 
@@ -322,9 +290,8 @@ static bool uac1_control_xfer_cb(uint8_t rhport, uint8_t stage,
 		uint8_t itf = tu_u16_low(request->wIndex);
 		uint8_t alt = tu_u16_low(request->wValue);
 		if (itf == g_uac1ItfAs) {
-			uint8_t prev_alt = g_uac1AltSetting;
 			g_uac1AltSetting = alt;
-			if (alt == 1 && prev_alt == 0) {
+			if (alt == 1) {
 				usbd_edpt_xfer(rhport, g_uac1EpOut, g_isoOutBuf,
 					       UAC1_ISO_EP_BUFSIZE);
 			}

@@ -348,16 +348,53 @@ bool hapticSteamRumble(uint16_t lowFreq, uint16_t highFreq, uint8_t slot)
 	g_rumble80On[slot] = on;
 	return true;
 }
-// Audio-driven haptics stream directly to the LRAs and bypass the standard
-// motor rumble toggle (g_rumble), allowing normal rumble to be muted in the UI
-// while retaining pure audio haptics.
-bool hapticSendAudioPcm(const uint8_t *pcmData, uint8_t len, uint8_t slot)
+
+// Audio-driven haptics bypass the standard motor rumble toggle (g_rumble)
+// and check g_audioHaptics instead, allowing standard game motor rumble
+// to be muted in the UI while retaining pure audio-driven haptics.
+bool hapticAudioRumble(uint16_t lowFreq, uint16_t highFreq, uint8_t slot)
 {
-	if (haptic82Blocked(slot) || !hapticLinkUp(slot) || !pcmData ||
-	    len == 0)
+	if (slot >= NSLOT)
 		return false;
 
-	return relayEnqueue(IBEX_CMD_PLAY_AUDIO, pcmData, len, true, slot);
+	{
+		uint32_t l = (uint32_t)lowFreq * RUMBLE_SCALE_PCT / 100,
+			 h = (uint32_t)highFreq * RUMBLE_SCALE_PCT / 100;
+		lowFreq = (l > 0xFFFF) ? 0xFFFF : (uint16_t)l;
+		highFreq = (h > 0xFFFF) ? 0xFFFF : (uint16_t)h;
+	}
+	bool on = lowFreq || highFreq;
+	if (on && !g_audioHaptics)
+		return false;
+	if (on && haptic82Blocked(slot))
+		return false;
+	if (!on && !hapticLinkUp(slot))
+		return false;
+
+	uint16_t intensity = lowFreq > highFreq ? lowFreq : highFreq;
+	uint8_t p[9];
+
+	p[0] = on ? 0x04 : 0x00;
+	p[1] = (uint8_t)(intensity & 0xFF);
+	p[2] = (uint8_t)(intensity >> 8);
+	p[3] = (uint8_t)(lowFreq & 0xFF);
+	p[4] = (uint8_t)(lowFreq >> 8);
+	p[5] = 0;
+	p[6] = (uint8_t)(highFreq & 0xFF);
+	p[7] = (uint8_t)(highFreq >> 8);
+	p[8] = 0;
+
+	bool stopping = !on && g_rumble80On[slot];
+	uint8_t reps = stopping ? RUMBLE_STOP_REPS : 1;
+	bool queued = false;
+	for (uint8_t i = 0; i < reps; i++)
+		if (relayEnqueue(0x80, p, sizeof p, true, slot))
+			queued = true;
+	if (!queued)
+		return false;
+	g_rumble80Ms[slot] = millis();
+	g_rumble80On[slot] = on;
+	return true;
 }
 // Queue a pending test-haptic / stop relay (runs inside the poll cadence -- never at raw loop rate). Test
 // haptics broadcast to all connected slots (slot 0xFF); the stop frame is broadcast too (a stuck latch can

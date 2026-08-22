@@ -621,9 +621,8 @@ function setTab(et){
     const tab=document.createElement("button"); tab.className="slot-tab"; tab.style.cursor="pointer";
     tab.innerHTML='<span>'+def.name+'</span><span class="active-dot" style="display:none;font-size:11px;color:var(--acc)"> ●</span>';
     tab.onclick=()=>setTab(et); bar.appendChild(tab);
-    // panel
     const sec=document.createElement("div"); sec.style.cssText="background:#0e1017;border:1px solid #232a3a;border-radius:8px;padding:12px 14px;display:none";
-    const rec={sec,tab,activeDot:tab.querySelector(".active-dot"),back:[],qam:null,abSwap:null,pad:null,led:null,ledV:null,rumble:null,audioHaptics:null,padStick:[]};
+    const rec={sec,tab,activeDot:tab.querySelector(".active-dot"),back:[],qam:null,abSwap:null,pad:null,led:null,ledV:null,rumble:null,audioHaptics:null,audioGain:null,audioGainV:null,padStick:[]};
     // A/B swap + trackpad haptics + rumble toggles
     const tog=document.createElement("div"); tog.className="row"; tog.style.cssText="display:flex;align-items:center;gap:8px 10px;margin:12px 0;flex-wrap:wrap";
     const abLbl=document.createElement("label"); abLbl.textContent="A/B + X/Y swap"; abLbl.style.cssText="flex:0 0 auto;margin:0"; tog.appendChild(abLbl);
@@ -667,6 +666,18 @@ function setTab(et){
       sl.addEventListener("change",()=>setField(40+et*9+7, +sl.value));
       sec.appendChild(row);
       rec.led=sl; rec.ledV=vspan; }
+    // Audio Haptics gain (DS5 only)
+    if(def.key==="DS5"){
+      const row=document.createElement("div"); row.className="row";
+      const lab=document.createElement("label"); lab.textContent="Audio Haptics Gain"; row.appendChild(lab);
+      const sl=document.createElement("input"); sl.type="range"; sl.min=50; sl.max=250; sl.step=5; row.appendChild(sl);
+      const vspan=document.createElement("span"); vspan.className="val"; row.appendChild(vspan);
+      sl.value=100; vspan.textContent="100%";
+      sl.addEventListener("input",()=>{ vspan.textContent=sl.value+"%"; });
+      sl.addEventListener("change",()=>setField(30, +sl.value));
+      sec.appendChild(row);
+      rec.audioGain=sl; rec.audioGainV=vspan;
+    }
     // trackpad -> joystick mapping (one select per pad)
     for(let pad=0; pad<2; pad++){
       const row=document.createElement("div"); row.className="row";
@@ -1090,6 +1101,13 @@ function applyBlob(p){
         const audOn = (p.length>179)?(p[179]!==0):true;
         rec.audioHaptics.textContent=audOn?"on":"off";
         rec.audioHaptics.classList.toggle("active",audOn);
+      }
+      if(rec.audioGain && p.length>193){
+        const gain = p[193] || 100;
+        if(document.activeElement!==rec.audioGain){
+          rec.audioGain.value = gain;
+          rec.audioGainV.textContent = gain + "%";
+        }
       }
       if(document.activeElement!==rec.led){ rec.led.value=led; rec.ledV.textContent=(led===0)?"Auto":led+"%"; }
       rec.padStick.forEach((sel,pad)=>{
