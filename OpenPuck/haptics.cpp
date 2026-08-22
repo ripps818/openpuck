@@ -348,6 +348,14 @@ bool hapticSteamRumble(uint16_t lowFreq, uint16_t highFreq, uint8_t slot)
 	g_rumble80On[slot] = on;
 	return true;
 }
+bool hapticSendAudioPcm(const uint8_t *pcmData, uint8_t len, uint8_t slot)
+{
+	if (!g_rumble || haptic82Blocked(slot) || !hapticLinkUp(slot) ||
+	    !pcmData || len == 0)
+		return false;
+
+	return relayEnqueue(IBEX_CMD_PLAY_AUDIO, pcmData, len, true, slot);
+}
 // Queue a pending test-haptic / stop relay (runs inside the poll cadence -- never at raw loop rate). Test
 // haptics broadcast to all connected slots (slot 0xFF); the stop frame is broadcast too (a stuck latch can
 // affect any controller, and the haptic-engine clear-re-init is settings-only so it's harmless on healthy

@@ -110,6 +110,8 @@ bool hapticRelaySlotOk(int slot);
 // defaults to 0 for the legacy single-controller callers. Per-slot so each connected controller can have its
 // own active rumble stream when the host presents multiple gamepads (e.g. 4 XInput devices).
 bool hapticSteamRumble(uint16_t lowFreq, uint16_t highFreq, uint8_t slot = 0);
+// queue a 2 kHz µ-law stereo PCM audio frame (0xB6) directly to the trackpad LRAs.
+bool hapticSendAudioPcm(const uint8_t *pcmData, uint8_t len, uint8_t slot = 0);
 
 // queue + flush the pending host/test/stop relay inside the poll cadence (called from rf_link).
 // rfConnFlushRelay's s1 must carry a PID distinct from the GET poll that follows it. g_relayPid
