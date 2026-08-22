@@ -348,10 +348,13 @@ bool hapticSteamRumble(uint16_t lowFreq, uint16_t highFreq, uint8_t slot)
 	g_rumble80On[slot] = on;
 	return true;
 }
+// Audio-driven haptics stream directly to the LRAs and bypass the standard
+// motor rumble toggle (g_rumble), allowing normal rumble to be muted in the UI
+// while retaining pure audio haptics.
 bool hapticSendAudioPcm(const uint8_t *pcmData, uint8_t len, uint8_t slot)
 {
-	if (!g_rumble || haptic82Blocked(slot) || !hapticLinkUp(slot) ||
-	    !pcmData || len == 0)
+	if (haptic82Blocked(slot) || !hapticLinkUp(slot) || !pcmData ||
+	    len == 0)
 		return false;
 
 	return relayEnqueue(IBEX_CMD_PLAY_AUDIO, pcmData, len, true, slot);

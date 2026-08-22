@@ -169,6 +169,8 @@ extern uint8_t
 	g_padHaptics; // 1 = trackpad haptics on (default), 0 = disabled for the active type
 // 1 = host rumble relay on (default), 0 = silenced for the active emulated type
 extern uint8_t g_rumble;
+// 1 = audio-driven haptics on (default), 0 = silenced for DualSense UAC1 audio
+extern uint8_t g_audioHaptics;
 // LED brightness for the active emulated type (0 = no override, 1-100 = brightness %)
 extern uint8_t g_ledBright;
 // Live mirror of g_padStickCfg[g_etype]: {left pad, right pad} -> stick (PS_*).

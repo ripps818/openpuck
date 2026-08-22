@@ -3,6 +3,7 @@
 #include "bonds.h"
 #include "usb_mount.h"
 #include "fault_diag.h"
+#include "config.h"
 #include <Arduino.h>
 #include <string.h>
 
@@ -227,7 +228,7 @@ void ps5AudioTask(void)
 			(AUDIO_FIFO_CAP - s_pcmFifoTail + s_pcmFifoHead);
 
 	// 8 samples per channel = 4 ms of 2 kHz stereo audio
-	if (count >= 8 && s_audioActive) {
+	if (count >= 8 && s_audioActive && g_audioHaptics) {
 		uint8_t p[17];
 		p[0] = 8;
 		for (uint8_t i = 0; i < 8; i++) {
