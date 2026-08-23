@@ -90,6 +90,21 @@
   .rel-row .grow{flex:1}
   .rel-row label{display:flex;align-items:center;gap:6px;color:var(--mut);font-size:12px;cursor:pointer}
   .rel-row input[type=checkbox]{accent-color:var(--bad)}
+  /* one release = a row plus (optionally) its GitHub release notes, collapsed */
+  .rel-item{border-top:1px solid #232a3a}
+  .rel-item:first-child{border-top:0}
+  .rel-item .rel-row{border-top:0}
+  .pill.pre{background:#3a2f14;color:var(--warn)}
+  .rel-notes{margin:0 2px 10px;padding:0}
+  .rel-notes>summary{cursor:pointer;color:var(--acc2);font-size:12px;list-style:none;padding:2px 0}
+  .rel-notes>summary::-webkit-details-marker{display:none}
+  .rel-notes>summary::before{content:"\25B8 ";display:inline-block;transition:transform .1s}
+  .rel-notes[open]>summary::before{content:"\25BE "}
+  .rel-notes .body{white-space:pre-wrap;word-break:break-word;color:var(--fg);font-size:12.5px;
+    background:#151925;border:1px solid #232a3a;border-radius:8px;padding:9px 11px;margin-top:4px;
+    max-height:280px;overflow:auto}
+  .rel-notes .body code{background:#0f131c;border-radius:4px;padding:1px 4px;font-size:12px}
+  .rel-notes .body a{color:var(--acc2)}
   /* firmware-tab gate: when the connected puck's firmware predates panel updates, both update cards go
      inert (pointer-events kills clicks, drops, and the file picker) and the banner explains why */
   .fwupcard.gated{opacity:.45;pointer-events:none;user-select:none}
@@ -164,8 +179,11 @@
         <button data-mode="6" class="modebtn">HID gyro (DS4)</button>
         <button data-mode="9" class="modebtn">PS3 (DualShock 3)</button>
         <button data-mode="10" class="modebtn">Original Xbox</button>
+        <button data-mode="11" class="modebtn">DirectInput (sims)</button>
+        <button data-mode="12" class="modebtn">SInput (SDL native)</button>
       </div>
       <p class="note">Switching reboots the copycat and re-enumerates USB (~2 s). WebUSB works in every mode, including Steam/Lizard with Steam running (Chrome claims the vendor interface; Steam keeps the HID slots). Switch HORIPAD + WebUSB is PC-only. Original Xbox emulates one Microsoft Controller S and uses the Xbox mapping tab; LB/RB become White/Black. It's for a real Original Xbox console — a PC needs a driver for the original Xbox controller to see it as a gamepad.</p>
+      <p class="note"><b>DirectInput</b> is for flight/space sims: every analog input is live at once, split over two joysticks (#1 sticks + triggers + 26 buttons, #2 trackpads + gyro). Trackpad axes hold their last position and re-centre on a pad click. <b>SInput</b> is the open SDL-native protocol — SDL3 / Steam Input read sticks, both analog triggers, gyro, both trackpads and battery from it natively, with rumble back from the host.</p>
       <div class="row"><label>Persist last mode</label>
         <button id="persistMode">off</button>
         <span class="note" style="flex:1">Off (default): every restart / fresh reconnect boots into Steam mode. On: remembers the last mode you selected.</span>
@@ -262,6 +280,21 @@
         <p class="note">Corrected (default) trims the gyro so Switch Pro mode matches a genuine Pro Controller and Steam mode (roll ×0.8, pitch/yaw ×0.9). Legacy sends the raw axes untrimmed — the pre-fix behavior, if you preferred the faster feel or tuned your in-game sensitivity around it.</p>
       </div>
       <p id="swGyroOld" class="note hide">This puck's firmware predates the gyro-mapping setting — update it to configure it.</p>
+    </div>
+
+    <div class="card">
+      <h2>Rumble</h2>
+      <!-- Host-rumble shaping (firmware >= v21). Applies to the translated modes (Xbox / Switch / PlayStation),
+           where the puck decodes the host's rumble packet itself. Steam mode relays Steam's own haptics
+           untouched, so these do nothing there. Older firmware hides the block. -->
+      <div id="rumbleBlock">
+        <div class="row"><label>Style</label><select id="rumbleStyle"></select></div>
+        <div class="row"><label>Strength</label><select id="rumbleScale"></select></div>
+        <div class="row" style="margin:10px 0 0"><button id="rumbleTest">Test rumble</button>
+          <span class="note" style="flex:1">Buzzes every connected controller for half a second at the settings above, so you can compare styles without launching a game.</span></div>
+        <p class="note">Strength is a percentage of the amplitude the game asked for; 200% is the shipped default, so leave it there for stock feel. Style reshapes the two motors before that scale: <strong>mono</strong> drives both at the stronger value, <strong>heavy</strong> and <strong>light</strong> mute one motor each, <strong>punchy</strong> softens weak effects while leaving strong ones alone, and <strong>soft</strong> lifts weak ones so subtle rumble is felt.</p>
+      </div>
+      <p id="rumbleOld" class="note hide">This puck's firmware predates the rumble-shaping settings — update it to configure them.</p>
     </div>
 
     <div class="card wide">
@@ -386,7 +419,7 @@
 </div>
 
 <script>
-const MODE_NAMES = ["Steam (puck)","Xbox 360","Switch (HORIPAD)","Lizard (always)","Switch Pro + gyro","PS5 DualSense","HID gyro (DS4)","PS5 (game/clean)","DS4 (game/clean)","PS3 (DualShock 3)","Original Xbox"];
+const MODE_NAMES = ["Steam (puck)","Xbox 360","Switch (HORIPAD)","Lizard (always)","Switch Pro + gyro","PS5 DualSense","HID gyro (DS4)","PS5 (game/clean)","DS4 (game/clean)","PS3 (DualShock 3)","Original Xbox","DirectInput (sims)","SInput (SDL native)"];
 const CHORD_FIELD = [17, 18, 19];          // back4 + B/X/Y
 const CHORD_DPAD_FIELD = [34, 35, 36, 37]; // back4 + D-pad left/up/right/down (firmware protocol >= 18)
 const CHORD_DPAD_DEF = [9, 8, 7, 2];       // firmware defaults: PS3, DS4 game, PS5 game, Switch HORIPAD
@@ -706,6 +739,18 @@ for(const sel of document.querySelectorAll("select.chordD")){
   for(const [lbl,v] of [["Corrected (default)",0],["Legacy (untrimmed)",1]]){
     const o=document.createElement("option"); o.value=v; o.textContent=lbl; sel.appendChild(o); }
 }
+// Rumble style names track RUMBLE_STYLE_* in haptics.h; the value IS the wire value for field 39.
+const RUMBLE_STYLES=[["Normal (default)",0],["Mono (both motors)",1],["Heavy (low only)",2],["Light (high only)",3],["Swapped motors",4],["Punchy (squared)",5],["Soft (boost weak)",6]];
+// Strength is sent as percent/2 (field 22), so every value here must be even.
+const RUMBLE_SCALES=[50,75,100,150,200,250,300,400,500];
+{ const sel=document.getElementById("rumbleStyle");
+  for(const [lbl,v] of RUMBLE_STYLES){
+    const o=document.createElement("option"); o.value=v; o.textContent=lbl; sel.appendChild(o); }
+}
+{ const sel=document.getElementById("rumbleScale");
+  for(const v of RUMBLE_SCALES){
+    const o=document.createElement("option"); o.value=v; o.textContent=v+"%"+(v===200?" (default)":""); sel.appendChild(o); }
+}
 
 // ---- per-slot tab state ----
 let g_activeSlot = 0;
@@ -748,7 +793,9 @@ function renderSlotTabs(bondedCount) {
   updateSlotDisplay(g_activeSlot);
 }
 
-const USB_FILTERS=[{vendorId:0x28DE},{vendorId:0x045E},{vendorId:0x057E},{vendorId:0x0F0D},{vendorId:0x054C}];
+// Every VID an OpenPuck can enumerate under — the picker/auto-reconnect can only see a device whose VID is
+// listed here, so a new mode with a new identity MUST be added (1209 = DirectInput, 2E8A = SInput).
+const USB_FILTERS=[{vendorId:0x28DE},{vendorId:0x045E},{vendorId:0x057E},{vendorId:0x0F0D},{vendorId:0x054C},{vendorId:0x1209},{vendorId:0x2E8A}];
 // Acquire+set up an already-chosen USBDevice (shared by the manual picker and the no-picker auto-reconnect).
 async function openDevice(d){
   try{
@@ -902,6 +949,9 @@ function applyBlob(p){
   // carry rumble strength / Switch report rate / Switch gyro scale, all removed settings.
   const gyroMapCap=(p[0]>=19 && p.length>184);
   const swGyroLegacy=gyroMapCap?p[184]:0;
+  // Rumble shaping (protocol v21): firmware p[53]/p[195] = payload p[51]/p[193]. Strength is percent/2.
+  const rumbleCap=(p[0]>=21 && p.length>193);
+  const rumbleScale=rumbleCap?p[51]*2:200, rumbleStyle=rumbleCap?p[193]:0;
   const rssi=(p.length>37?p[37]:0);
 
   // per-slot link status (protocol v8, p.length >= 73)
@@ -1130,6 +1180,14 @@ function applyBlob(p){
     $("#swGyroMapBlock").classList.toggle("hide", !gyroMapCap);
     $("#swGyroOld").classList.toggle("hide", gyroMapCap);
     if(gyroMapCap && document.activeElement!==sel) sel.value=swGyroLegacy; }
+  { const sty=$("#rumbleStyle"), scl=$("#rumbleScale");
+    $("#rumbleBlock").classList.toggle("hide", !rumbleCap);
+    $("#rumbleOld").classList.toggle("hide", rumbleCap);
+    if(rumbleCap){
+      if(document.activeElement!==sty) sty.value=rumbleStyle;
+      // a strength set from the console can land between the presets -- show the nearest one
+      if(document.activeElement!==scl) scl.value=RUMBLE_SCALES.reduce((a,b)=>Math.abs(b-rumbleScale)<Math.abs(a-rumbleScale)?b:a);
+    } }
   for(const sel of document.querySelectorAll("select.chord")){ if(document.activeElement!==sel) sel.value=chord[+sel.dataset.i]; }
   $("#dpadChords").classList.toggle("hide", !dpadCap);
   $("#dpadOld").classList.toggle("hide", dpadCap);
@@ -2085,6 +2143,21 @@ function flashRelease(rel,factory){
     +"automatic reboot. A failed or interrupted transfer leaves the current firmware untouched.",
     ()=>downloadAsset(asset));
 }
+// Release notes come straight from GitHub (rel.body: markdown written by a human in the release UI).
+// Render a deliberately small subset -- headings, bullets, `code`, **bold**, links, and bare/markdown URLs
+// -- from ESCAPED text, so nothing in a release body can inject markup into the panel.
+function relNotesHtml(md){
+  const esc=t=>t.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+  return esc((md||"").replace(/\r\n/g,"\n").trim())
+    .replace(/`([^`\n]+)`/g,(m,c)=>"<code>"+c+"</code>")
+    .replace(/\*\*([^*\n]+)\*\*/g,(m,b)=>"<b>"+b+"</b>")
+    .replace(/^(#{1,6})\s+(.+)$/gm,(m,h,t)=>"<b>"+t+"</b>")
+    .replace(/^\s*[-*]\s+/gm,"• ")
+    .replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g,
+             (m,t,u)=>'<a href="'+u+'" target="_blank" rel="noopener">'+t+"</a>")
+    .replace(/(^|[\s(])(https?:\/\/[^\s<)]+)/g,
+             (m,pre,u)=>pre+'<a href="'+u+'" target="_blank" rel="noopener">'+u+"</a>");
+}
 function renderReleases(){
   const list=$("#relList");
   list.textContent="";
@@ -2093,10 +2166,11 @@ function renderReleases(){
     const std=relAsset(rel,false), fac=relAsset(rel,true);
     if(!std && !fac) continue;
     shown++;
+    const item=document.createElement("div"); item.className="rel-item";
     const row=document.createElement("div"); row.className="rel-row";
     const ver=document.createElement("span"); ver.className="ver"; ver.textContent=rel.tag_name;
     const date=document.createElement("span"); date.className="date";
-    date.textContent=(rel.published_at||"").slice(0,10)+(rel.prerelease?" · pre":"");
+    date.textContent=(rel.published_at||"").slice(0,10);
     const name=document.createElement("span"); name.className="grow note"; name.style.margin="0";
     name.textContent=rel.name && rel.name!==rel.tag_name ? rel.name : "";
     const lab=document.createElement("label");
@@ -2107,6 +2181,15 @@ function renderReleases(){
     const btn=document.createElement("button"); btn.textContent="Flash "+rel.tag_name;
     btn.onclick=()=>flashRelease(rel,cb.checked);
     row.append(ver,date,name);
+    // Pre-release marking is read live from the GitHub API on every refresh, so un-marking a release on
+    // GitHub makes the badge disappear here as soon as the list is reloaded.
+    if(rel.prerelease){
+      const pre=document.createElement("span"); pre.className="pill pre";
+      pre.textContent="pre-release";
+      pre.title="Marked as a pre-release on GitHub: a test build, not the recommended version. "
+        +"It flashes like any other release, and the update notice never points at it.";
+      row.appendChild(pre);
+    }
     if(relPanelUpdatable(rel)===false){
       const pill=document.createElement("span"); pill.className="pill dn";
       pill.textContent="no panel updates";
@@ -2115,7 +2198,16 @@ function renderReleases(){
       row.appendChild(pill);
     }
     row.append(lab,btn);
-    list.appendChild(row);
+    item.appendChild(row);
+    if((rel.body||"").trim()){
+      const det=document.createElement("details"); det.className="rel-notes";
+      const sum=document.createElement("summary"); sum.textContent="release notes";
+      const body=document.createElement("div"); body.className="body";
+      body.innerHTML=relNotesHtml(rel.body);
+      det.append(sum,body);
+      item.appendChild(det);
+    }
+    list.appendChild(item);
   }
   if(!shown) list.textContent="no releases with OpenPuck .uf2 assets found";
 }
@@ -2125,8 +2217,10 @@ async function loadReleases(force){
   list.textContent="loading…";
   try{
     const [r,mr]=await Promise.all([
+      // no-store: the pre-release flag and the notes are edited on GitHub after the fact, and a cached
+      // list would keep showing the stale state after a refresh.
       fetch("https://api.github.com/repos/"+REL_REPO+"/releases?per_page=15",
-            {headers:{Accept:"application/vnd.github+json"}}),
+            {cache:"no-store",headers:{Accept:"application/vnd.github+json"}}),
       fetch("https://raw.githubusercontent.com/"+REL_REPO+"/firmware/manifest.json",{cache:"no-store"})
         .catch(()=>null),
     ]);
@@ -2239,6 +2333,9 @@ for(const id of ["mDiv","mFric"]){
   $("#"+id).addEventListener("change", ()=>setField(field, +$("#"+id).value));
 }
 // per-type back/QAM/A-B-swap/haptics handlers are wired in buildTypeCfgs()
+$("#rumbleTest").onclick=async()=>{ if(dev){ await send([0x16]); log("test rumble sent (style "+$("#rumbleStyle").value+", "+$("#rumbleScale").value+"%)"); } };
+$("#rumbleStyle").addEventListener("change", ()=>setField(39, +$("#rumbleStyle").value));
+$("#rumbleScale").addEventListener("change", ()=>setField(22, (+$("#rumbleScale").value)/2));
 $("#swGyroMap").addEventListener("change", ()=>setField(38, +$("#swGyroMap").value));
 for(const sel of document.querySelectorAll("select.chord")){
   sel.addEventListener("change", ()=>setField(CHORD_FIELD[+sel.dataset.i], +sel.value));

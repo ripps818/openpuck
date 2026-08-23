@@ -795,6 +795,9 @@ void XboxOgController::task()
 void XboxOgController::usbIdentity()
 {
 	USBDevice.setID(0x045E, 0x0289);
+	// A real Controller S is a full-speed USB 1.1 device (bcdUSB 1.10,
+	// bcdDevice 1.21). Set it explicitly.
+	USBDevice.setVersion(0x0110);
 	USBDevice.setDeviceVersion(0x0121);
 	// A real Controller S sends no string descriptors (iManufacturer /
 	// iProduct / iSerial = 0); hosts name it from usb.ids. TinyUSB pins
