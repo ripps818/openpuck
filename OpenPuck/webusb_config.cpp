@@ -94,13 +94,13 @@ static bool boardCommand(uint8_t op)
 //                [v12: relayps(lo,hi)][clkLfSrc][clkHfSrc][usPerMs(lo,hi)][hangStage][curStage][stallMs/40][ringFault(lo,hi)][hangPC u32][hangLR u32][usbdStackFree(lo,hi)][loopStackFree(lo,hi)]
 //                [v13: per-slot link stats, 4x9B from p[145]: {pollsps u16, f1ps u16, newps u16, crc/s u8,
 //                 noRx/s u8, relay/s u8} -- each controller's own rates (the v4 aggregates are their sums)]
-//                [v14/v17: p[181] landAll87 (verbatim-0x87-relay experiment toggle)]
+//                [v14/v17: p[181] audioHaptics (DualSense audio-driven haptics toggle: 0=off, 1=on)]
 //                [v18: p[182..185] chordDpad left/up/right/down (back4+D-pad mode assignments)]
 //                [v19: p[186] swGyroLegacy (Switch Pro gyro mapping: 0 = corrected, 1 = legacy/pre-#189)]
 //                [v20: p[187..194] per-type trackpad->stick map, 4x2B {left pad, right pad} (PS_OFF/LEFT/RIGHT)]
 //                [v21: p[53] rumble strength as PERCENT/2 (field 22, revived); p[195] rumble style
-//                 (field 39, RUMBLE_STYLE_* in haptics.h)]
-#define WB_PAYLEN 194
+//                 (field 39, RUMBLE_STYLE_* in haptics.h); p[196] audioHapticGain (field 30)]
+#define WB_PAYLEN 195
 // The blob send is drop-on-full (never blocks loop), so the vendor TX FIFO MUST be able to hold a whole blob
 // -- otherwise tud_vendor_write_available() never reaches the frame size and EVERY frame is dropped (blank
 // panel / stale mappings). The Makefile sets -DCFG_TUD_VENDOR_TX_BUFSIZE=256; guard it here so a build without
@@ -301,8 +301,8 @@ static void webusbSendBlob()
 		q[7] = g_slotNoRxps[s];
 		q[8] = g_slotRelayps[s];
 	}
-	// v14/v17: verbatim-0x87-relay experiment toggle (panel reflects + toggles it)
-	p[181] = 0; // used to be g_landAll87
+	// p[181]: DualSense audio-driven haptics toggle (panel reflects + toggles it via field 31)
+	p[181] = g_audioHaptics;
 	// v18: back4+D-pad mode assignments (panel renders these as selects next to the B/X/Y ones)
 	p[182] = g_chordDpad[CHD_LEFT];
 	p[183] = g_chordDpad[CHD_UP];
@@ -312,6 +312,8 @@ static void webusbSendBlob()
 	p[186] = g_swGyroLegacy;
 	// v21: host-rumble style (RUMBLE_STYLE_* -- see haptics.h)
 	p[195] = g_rumbleStyle;
+	// DualSense audio haptic gain as PERCENT/2 (10-500%, default 200)
+	p[196] = (uint8_t)(g_audioHapticGain / 2);
 	// v20: per-type trackpad->stick mapping, {left pad, right pad} per emulated type
 	for (int et = 0; et < ET_COUNT; et++) {
 		p[187 + et * 2] = g_padStickCfg[et][0];
@@ -1081,6 +1083,21 @@ void webusbPoll()
 					persist = false;
 					break;
 
+				// DualSense audio-driven haptics toggle (0 = off, 1 = on)
+				case 31:
+					g_audioHaptics = v ? 1 : 0;
+					break;
+
+				// DualSense audio-driven haptic gain (percent / 2, 10-500%)
+				case 30: {
+					uint16_t pct = (uint16_t)v * 2;
+					if (pct < 10)
+						pct = 10;
+					else if (pct > 500)
+						pct = 500;
+					g_audioHapticGain = pct;
+					break;
+				}
 					// (fields 23/24, Switch Pro report rate + gyro scale, removed -- rate is
 					//  fixed at full and the gyro mapping is now field 38)
 					// (field 25, poll RX window, removed -- g_rxWin is now FIXED/not configurable)

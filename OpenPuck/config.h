@@ -68,6 +68,12 @@ static inline bool modeIsCleanPS(uint8_t m)
 	return m == MODE_PS5_GAME || m == MODE_DS4_GAME || m == MODE_PS3;
 }
 
+static inline bool modeIsPS(uint8_t m)
+{
+	return m == MODE_PS5 || m == MODE_PS5_GAME || m == MODE_HIDGYRO ||
+	       m == MODE_DS4_GAME || m == MODE_PS3;
+}
+
 static inline bool modeIsPuck(uint8_t m)
 {
 	return m == MODE_STEAM || m == MODE_LIZARD;
@@ -183,6 +189,10 @@ extern uint8_t
 	g_padHaptics; // 1 = trackpad haptics on (default), 0 = disabled for the active type
 // 1 = host rumble relay on (default), 0 = silenced for the active emulated type
 extern uint8_t g_rumble;
+// 1 = audio-driven haptics on (default), 0 = silenced for DualSense UAC1 audio
+extern uint8_t g_audioHaptics;
+// Audio-driven haptic gain (10-500%, default 200)
+extern uint16_t g_audioHapticGain;
 // LED brightness for the active emulated type (0 = no override, 1-100 = brightness %)
 extern uint8_t g_ledBright;
 // Live mirror of g_padStickCfg[g_etype]: {left pad, right pad} -> stick (PS_*).

@@ -49,6 +49,8 @@ uint8_t g_back[4] = { 5, 6, 7, 8 };
 uint8_t g_qamMap = 0;
 uint8_t g_padHaptics = 1;
 uint8_t g_rumble = 1;
+uint8_t g_audioHaptics = 1;
+uint16_t g_audioHapticGain = 200;
 uint8_t g_ledBright = 0;
 
 void applyActiveType()
@@ -109,6 +111,8 @@ struct Cfg {
 	// autonomous controller power-off on host sleep (see haptics.h g_suspendOff). 0/1; 0xFF (short
 	// pre-tail file) -> compiled default (on)
 	uint8_t suspendOff;
+	// DualSense audio haptic gain pct/2 (10..500%, default 200); 0xFF -> default 200
+	uint8_t audioGain2;
 }; // rsvd0 = ex-padSmooth, now the one-shot debug-CDC arm
 
 // Shortest cfg.bin we still accept: the layout as of CFG_MAGIC 0xCF, i.e. everything before the appended tail.
@@ -130,13 +134,14 @@ void saveCfg()
 		  (uint8_t)(g_rumbleScale / 2), // host-rumble strength, pct/2
 		  (uint8_t)(g_rxWin / 10),
 		  g_lizKeep,
-		  0, //rsvd2, used to be g_landAll87
+		  g_audioHaptics, // rsvd2: audio haptics enable
 		  {},
 		  { g_chordDpad[0], g_chordDpad[1], g_chordDpad[2],
 		    g_chordDpad[3] },
 		  {},
 		  g_rumbleStyle,
-		  g_suspendOff };
+		  g_suspendOff,
+		  (uint8_t)(g_audioHapticGain / 2) };
 	for (int i = 0; i < ET_COUNT; i++) {
 		c.type[i] = g_type[i];
 		c.padStick[i][0] = g_padStickCfg[i][0];
@@ -215,6 +220,8 @@ void loadCfg()
 			// through -> keep the on default)
 			if (c.lizKeep <= 1)
 				g_lizKeep = c.lizKeep;
+			if (c.rsvd2 <= 1)
+				g_audioHaptics = c.rsvd2;
 			// host-rumble strength (pct/2; 0 = never set, or a cfg.bin from before this
 			// field was revived -> keep the RUMBLE_SCALE_PCT default)
 			if (c.rumbScale2) {
@@ -231,6 +238,14 @@ void loadCfg()
 			// suspend power-off enable (0xFF = a cfg.bin predating this tail field -> keep the on default)
 			if (c.suspendOff <= 1)
 				g_suspendOff = c.suspendOff;
+			if (c.audioGain2 && c.audioGain2 != 0xFF) {
+				uint16_t pct = (uint16_t)c.audioGain2 * 2;
+				if (pct < 10)
+					pct = 10;
+				else if (pct > 500)
+					pct = 500;
+				g_audioHapticGain = pct;
+			}
 			// The poll RX window is now FIXED (g_rxWin is const) -- any persisted rxWin10 is ignored.
 		}
 		f.close();

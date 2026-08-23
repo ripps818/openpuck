@@ -4,8 +4,9 @@
 
 void psNeutralCalib(uint8_t *buf)
 {
-	// Payload offsets = kernel buf[] index minus 1. buf[0..5] gyro bias stays zero (caller memset). Symmetric
-	// ranges -> non-zero divisors on the host.
+	// Payload offsets = kernel buf[] index minus 1. buf[0..5] gyro bias stays zero (caller memset).
+	// speed_plus and speed_minus must both be positive (+2844) so that (speed_plus + speed_minus) != 0
+	// in SDL2/Steam gyro scale calculations, while pitch/yaw/roll minus fields remain negative for delta.
 	le16(buf + 6, 2844);
 	le16(buf + 8, -2844); // gyro pitch +/-
 	le16(buf + 10, 2844);
