@@ -945,6 +945,11 @@ static void rfConnStep()
 
 	unsigned long nowMs = millis();
 
+	// Prioritize telemetry over haptics: if the previous poll cycle for this slot did
+	// not get a reply (packet drop / contention), skip the relay flush and go straight
+	// to the E3 GET poll so telemetry (especially gyro) never starves under RF load.
+	static bool lastPollReplied[NSLOT] = { true, true, true, true };
+
 	// Inline poll helper; emits E7 re-assert (every 32 polls, bounded reply window so a
 	// missed F3 doesn't burn the whole slot budget), queues haptics, flushes relay, sends E3 GET.
 	auto doPoll = [&](int k) {
@@ -955,8 +960,8 @@ static void rfConnStep()
 			uint8_t pa[3] = { 0xE7, 0x00, g_e7b };
 			rfConnTx(ch, 0x01, pa, 3, 600);
 		}
-		rfConnQueueHapticRelay();
-		{
+		if (lastPollReplied[k]) {
+			rfConnQueueHapticRelay();
 			uint8_t rs1 =
 				(uint8_t)((((g_relayPid[k]++) & 3) << 1) | 1);
 			if (rfConnFlushRelay(ch, rs1))
@@ -978,6 +983,7 @@ static void rfConnStep()
 			uint8_t p[1] = { 0xE3 };
 			rx = rfConnTx(ch, s1, p, 1);
 		}
+		lastPollReplied[k] = (rx > 0);
 		if (rx)
 			g_chF1[0]++;
 		g_stPoll[k]++; // one true poll cycle for this slot

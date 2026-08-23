@@ -201,7 +201,7 @@ void ps5AudioTask(void)
 	// silent, preserving standard HID Report 0x02 game motor rumble.
 	if (isPlaying || s_wasPlaying) {
 		if ((l != s_lastL || r != s_lastR) &&
-		    ((uint32_t)(now - s_lastSendMs) >= 8u ||
+		    ((uint32_t)(now - s_lastSendMs) >= 20u ||
 		     (!isPlaying && s_wasPlaying))) {
 			s_lastL = l;
 			s_lastR = r;
