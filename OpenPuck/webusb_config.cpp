@@ -99,8 +99,9 @@ static bool boardCommand(uint8_t op)
 //                [v19: p[186] swGyroLegacy (Switch Pro gyro mapping: 0 = corrected, 1 = legacy/pre-#189)]
 //                [v20: p[187..194] per-type trackpad->stick map, 4x2B {left pad, right pad} (PS_OFF/LEFT/RIGHT)]
 //                [v21: p[53] rumble strength as PERCENT/2 (field 22, revived); p[195] rumble style
-//                 (field 39, RUMBLE_STYLE_* in haptics.h)]
-#define WB_PAYLEN 194
+//                 (field 39, RUMBLE_STYLE_* in haptics.h); p[196] audioHapticGain (field 30);
+//                 p[197] audioHaptics (field 31, DualSense audio-driven haptics: 0=off, 1=on)]
+#define WB_PAYLEN 196
 // The blob send is drop-on-full (never blocks loop), so the vendor TX FIFO MUST be able to hold a whole blob
 // -- otherwise tud_vendor_write_available() never reaches the frame size and EVERY frame is dropped (blank
 // panel / stale mappings). The Makefile sets -DCFG_TUD_VENDOR_TX_BUFSIZE=256; guard it here so a build without
@@ -330,6 +331,9 @@ static void webusbSendBlob()
 	}
 	// v21: host-rumble style (RUMBLE_STYLE_* -- see haptics.h)
 	p[195] = g_rumbleStyle;
+	// DualSense audio haptic gain as PERCENT/2 (10-500%, default 200)
+	p[196] = (uint8_t)(g_audioHapticGain / 2);
+	p[197] = g_audioHaptics;
 	// CRITICAL: usb_web.write() SPINS (`while (remain && _connected) yield();`) until the IN FIFO drains or the
 	// panel disconnects. If the panel holds the WebUSB interface open but stops reading its IN endpoint -- a
 	// backgrounded tab, or the host briefly not servicing transferIn under load -- the FIFO never empties and
@@ -1094,6 +1098,21 @@ void webusbPoll()
 					persist = false;
 					break;
 
+				// DualSense audio-driven haptics toggle (0 = off, 1 = on)
+				case 31:
+					g_audioHaptics = v ? 1 : 0;
+					break;
+
+				// DualSense audio-driven haptic gain (percent / 2, 10-500%)
+				case 30: {
+					uint16_t pct = (uint16_t)v * 2;
+					if (pct < 10)
+						pct = 10;
+					else if (pct > 500)
+						pct = 500;
+					g_audioHapticGain = pct;
+					break;
+				}
 					// (fields 23/24, Switch Pro report rate + gyro scale, removed -- rate is
 					//  fixed at full and the gyro mapping is now field 38)
 					// (field 25, poll RX window, removed -- g_rxWin is now FIXED/not configurable)
