@@ -5,7 +5,8 @@
 void psNeutralCalib(uint8_t *buf)
 {
 	// Payload offsets = kernel buf[] index minus 1. buf[0..5] gyro bias stays zero (caller memset).
-	// plus - minus denominator in hid-playstation requires minus fields to be negative.
+	// speed_plus and speed_minus must both be positive (+2844) so that (speed_plus + speed_minus) != 0
+	// in SDL2/Steam gyro scale calculations, while pitch/yaw/roll minus fields remain negative for delta.
 	le16(buf + 6, 2844);
 	le16(buf + 8, -2844); // gyro pitch +/-
 	le16(buf + 10, 2844);
@@ -13,7 +14,7 @@ void psNeutralCalib(uint8_t *buf)
 	le16(buf + 14, 2844);
 	le16(buf + 16, -2844); // gyro roll +/-
 	le16(buf + 18, 2844);
-	le16(buf + 20, -2844); // gyro speed +/-
+	le16(buf + 20, 2844); // gyro speed +/- (sum != 0)
 	le16(buf + 22, 8192);
 	le16(buf + 24, -8192); // accel X +/-
 	le16(buf + 26, 8192);

@@ -668,7 +668,7 @@ function setTab(et){
       const audLbl=document.createElement("label"); audLbl.textContent="Audio Haptics"; audLbl.style.cssText="flex:0 0 auto;margin:0 0 0 6px"; tog.appendChild(audLbl);
       const aud=document.createElement("button"); aud.textContent="on"; tog.appendChild(aud);
       rec.audioHaptics=aud;
-      aud.onclick=()=>{ const on=aud.classList.contains("active"); setField(39, on?0:1); };
+      aud.onclick=()=>{ const on=aud.classList.contains("active"); setField(31, on?0:1); };
     }
     sec.appendChild(tog);
     rec.abSwap=ab; rec.pad=pad; rec.rumble=rumble;
@@ -703,11 +703,11 @@ function setTab(et){
     if(def.key==="DS5"){
       const row=document.createElement("div"); row.className="row";
       const lab=document.createElement("label"); lab.textContent="Audio Haptics Gain"; row.appendChild(lab);
-      const sl=document.createElement("input"); sl.type="range"; sl.min=50; sl.max=250; sl.step=5; row.appendChild(sl);
+      const sl=document.createElement("input"); sl.type="range"; sl.min=10; sl.max=500; sl.step=10; row.appendChild(sl);
       const vspan=document.createElement("span"); vspan.className="val"; row.appendChild(vspan);
-      sl.value=100; vspan.textContent="100%";
+      sl.value=200; vspan.textContent="200%";
       sl.addEventListener("input",()=>{ vspan.textContent=sl.value+"%"; });
-      sl.addEventListener("change",()=>setField(30, +sl.value));
+      sl.addEventListener("change",()=>setField(30, (+sl.value)/2));
       sec.appendChild(row);
       rec.audioGain=sl; rec.audioGainV=vspan;
     }
@@ -1152,8 +1152,8 @@ function applyBlob(p){
         rec.audioHaptics.textContent=audOn?"on":"off";
         rec.audioHaptics.classList.toggle("active",audOn);
       }
-      if(rec.audioGain && p.length>193){
-        const gain = p[193] || 100;
+      if(rec.audioGain && p.length>194){
+        const gain = (p[194]>0)?(p[194]*2):200;
         if(document.activeElement!==rec.audioGain){
           rec.audioGain.value = gain;
           rec.audioGainV.textContent = gain + "%";

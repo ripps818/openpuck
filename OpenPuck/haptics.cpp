@@ -473,8 +473,8 @@ bool hapticAudioRumble(uint16_t lowFreq, uint16_t highFreq, uint8_t slot)
 		return false;
 
 	if (lowFreq || highFreq) {
-		uint32_t l = (uint32_t)lowFreq * RUMBLE_SCALE_PCT / 100,
-			 h = (uint32_t)highFreq * RUMBLE_SCALE_PCT / 100;
+		uint32_t l = (uint32_t)lowFreq * g_audioHapticGain / 100,
+			 h = (uint32_t)highFreq * g_audioHapticGain / 100;
 		lowFreq = (l > 0xFFFF) ? 0xFFFF : (uint16_t)l;
 		highFreq = (h > 0xFFFF) ? 0xFFFF : (uint16_t)h;
 	}
@@ -791,10 +791,13 @@ void hapticTask()
 	if (g_lizKeep) {
 		static unsigned long lastKeep[NSLOT] = { 0 };
 		static bool landedAuto[NSLOT] = { false };
+		static bool landedImu[NSLOT] = { false };
 		static const uint8_t DATA_LIZARD_OFF[3] = { SETTING_LIZARD_MODE,
 							    0x00, 0x00 };
 		static const uint8_t DATA_LIZARD_ON[3] = { SETTING_LIZARD_MODE,
 							   0x01, 0x00 };
+		static const uint8_t DATA_IMU_ON[3] = { SETTING_IMU_MODE, 0x07,
+							0x00 };
 
 		if (modeIsPuck(g_usbMode)) {
 			// We're in puck mode. Leave the haptics to Steam.
@@ -805,11 +808,18 @@ void hapticTask()
 		bool wantAuto = (g_padHaptics != 0);
 		for (int s = 0; s < NSLOT; s++) {
 			if (!g_slot[s].used || !hapticLinkUp(s)) {
-				// re-land id9 on the next (re)connect: a fresh controller defaults to
+				// re-land settings on the next (re)connect: a fresh controller defaults to
 				// autonomous, but one carrying our previous session's id9 does not
 				landedAuto[s] = false;
+				landedImu[s] = false;
 				lastKeep[s] = 0;
 				continue;
+			}
+			if (!landedImu[s]) {
+				landedImu[s] = true;
+				relayEnqueue(IBEX_CMD_SET_SETTINGS_VALUES,
+					     DATA_IMU_ON, sizeof DATA_IMU_ON,
+					     false, (uint8_t)s);
 			}
 			if (wantAuto) {
 				if (!landedAuto[s]) {

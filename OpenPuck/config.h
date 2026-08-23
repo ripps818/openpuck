@@ -189,8 +189,8 @@ extern uint8_t
 extern uint8_t g_rumble;
 // 1 = audio-driven haptics on (default), 0 = silenced for DualSense UAC1 audio
 extern uint8_t g_audioHaptics;
-// Audio-driven haptic gain (50-250%, default 100)
-extern uint8_t g_audioHapticGain;
+// Audio-driven haptic gain (10-500%, default 200)
+extern uint16_t g_audioHapticGain;
 // LED brightness for the active emulated type (0 = no override, 1-100 = brightness %)
 extern uint8_t g_ledBright;
 // Live mirror of g_padStickCfg[g_etype]: {left pad, right pad} -> stick (PS_*).

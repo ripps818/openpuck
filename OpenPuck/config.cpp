@@ -51,7 +51,7 @@ uint8_t g_qamMap = 0;
 uint8_t g_padHaptics = 1;
 uint8_t g_rumble = 1;
 uint8_t g_audioHaptics = 1;
-uint8_t g_audioHapticGain = 100;
+uint16_t g_audioHapticGain = 200;
 uint8_t g_ledBright = 0;
 
 void applyActiveType()
@@ -109,6 +109,8 @@ struct Cfg {
 	uint8_t padStick[ET_COUNT][2];
 	// RUMBLE_STYLE_*; 0xFF (short pre-tail file) -> compiled default
 	uint8_t rumbleStyle;
+	// DualSense audio haptic gain pct/2 (10..500%, default 200); 0xFF -> default 200
+	uint8_t audioGain2;
 }; // rsvd0 = ex-padSmooth, now the one-shot debug-CDC arm
 
 // Shortest cfg.bin we still accept: the layout as of CFG_MAGIC 0xCF, i.e. everything before the appended tail.
@@ -135,7 +137,8 @@ void saveCfg()
 		  { g_chordDpad[0], g_chordDpad[1], g_chordDpad[2],
 		    g_chordDpad[3] },
 		  {},
-		  g_rumbleStyle };
+		  g_rumbleStyle,
+		  (uint8_t)(g_audioHapticGain / 2) };
 	for (int i = 0; i < ET_COUNT; i++) {
 		c.type[i] = g_type[i];
 		c.padStick[i][0] = g_padStickCfg[i][0];
@@ -229,6 +232,14 @@ void loadCfg()
 			// host-rumble style (0xFF = short pre-tail file -> keep the default)
 			if (c.rumbleStyle <= RUMBLE_STYLE_MAX)
 				g_rumbleStyle = c.rumbleStyle;
+			if (c.audioGain2 && c.audioGain2 != 0xFF) {
+				uint16_t pct = (uint16_t)c.audioGain2 * 2;
+				if (pct < 10)
+					pct = 10;
+				else if (pct > 500)
+					pct = 500;
+				g_audioHapticGain = pct;
+			}
 			// The poll RX window is now FIXED (g_rxWin is const) -- any persisted rxWin10 is ignored.
 		}
 		f.close();

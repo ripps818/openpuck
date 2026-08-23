@@ -149,12 +149,11 @@ static inline uint16_t hapticAmpScale(int32_t peak)
 	if (peak > 32767)
 		peak = 32767;
 
-	// Perceptual dynamic-range curve: sqrt(peak / 32767) * 65535 * (gain / 100)
+	// Perceptual dynamic-range curve: sqrt(peak / 32767) * 65535
 	// Boosts mid-level haptics (footsteps, spell effects, impacts) to feel punchy and crisp.
 	float norm = (float)peak / 32767.0f;
 	float curved = sqrtf(norm);
-	float gainFactor = (float)g_audioHapticGain / 100.0f;
-	uint32_t val = (uint32_t)(curved * 65535.0f * gainFactor);
+	uint32_t val = (uint32_t)(curved * 65535.0f);
 	return (val > 65535u) ? 65535u : (uint16_t)val;
 }
 
