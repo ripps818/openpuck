@@ -164,12 +164,7 @@ static void ps5SetCommon(uint8_t slot, uint8_t rid, hid_report_type_t type,
 		id = b[0];
 		p = b + 1;
 		pn = (uint16_t)(n - 1);
-	} else if (rid == 0x02 && b[0] == 0x02 && n >= 5) {
-		id = rid;
-		p = b + 1;
-		pn = (uint16_t)(n - 1);
-	} // some paths leave report id in b
-	else {
+	} else {
 		id = rid;
 		p = b;
 		pn = n;
