@@ -675,7 +675,6 @@ void hapticReinit(uint8_t slot)
 
 	// clang-format off
 	static const uint8_t haptic_reset_data_1[] = { 
-			SETTING_IMU_MODE, 0x00, 0x00, 
 			SETTING_LEFT_TRACKPAD_MODE, 0x07, 0x00, 
 			SETTING_RIGHT_TRACKPAD_MODE, 0x07, 0x00, 
 			SETTING_WIRELESS_PACKET_VERSION, 0x02, 0x00, 

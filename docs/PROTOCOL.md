@@ -333,8 +333,11 @@ does a `detach -> rebuild -> attach` so the host re-reads the descriptor cleanly
   **connected slot only** (the slot gate is what stops a haptic aimed at another of the four exposed
   slots from buzzing the single controller). The 63-byte settings/config reports `0x87`/`0x88`/`0x89`
   are not haptics and are not pushed on this path (`0x87` lizard-off reaches the controller via the
-  feature `0x01` passthrough). Restricting this to `0x82` alone silently dropped the ping/grip/test
-  haptics, which use other report IDs.
+  feature `0x01` passthrough). Each `0x87` payload is a sequence of `[setting][value u16 LE]` tuples;
+  OpenPuck removes setting `0x30` (`IMU_MODE`) and any incomplete trailing tuple before relaying it.
+  Steam writes IMU mode for its native puck path, but landing that write disables the controller's RF
+  motion stream, which every gyro-capable emulated mode still needs. Restricting haptics to `0x82`
+  alone silently dropped the ping/grip/test haptics, which use other report IDs.
 
 #### ⚠️ Two different `0x8x` id spaces — never share a rule between them
 

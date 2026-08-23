@@ -48,6 +48,26 @@ static inline bool slotPoweringOff(int slot)
 	       (millis() - g_powerOffMs[slot] < POWEROFF_HOLD_MS);
 }
 
+// The controller persists IMU mode, and Steam writes 0 while configuring its
+// native puck path. OpenPuck still needs RF IMU samples for every gyro-capable
+// emulated mode, so forwarding that tuple disables motion until the controller
+// is re-paired. Trailing bytes cannot form a setting and must not reach the
+// controller as a truncated tuple.
+static uint8_t filterSettingsRelay(const uint8_t *src, uint16_t len,
+				   uint8_t dst[RELAY_MAXP])
+{
+	uint8_t out = 0;
+
+	for (uint16_t off = 0; off + 2 < len && (uint16_t)out + 3 <= RELAY_MAXP;
+	     off += 3) {
+		if (src[off] == SETTING_IMU_MODE)
+			continue;
+		memcpy(dst + out, src + off, 3);
+		out += 3;
+	}
+	return out;
+}
+
 // Cloned puck HID report descriptor: mouse(0x40)+keyboard(0x41)+vendor(FF00) with the 63-byte FEATURE
 // command reports on report id 1/2. Each of the 4 interfaces uses this.
 static const uint8_t PUCK_HID_DESC[] = {
@@ -312,7 +332,9 @@ static void handleSet(int slot, uint8_t rid, hid_report_type_t type,
 	// Disable lizard if requested by host.
 	if (cmd == IBEX_CMD_SET_SETTINGS_VALUES) {
 		// Host sent a settings write. Check if this is a write with the lizard suppression tag.
-		for (int off = 0; off <= len; off += 3) {
+		uint16_t settingsLen = len < pln ? len : pln;
+
+		for (uint16_t off = 0; off + 2 < settingsLen; off += 3) {
 			uint8_t settings_key = pl[off];
 			uint16_t settings_val = pl[off + 1] + 256 * pl[off + 2];
 			if (settings_key == SETTING_LIZARD_MODE &&
@@ -385,16 +407,29 @@ static void handleSet(int slot, uint8_t rid, hid_report_type_t type,
 			// multi-register 0x87 settings blocks (LED brightness) and calibration writes exceed the old
 			// 18B cap, and the chopped frames were why those settings never landed on the controller.
 			uint8_t rl = (len <= pln) ? len : (uint8_t)pln;
+			const uint8_t *relayPayload = pl;
+			// The callback runs on the 800-byte usbd task. Keep this
+			// scratch buffer static; relayEnqueue copies it before return.
+			static uint8_t settingsRelay[RELAY_MAXP];
+
+			if (cmd == IBEX_CMD_SET_SETTINGS_VALUES) {
+				rl = filterSettingsRelay(pl, rl, settingsRelay);
+				relayPayload = settingsRelay;
+				if (!rl)
+					relayOk = false;
+			}
 #if OPK_LOG
 			if (len > RELAY_MAXP && Serial.availableForWrite() > 60)
 				Serial.printf(
 					"# RELAY TRUNC cmd=%02X len=%u>%u\n",
 					cmd, len, (unsigned)RELAY_MAXP);
 #endif
-			relayEnqueue(cmd, pl, rl, false, (uint8_t)slot,
-				     relayQuery);
+			if (relayOk)
+				relayEnqueue(cmd, relayPayload, rl, false,
+					     (uint8_t)slot, relayQuery);
 
-			if (relayQuery && slot >= 0 && slot < NSLOT) {
+			if (relayOk && relayQuery && slot >= 0 &&
+			    slot < NSLOT) {
 				g_slot[slot].pendingQueryCmd = cmd;
 				queryArmed = true;
 			}
