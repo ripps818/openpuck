@@ -751,14 +751,24 @@ void hapticOnReconnect(int slot)
 		return;
 	// post-connect haptic block is permanently disabled -- relay haptics immediately on (re)connect
 	g_hapticBlockUntil[slot] = 0;
-	g_legacyLow[slot] = g_legacyHigh[slot] = 0;
-	g_legacyMs[slot] = 0;
-	g_audioLow[slot] = g_audioHigh[slot] = 0;
+	// Scrub haptics queued before the link came up (stale across the reconnect) -- this slot only.
+	hapticCancelPendingOn(slot);
 	g_lastSentLow[slot] = g_lastSentHigh[slot] = 0;
 	g_rumble80On[slot] = false;
 	g_rumble80Ms[slot] = 0;
-	// Scrub haptics queued before the link came up (stale across the reconnect) -- this slot only.
-	hapticCancelPendingOn(slot);
+
+	// Flush host rumble or audio haptics requested while the link was negotiating (<2.5s)
+	// so the initial rumble command plays immediately upon connection across all modes.
+	if ((g_legacyLow[slot] || g_legacyHigh[slot]) &&
+	    (millis() - g_legacyMs[slot] < 2500u)) {
+		hapticUpdateRumble(slot);
+	} else {
+		g_legacyLow[slot] = g_legacyHigh[slot] = 0;
+		g_legacyMs[slot] = 0;
+	}
+	if (g_audioLow[slot] || g_audioHigh[slot])
+		hapticUpdateRumble(slot);
+
 	// NO automatic haptic re-init. hapticReinit lands 0x81 (CLEAR DIGITAL MAPPINGS -- rid < 0x87 so it
 	// EXECUTES even on legacy framing). 0x81 is NON-IDEMPOTENT (ibex FUN_0001f554): EVERY call re-runs the
 	// lizard-disable event + func_0x0001bbf0 (a hardware peripheral re-arm unique to the 0x81 path) -- so
