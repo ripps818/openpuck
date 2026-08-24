@@ -505,8 +505,14 @@ static void handleSet(int slot, uint8_t rid, hid_report_type_t type,
 				S.used = false;
 				memset(S.rec, 0, 24);
 			} else {
+				bool wasUsed = S.used;
 				memcpy(S.rec, pl, 24);
 				S.used = true;
+				// Fresh bond into this slot: drop anything queued while it was empty (an
+				// unbonded slot's ring is never flushed, so a stale frame -- e.g. the "off!"
+				// from a host-suspend broadcast -- would land on the new controller).
+				if (!wasUsed)
+					relayClearSlot((uint8_t)slot);
 			}
 			g_dirty = true;
 #if OPK_LOG

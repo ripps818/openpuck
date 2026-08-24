@@ -64,6 +64,16 @@ void serialConsolePoll()
 				Serial.printf(
 					"# poll rate -> %ld Hz (%lu us)\n", hz,
 					(unsigned long)g_pollUs);
+			} else if (!strcmp(line, "SO")) {
+				// toggle the autonomous controller power-off on host sleep. Off = the controller
+				// stays awake through host sleep, keeping its short-Steam-press remote wakeup
+				// usable (see haptics.h g_suspendOff). Persisted.
+				g_suspendOff = !g_suspendOff;
+				saveCfg();
+				Serial.printf(
+					"# power off controllers on host sleep (>%ums) %s\n",
+					(unsigned)SUSPEND_OFF_MS,
+					g_suspendOff ? "ON" : "off");
 			} else if (!strcmp(line, "HR")) {
 				// A/B: disable the puck->controller haptic relay (Steam 0x80-0x86 rumble/pad feedback)
 				// to isolate whether relaying Steam's trackpad texture haptics degrades drag smoothness.

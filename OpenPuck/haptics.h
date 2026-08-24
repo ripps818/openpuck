@@ -66,16 +66,33 @@ void hapticTestRumble();
 // that nothing will ever wait on a reply for. rfConnFlushRelay uses this.
 bool relayEnqueue(uint8_t rid, const uint8_t *payload, uint8_t plen,
 		  bool isHaptic, uint8_t slot = 0xFF, bool expectReply = false);
+// Drop everything queued for one bond slot. Called when a slot becomes BONDED (Steam's 0xA2 pairing write,
+// the panel's bond import): whatever was queued while the slot was empty was aimed at a controller that no
+// longer -- or never did -- live there, and an unbonded slot's ring is never flushed, so it would otherwise
+// be handed straight to the freshly paired controller (a stale "off!" powered it back off). ISR-safe.
+void relayClearSlot(uint8_t slot);
 
-// id9=0 hold (MODE_STEAM only): land the controller's SET_SETTINGS index 9 (digital-mappings/lizard-active)
-// at 0, once per LIZKEEP_MS per connected slot, like the real puck. This holds the controller's autonomous
-// mapping/haptic engine OFF so it can't latch into the deep-inside buzz seen after repeated reconnects
-// (capture-for-haptics.txt: the buzz is controller-internal; OpenPuck relays no haptics in that state). It
-// also disables the controller's autonomous touchpad ticks (id9 gates the whole pad layer) -- fine in Steam
-// mode (Steam owns haptics), so it is scoped to MODE_STEAM; pure MODE_LIZARD is left alone to keep its ticks.
+// id9 steering (EMULATED modes only): land the controller's SET_SETTINGS index 9 (digital-mappings /
+// lizard-active) at 0 once per LIZKEEP_MS per connected slot to hold its autonomous mapping/haptic engine
+// OFF, or at 1 once per connect episode to turn it on -- per the active type's g_padHaptics config. id9
+// gates the whole autonomous pad layer, including the trackpad ticks, and holding it off also stops the
+// engine latching the deep-inside buzz seen after repeated reconnects (capture-for-haptics.txt: that buzz is
+// controller-internal; OpenPuck relays no haptics in that state). PUCK modes (STEAM/LIZARD) are not steered:
+// Steam writes id9 itself there, and driving it from the puck side fought those writes.
 #define LIZKEEP_MS 2000u
 extern uint8_t
 	g_lizKeep; // 1 = hold on (default, persisted); console 'u' toggles for A/B
+// Autonomous controller power-off on host sleep (see hapticTask). 1 = power the controllers off once the
+// USB suspend has persisted SUSPEND_OFF_MS (default -- what the real puck does, so the controllers don't sit
+// awake draining while the host sleeps). 0 = leave them on.
+//
+// TRADE-OFF, deliberate: with this ON the controller is off while the host sleeps, so the short-Steam-press
+// remote-wakeup gesture in rf_link (guarded on USBDevice.suspended()) can no longer be sent from it. Waking
+// the host from the controller then goes through the OTHER path: pressing Steam on a powered-off controller
+// turns it back on, the link comes up, and the reconnect-wake in rfConnStep issues the remote wakeup. Same
+// physical gesture; the power-off fires once per suspend so the returning controller is not shut off again.
+// Turn this OFF (console "SO") if a controller must stay awake through host sleep. Persisted.
+extern uint8_t g_suspendOff;
 // Master enable for the puck->controller haptic relay (Steam 0x80-0x86 rumble/pad-feedback). Console "HR"
 // toggles it to isolate the drag-smoothness cost of relaying Steam's trackpad haptics. See haptics.cpp.
 extern bool g_hapticRelay;

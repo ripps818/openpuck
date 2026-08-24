@@ -109,6 +109,9 @@ struct Cfg {
 	uint8_t padStick[ET_COUNT][2];
 	// RUMBLE_STYLE_*; 0xFF (short pre-tail file) -> compiled default
 	uint8_t rumbleStyle;
+	// autonomous controller power-off on host sleep (see haptics.h g_suspendOff). 0/1; 0xFF (short
+	// pre-tail file) -> compiled default (on)
+	uint8_t suspendOff;
 	// DualSense audio haptic gain pct/2 (10..500%, default 200); 0xFF -> default 200
 	uint8_t audioGain2;
 }; // rsvd0 = ex-padSmooth, now the one-shot debug-CDC arm
@@ -138,6 +141,7 @@ void saveCfg()
 		    g_chordDpad[3] },
 		  {},
 		  g_rumbleStyle,
+		  g_suspendOff,
 		  (uint8_t)(g_audioHapticGain / 2) };
 	for (int i = 0; i < ET_COUNT; i++) {
 		c.type[i] = g_type[i];
@@ -232,6 +236,9 @@ void loadCfg()
 			// host-rumble style (0xFF = short pre-tail file -> keep the default)
 			if (c.rumbleStyle <= RUMBLE_STYLE_MAX)
 				g_rumbleStyle = c.rumbleStyle;
+			// suspend power-off enable (0xFF = a cfg.bin predating this tail field -> keep the on default)
+			if (c.suspendOff <= 1)
+				g_suspendOff = c.suspendOff;
 			if (c.audioGain2 && c.audioGain2 != 0xFF) {
 				uint16_t pct = (uint16_t)c.audioGain2 * 2;
 				if (pct < 10)

@@ -3,7 +3,7 @@
 #include "config.h"
 #include "rf_link.h"
 #include "usb_tx.h" // usbTxBoost/Unboost -- flood-rate CDC prints share the dcd DMA claim window
-#include "puck_hid.h" // puckLizardActive() -- gate the lizard-suppression keepalive
+#include "puck_hid.h" // puckNotePowerOff() -- hold a powered-off slot disconnected to Steam
 #include "steam_commands.h"
 
 #include "fault_diag.h" // faultDiagTrace() -- flight recorder
@@ -22,11 +22,14 @@ volatile uint8_t g_hapticStop = 0;
 // Off by default -- opt in from the WebUSB panel if a controller's haptics come up degraded after connect.
 uint8_t g_hapticBlockOn = 0;
 uint16_t g_hapticBlockMs = HAPTIC_BLOCK_MS_DEFAULT;
-// id9 steering (see hapticTask): ON by default. Holds id9=0 while Steam is DRIVING (autonomous engine off,
-// Steam owns haptics, no reconnect buzz-latch) and lands id9=1 when lizard is PRESENTING (pure MODE_LIZARD
-// or Steam-closed fallback) so the autonomous pad layer -- the trackpad-tick source -- is on.
+// id9 steering (see hapticTask): ON by default. EMULATED modes only -- it lands id9=1 (autonomous pad layer,
+// the trackpad-tick source, on) or holds id9=0 every LIZKEEP_MS per the per-type g_padHaptics config. Puck
+// modes (STEAM/LIZARD) are left alone: Steam owns the controller's haptics there.
 // Persisted; console 'u' toggles for A/B.
 uint8_t g_lizKeep = 1;
+// Power the controllers off when host sleep persists (see haptics.h for the wake trade-off). Persisted;
+// console "SO" toggles.
+uint8_t g_suspendOff = 1;
 // Host-rumble shaping (persisted in cfg.bin; console "RS<pct>" / "RY<n>").
 uint16_t g_rumbleScale = RUMBLE_SCALE_PCT;
 uint8_t g_rumbleStyle = RUMBLE_STYLE_NORMAL;
@@ -134,12 +137,19 @@ bool relayEnqueue(uint8_t rid, const uint8_t *payload, uint8_t plen,
 		return false;
 	uint32_t pm = __get_PRIMASK();
 	__disable_irq();
-	// slot=0xFF: broadcast -- enqueue into every slot's ring.
+	// slot=0xFF: broadcast -- enqueue into every BONDED slot's ring. Unbonded slots are skipped: only used
+	// slots are ever flushed (rfConnStep/doPoll), so anything queued for an empty slot sits in its ring
+	// indefinitely and is then delivered to whatever controller later pairs INTO that slot -- e.g. a host
+	// suspend with one controller bonded left "off!" (0x9F) frames in the empty rings, and the next
+	// controller paired there powered itself off on its first flush. puckNotePowerOff() already gates its
+	// broadcast on used; this is the same rule for the wire side.
 	// Full queue: evict the oldest entry, never the newest. Steam bursts end with the commit/stop, so
 	// dropping the oldest keeps the most-recent (meaningful) frame.
 	uint8_t s0 = (slot == 0xFF) ? 0 : slot;
 	uint8_t s1 = (slot == 0xFF) ? NSLOT : slot + 1;
 	for (uint8_t s = s0; s < s1; s++) {
+		if (slot == 0xFF && !g_slot[s].used)
+			continue;
 		uint8_t h = g_rqHead[s], nx = rqNext(h);
 		if (nx == g_rqTail[s])
 			g_rqTail[s] = rqNext(g_rqTail[s]);
@@ -155,6 +165,15 @@ bool relayEnqueue(uint8_t rid, const uint8_t *payload, uint8_t plen,
 	__set_PRIMASK(pm);
 	faultDiagTrace(FR_RELAY, (uint16_t)((slot << 8) | rid));
 	return true;
+}
+void relayClearSlot(uint8_t slot)
+{
+	if (slot >= NSLOT)
+		return;
+	uint32_t pm = __get_PRIMASK();
+	__disable_irq();
+	g_rqHead[slot] = g_rqTail[slot] = 0;
+	__set_PRIMASK(pm);
 }
 
 #if OPK_LOG
@@ -782,12 +801,12 @@ void hapticTask()
 	// controller's revert timer (which also resets all settings = audible pop).
 	//
 	// wantAuto = should the controller run its own pad layer (trackpad ticks) for the ACTIVE mode?
-	//  - puck modes (STEAM/LIZARD): ON while we present lizard (pure MODE_LIZARD, or MODE_STEAM with Steam
-	//    closed) so the pad keeps its ticks; OFF when Steam is driving (Steam owns haptics, and holding the
-	//    engine off stops it latching the deep-inside reconnect buzz). = puckLizardActive().
+	//  - puck modes (STEAM/LIZARD): NOT STEERED AT ALL. Steam owns the controller's haptics in puck mode
+	//    (it writes id9 itself), so the whole block below is skipped -- we used to drive id9 from
+	//    puckLizardActive() here, which fought Steam's own writes.
 	//  - emulated modes (Xbox/Switch/DS): follow the per-type trackpad-haptics config g_padHaptics (default
-	//    ON; Switch defaults OFF). This is the MIRROR of the lizard case -- here holding id9=0 is how we turn
-	//    the controller's autonomous trackpad haptics OFF for a type that doesn't want them.
+	//    ON; Switch defaults OFF). Holding id9=0 is how we turn the controller's autonomous trackpad
+	//    haptics OFF for a type that doesn't want them.
 	if (g_lizKeep) {
 		static unsigned long lastKeep[NSLOT] = { 0 };
 		static bool landedAuto[NSLOT] = { false };
@@ -799,50 +818,49 @@ void hapticTask()
 		static const uint8_t DATA_IMU_ON[3] = { SETTING_IMU_MODE, 0x07,
 							0x00 };
 
-		if (modeIsPuck(g_usbMode)) {
-			// We're in puck mode. Leave the haptics to Steam.
-			return;
-		}
-
-		// We're in emulated controller mode.
-		bool wantAuto = (g_padHaptics != 0);
-		for (int s = 0; s < NSLOT; s++) {
-			if (!g_slot[s].used || !hapticLinkUp(s)) {
-				// re-land settings on the next (re)connect: a fresh controller defaults to
-				// autonomous, but one carrying our previous session's id9 does not
-				landedAuto[s] = false;
-				landedImu[s] = false;
-				lastKeep[s] = 0;
-				continue;
-			}
-			if (!landedImu[s]) {
-				landedImu[s] = true;
-				relayEnqueue(IBEX_CMD_SET_SETTINGS_VALUES,
-					     DATA_IMU_ON, sizeof DATA_IMU_ON,
-					     false, (uint8_t)s);
-			}
-			if (wantAuto) {
-				if (!landedAuto[s]) {
-					landedAuto[s] = true;
+		// In puck mode Steam owns haptics; skip id9 steering.
+		if (!modeIsPuck(g_usbMode)) {
+			bool wantAuto = (g_padHaptics != 0);
+			for (int s = 0; s < NSLOT; s++) {
+				if (!g_slot[s].used || !hapticLinkUp(s)) {
+					// re-land settings on the next (re)connect: a fresh controller defaults to
+					// autonomous, but one carrying our previous session's id9 does not
+					landedAuto[s] = false;
+					landedImu[s] = false;
+					lastKeep[s] = 0;
+					continue;
+				}
+				if (!landedImu[s]) {
+					landedImu[s] = true;
 					relayEnqueue(
 						IBEX_CMD_SET_SETTINGS_VALUES,
-						DATA_LIZARD_ON,
-						sizeof DATA_LIZARD_ON, false,
+						DATA_IMU_ON, sizeof DATA_IMU_ON,
+						false, (uint8_t)s);
+				}
+				if (wantAuto) {
+					if (!landedAuto[s]) {
+						landedAuto[s] = true;
+						relayEnqueue(
+							IBEX_CMD_SET_SETTINGS_VALUES,
+							DATA_LIZARD_ON,
+							sizeof DATA_LIZARD_ON,
+							false, (uint8_t)s);
+					}
+				} else {
+					landedAuto[s] = false;
+					if (lastKeep[s] &&
+					    (uint32_t)(millis() - lastKeep[s]) <
+						    LIZKEEP_MS)
+						continue;
+					lastKeep[s] = millis();
+					relayEnqueue(
+						IBEX_CMD_SET_SETTINGS_VALUES,
+						DATA_LIZARD_OFF,
+						sizeof DATA_LIZARD_OFF, false,
 						(uint8_t)s);
 				}
-			} else {
-				landedAuto[s] = false;
-				if (lastKeep[s] &&
-				    (uint32_t)(millis() - lastKeep[s]) <
-					    LIZKEEP_MS)
-					continue;
-				lastKeep[s] = millis();
-				relayEnqueue(IBEX_CMD_SET_SETTINGS_VALUES,
-					     DATA_LIZARD_OFF,
-					     sizeof DATA_LIZARD_OFF, false,
-					     (uint8_t)s);
 			}
-		}
+		} // !modeIsPuck
 	}
 	// Per-slot link-edge detect (backup for hapticOnReconnect in rf_link).
 	static bool wasHapticLinkUp[NSLOT] = { 0 };
@@ -890,8 +908,12 @@ void hapticTask()
 			faultDiagTrace(FR_RESUME, 0);
 		suspArmed = false;
 	}
+	// g_suspendOff: opt out of the power-off entirely -- keeps the controller awake through host sleep so its
+	// short-Steam-press remote wakeup stays available (see haptics.h). Disarm either way so re-enabling it
+	// mid-suspend can't fire late.
 	if (suspArmed && vbus && (millis() - suspSinceMs) >= SUSPEND_OFF_MS) {
-		hapticSendShutdown();
+		if (g_suspendOff)
+			hapticSendShutdown();
 		suspArmed = false; // fire once per suspend
 	}
 	wasSusp = susp;

@@ -794,9 +794,14 @@ void webusbPoll()
 				uint8_t slot = buf[1], used = buf[2];
 				if (slot < NSLOT) {
 					if (used && !recEmpty(buf + 3)) {
+						bool wasUsed =
+							g_slot[slot].used;
 						memcpy(g_slot[slot].rec,
 						       buf + 3, 24);
 						g_slot[slot].used = true;
+						// see puck_hid 0xA2: never hand a stale queue to a new bond
+						if (!wasUsed)
+							relayClearSlot(slot);
 					} else {
 						memset(g_slot[slot].rec, 0, 24);
 						g_slot[slot].used = false;
