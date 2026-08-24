@@ -877,6 +877,14 @@ void hapticTask()
 		if (!g_slot[s].used)
 			continue;
 		bool up = hapticLinkUp(s);
+		if (up) {
+			if ((g_legacyLow[s] || g_legacyHigh[s] ||
+			     g_audioLow[s] || g_audioHigh[s]) &&
+			    !g_rumble80On[s] &&
+			    (millis() - g_legacyMs[s] < 2500u)) {
+				hapticUpdateRumble((uint8_t)s);
+			}
+		}
 		if (up && !wasHapticLinkUp[s]) {
 			uint8_t mk = 1;
 			hapLogAdd(0xFD, 0xEE, &mk, 1);

@@ -195,7 +195,9 @@ static void ds3SetReport(uint8_t rid, hid_report_type_t type, uint8_t const *b,
 		}
 		return;
 	}
-	if (type != HID_REPORT_TYPE_OUTPUT || n < 1)
+	if ((type != HID_REPORT_TYPE_OUTPUT &&
+	     type != HID_REPORT_TYPE_INVALID) ||
+	    n < 1)
 		return;
 	// DS3 output report 0x01 (rumble + LED). It reaches us two ways: on the OUT interrupt endpoint (rid=0,
 	// report id 0x01 included as b[0]) or via control SET_REPORT(Output,0x01) (rid=0x01, id not in the data).

@@ -261,7 +261,7 @@ static void handleSet(int slot, uint8_t rid, hid_report_type_t type,
 	// meanings -- so a rule written for one channel must never be applied to the other.
 	// The 63-byte settings/config reports 0x87/0x88/0x89 are NOT haptics and reach the controller via the
 	// feature-0x01 passthrough path instead.
-	if (type == HID_REPORT_TYPE_OUTPUT) {
+	if (type == HID_REPORT_TYPE_OUTPUT || type == HID_REPORT_TYPE_INVALID) {
 		if (rid >= 0x80 && rid <= 0x89) {
 			// capture ALL OUTPUT reports (even un-relayed) for the 'H' dump
 			hapLogAdd((uint8_t)slot, rid, b, n);

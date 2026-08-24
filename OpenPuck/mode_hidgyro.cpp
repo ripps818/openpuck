@@ -112,7 +112,9 @@ static uint16_t hidGyroGetCommon(uint8_t slot, uint8_t rid,
 static void hidGyroSetCommon(uint8_t slot, uint8_t rid, hid_report_type_t type,
 			     uint8_t const *b, uint16_t n)
 {
-	if (type != HID_REPORT_TYPE_OUTPUT || n < 1)
+	if ((type != HID_REPORT_TYPE_OUTPUT &&
+	     type != HID_REPORT_TYPE_INVALID) ||
+	    n < 1)
 		return;
 	uint8_t id;
 	const uint8_t *p;

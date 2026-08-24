@@ -325,34 +325,12 @@ uint8_t rfConnTx(uint8_t ch, uint8_t s1, const uint8_t *payload, uint8_t plen,
 				if (g_connReplyMs[s] == 0 ||
 				    (uint32_t)(millis() - g_connReplyMs[s]) >
 					    1500u) {
-					// Lifecycle log (CDC debug boot): distinguish a first-ever connect from a reconnect and
-					// print the silent gap -- lets a long session of connect/disconnect cycles be diffed to
-					// see whether each cycle re-establishes (churn / boot-haptic click) vs stays linked.
-					if (Serial.availableForWrite() > 130) {
-						uint32_t gap =
-							g_connReplyMs[s] ?
-								(uint32_t)(millis() -
-									   g_connReplyMs
-										   [s]) :
-								0;
-						Serial.printf(
-							"# LC t=%lu slot%d %s gap=%lums rtype=%02X cd=%lums\n",
-							(unsigned long)millis(),
-							s,
-							g_connReplyMs[s] ?
-								"RECONNECT" :
-								"CONNECT",
-							(unsigned long)gap,
-							rtype,
-							(unsigned long)(millis() -
-									g_connCooldown));
-					}
+					g_connReplyMs[s] = millis();
 					hapticOnReconnect(s);
 					faultDiagTrace(FR_RFUP, s);
+				} else {
+					g_connReplyMs[s] = millis();
 				}
-				g_connRx++;
-				// link alive -> loop() suppresses the redundant E1 beacon
-				g_connReplyMs[s] = millis();
 				// |dBm| of this reply (started by the ADDRESS short)
 				uint8_t rs =
 					(uint8_t)(NRF_RADIO->RSSISAMPLE & 0x7F);

@@ -218,6 +218,18 @@ void setup()
 			g_bondToUsb[0] = 0;
 			usbReenumerate(1);
 		} else {
+			// If controllers are already bonded, poll RF briefly before attaching USB so an
+			// active controller mounts on the very first USB attachment (avoiding a 0->1 double mount).
+			if (bondedSlotCount() > 0) {
+				unsigned long settleStart = millis();
+				while ((uint32_t)(millis() - settleStart) <
+				       300u) {
+					rfLinkTask();
+					if (anySlotLinkUp())
+						break;
+					delay(2);
+				}
+			}
 			usbMountEnable(true, g_active->maxSlots());
 			usbMountRebuildMap();
 			usbReenumerate(g_usbMountCount);
