@@ -25,6 +25,22 @@ static inline void le16(uint8_t *p, int16_t v)
 // and 0x05 (DualSense) -- identical layout; the caller returns size-1 and leaves trailing bytes zero.
 void psNeutralCalib(uint8_t *buf);
 
+// SC2 IMU -> PlayStation (DualSense / DS4) IMU, written as six little-endian int16s at out[0..11]:
+// gyro X/Y/Z then accel X/Y/Z (contiguous in both the DualSense report at payload 15 and the DS4 report at
+// payload 12).
+//
+// TWO things have to line up or motion reads wrong on the host:
+//  - FRAME. The host expects the axes SDL's own SC2 driver produces (SDL_hidapi_steam_triton.c):
+//    X <- +x, Y <- +z, Z <- -y, the SAME signed permutation for gyro AND accel. Using the SC2 frame
+//    verbatim for the accel (as this code used to) puts gravity on PS Z instead of PS Y and gives the accel
+//    the opposite handedness to the gyro -- so anything that FUSES them (Cemu, rpcs3, console motion) latches
+//    into a rotated solution. See mode_switch_pro's IMU comment for the same lesson on the Switch side.
+//  - SCALE. The SC2 accelerometer is +/-2g over the full int16 (~16384 counts/g); a DualSense/DS4 reports
+//    8192 counts/g (DS_ACCEL_RES_PER_G), so halve it. Gyro needs no scaling: SC2 is 2000 dps full-scale
+//    (~16.384 counts/dps) against the PS pads' 16 counts/dps -- 0.4% apart. psNeutralCalib() presents the
+//    matching calibration so hosts that trust it land on the same numbers as hosts that fall back to raw.
+void psImuPack(uint8_t *out, const PuckInput &in);
+
 // Steam trackpad s16 coords -> absolute touch surface. TOUCH_PAD_W is split into left/right halves so both
 // pads can co-exist as two contacts on a single DualSense/DS4 touchpad.
 #define TOUCH_PAD_W 1920u
@@ -74,10 +90,15 @@ static inline uint32_t tritonFromCode(uint8_t c)
 		return TB_L3;
 	case 8:
 		return TB_R3;
+	// 9 = the Select-side button (Xbox Back, Switch Minus, PlayStation Create/Share) and 10 = the
+	// Start-side one (Xbox Start, Switch Plus, PlayStation Options). TB_VIEW / TB_MENU are named
+	// BACKWARDS with respect to those positions (see triton.h), so 9 must produce TB_MENU. Mapping 10
+	// to TB_QAM was a dead end: no mode turns a TB_QAM bit into a host button, so "Options" did
+	// nothing while "Create" came out as Options.
 	case 9:
-		return TB_VIEW;
+		return TB_MENU;
 	case 10:
-		return TB_QAM;
+		return TB_VIEW;
 	case 11:
 		return TB_STEAM;
 	case 12:

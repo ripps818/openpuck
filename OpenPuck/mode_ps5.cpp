@@ -253,18 +253,8 @@ static void ps5Build(uint8_t usbSlot, uint8_t slot, uint8_t out[63])
 	out[12] = (uint8_t)((s >> 8) & 0xFF);
 	out[13] = (uint8_t)((s >> 16) & 0xFF);
 	out[14] = (uint8_t)((s >> 24) & 0xFF);
-	out[15] = g_in[slot].gx & 0xFF;
-	out[16] = g_in[slot].gx >> 8;
-	out[17] = g_in[slot].gz & 0xFF;
-	out[18] = g_in[slot].gz >> 8;
-	out[19] = (-g_in[slot].gy) & 0xFF;
-	out[20] = (-g_in[slot].gy) >> 8;
-	out[21] = g_in[slot].ax & 0xFF;
-	out[22] = g_in[slot].ax >> 8;
-	out[23] = g_in[slot].ay & 0xFF;
-	out[24] = g_in[slot].ay >> 8;
-	out[25] = g_in[slot].az & 0xFF;
-	out[26] = g_in[slot].az >> 8;
+	// gyro X/Y/Z then accel X/Y/Z, 6 x le16 (hid-playstation: dualsense_input_report gyro[]/accel[])
+	psImuPack(out + 15, g_in[slot]);
 	uint32_t ts = micros();
 	out[27] = (uint8_t)(ts & 0xFF);
 	out[28] = (uint8_t)((ts >> 8) & 0xFF);
@@ -283,11 +273,18 @@ static void ps5Build(uint8_t usbSlot, uint8_t slot, uint8_t out[63])
 void Ps5Controller::begin()
 {
 }
-// HID budget: clean PS modes have no wake mouse (CFG_TUD_HID slots); normal PS5 keeps the wake mouse (1 HID).
 uint8_t Ps5Controller::maxSlots() const
 {
-	uint8_t cap = modeIsCleanPS(g_usbMode) ? (uint8_t)CFG_TUD_HID :
-						 (uint8_t)(CFG_TUD_HID - 1);
+	// Clean-PS modes exist to present exactly what a host that CLASSIFIES the USB device expects of a real
+	// Sony pad -- GameInput / Windows.Gaming.Input and the native-PlayStation paths in games look at the
+	// whole device, not just the VID/PID, and refuse the PS glyph path for a composite. One connected
+	// controller = one HID interface = a non-composite device (no MI_xx on Windows). A SECOND controller
+	// would add a second interface and make it composite again, so the clean modes are deliberately
+	// single-pad; use MODE_PS5 / MODE_HIDGYRO (composite either way, and they keep the panel + host-wake)
+	// when you want several controllers at once.
+	if (modeIsCleanPS(g_usbMode))
+		return 1;
+	uint8_t cap = (uint8_t)(CFG_TUD_HID - 1);
 	return cap < NSLOT ? cap : (uint8_t)NSLOT;
 }
 void Ps5Controller::usbIdentity()

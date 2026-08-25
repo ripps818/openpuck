@@ -99,7 +99,16 @@ void usbReenumerate(uint8_t k)
 		k); // mode's fixed HIDs (if any) + k slot interfaces
 	if (s_dynWantWebusb)
 		USBDevice.addInterface(usb_web);
-	USBDevice.setConfigurationAttribute(0x80 | 0x20);
+	// Config descriptor: clean-PS modes report what a genuine pad reports -- self-powered (it has a
+	// battery), 500 mA, and NO remote-wakeup (they have no wake mouse to wake a host with anyway). Values
+	// from a real DS4 / ViGEmBus's emulated one: bmAttributes 0xC0, bMaxPower 0xFA. Everything else keeps
+	// required(0x80) | remote_wakeup(0x20) and the core's default power, because the wake mouse needs it.
+	if (modeIsCleanPS(g_usbMode)) {
+		USBDevice.setConfigurationAttribute(0xC0);
+		USBDevice.setConfigurationMaxPower(500);
+	} else {
+		USBDevice.setConfigurationAttribute(0x80 | 0x20);
+	}
 	USBDevice.attach();
 }
 

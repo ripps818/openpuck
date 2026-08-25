@@ -5,22 +5,47 @@
 void psNeutralCalib(uint8_t *buf)
 {
 	// Payload offsets = kernel buf[] index minus 1. buf[0..5] gyro bias stays zero (caller memset).
-	// speed_plus and speed_minus must both be positive (+2844) so that (speed_plus + speed_minus) != 0
-	// in SDL2/Steam gyro scale calculations, while pitch/yaw/roll minus fields remain negative for delta.
-	le16(buf + 6, 2844);
-	le16(buf + 8, -2844); // gyro pitch +/-
-	le16(buf + 10, 2844);
-	le16(buf + 12, -2844); // gyro yaw +/-
-	le16(buf + 14, 2844);
-	le16(buf + 16, -2844); // gyro roll +/-
-	le16(buf + 18, 2844);
-	le16(buf + 20, 2844); // gyro speed +/- (sum != 0)
+	//
+	// The numbers are not arbitrary: every consumer turns them into a SENSITIVITY and sanity-checks it.
+	//  - gyro: hid-playstation/hid-sony scale by (speed_plus+speed_minus)*1024 / (|plus|+|minus|), and SDL
+	//    computes the same ratio and REJECTS the whole calibration unless it is within 50% of 64 (its
+	//    divisor). 4096 = 16 * 256 lands the ratio exactly on 64 -> reported deg/s = raw/16, which matches
+	//    the SC2's ~16.384 counts/dps. (The old 2844/2844 pair produced a ratio of 1024 = 16x too fast on
+	//    Linux/SteamOS, and was thrown out as "bad calibration" by SDL.)
+	//  - accel: scale is 2*8192/(plus-minus), so +/-8192 = unity, and psImuPack() already halves the SC2
+	//    accel into the pads' 8192-counts/g scale. Keep the range at +/-8192, NOT +/-16384: SDL computes
+	//    the span in an Sint16 (sAccXPlus - sAccXMinus), so a 32768-wide range overflows and the
+	//    calibration is discarded.
+	le16(buf + 6, 4096);
+	le16(buf + 8, -4096); // gyro pitch +/-
+	le16(buf + 10, 4096);
+	le16(buf + 12, -4096); // gyro yaw +/-
+	le16(buf + 14, 4096);
+	le16(buf + 16, -4096); // gyro roll +/-
+	le16(buf + 18, 256);
+	le16(buf + 20, 256); // gyro speed +/- (sum != 0)
 	le16(buf + 22, 8192);
 	le16(buf + 24, -8192); // accel X +/-
 	le16(buf + 26, 8192);
 	le16(buf + 28, -8192); // accel Y +/-
 	le16(buf + 30, 8192);
 	le16(buf + 32, -8192); // accel Z +/-
+}
+
+// Negate without the -32768 trap (its positive twin does not exist in int16).
+static inline int16_t neg16(int16_t v)
+{
+	return v == -32768 ? (int16_t)32767 : (int16_t)-v;
+}
+
+void psImuPack(uint8_t *out, const PuckInput &in)
+{
+	le16(out + 0, in.gx);
+	le16(out + 2, in.gz);
+	le16(out + 4, neg16(in.gy));
+	le16(out + 6, (int16_t)(in.ax / 2));
+	le16(out + 8, (int16_t)(in.az / 2));
+	le16(out + 10, (int16_t)(-(in.ay / 2)));
 }
 
 uint8_t swStick(int16_t v, bool invert)
@@ -183,11 +208,13 @@ static void psOrBackCode(uint32_t *b, uint8_t c)
 	case 8:
 		*b |= TB_R3;
 		break;
+	// 9 = Select-side (Create/Share), 10 = Start-side (Options) -- TB_VIEW/TB_MENU are named backwards
+	// with respect to the physical buttons, see tritonFromCode() and triton.h.
 	case 9:
-		*b |= TB_VIEW;
+		*b |= TB_MENU;
 		break;
 	case 10:
-		*b |= TB_QAM;
+		*b |= TB_VIEW;
 		break;
 	case 11:
 		*b |= TB_STEAM;
