@@ -318,13 +318,43 @@ void Ps5Controller::mountSlots(uint8_t k)
 	USBDevice.addInterface(g_ps5Audio);
 	USBDevice.addInterface(g_ps5AudioAs);
 }
+
+void Ps5Controller::onReport45(int slot, const uint8_t *rep, bool fresh,
+			       uint8_t bodyTlen)
+{
+	(void)fresh;
+	(void)bodyTlen;
+	if (slot < 0 || slot >= NSLOT)
+		return;
+	if (rep && rep[0] != 0x45 && rep[0] != 0x42)
+		return;
+	if (!g_slot[slot].used)
+		return;
+
+	int u = (slot < NSLOT) ? g_bondToUsb[slot] : -1;
+	if (u < 0 && g_usbMountCount > 0) {
+		if (g_usbToBond[0] == slot ||
+		    (g_usbMountCount == 1 && g_usbToBond[0] < 0))
+			u = 0;
+	}
+	if (u < 0 || u >= g_usbMountCount || u >= NSLOT)
+		return;
+
+	uint8_t p[63];
+	ps5Build((uint8_t)u, (uint8_t)slot, p);
+	usbTxHid(&g_ps5[u], 0x01, p, sizeof p);
+	g_ps5LastMs[u] = millis();
+}
+
 void Ps5Controller::task()
 {
 	ps5AudioTask();
 	for (uint8_t u = 0; u < g_usbMountCount; u++) {
 		if (!g_ps5[u].ready())
 			continue;
-		if (millis() - g_ps5LastMs[u] < USB_STREAM_MS)
+		// onReport45 pushes reports immediately on RF arrival; task() only
+		// emits a periodic keepalive report if a mounted pad has been quiet.
+		if (millis() - g_ps5LastMs[u] < 50u)
 			continue;
 		int bond = g_usbToBond[u];
 		if (bond < 0 || !g_slot[bond].used) {
