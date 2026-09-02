@@ -1,4 +1,5 @@
 #include "config.h"
+#include "radio.h"
 #include "rf_link.h" // g_rxWin (poll RX window persisted here)
 #include "haptics.h" // g_hapticBlockOn, g_hapticBlockMs
 #include <Adafruit_LittleFS.h>
@@ -114,6 +115,10 @@ struct Cfg {
 	uint8_t suspendOff;
 	// DualSense audio haptic gain pct/2 (10..500%, default 200); 0xFF -> default 200
 	uint8_t audioGain2;
+	// RF session channel (1..80; 0xFF -> default 18)
+	uint8_t sessCh;
+	// 0 = manual, 1 = auto clean channel select at boot/idle; 0xFF -> default 0
+	uint8_t autoChannel;
 }; // rsvd0 = ex-padSmooth, now the one-shot debug-CDC arm
 
 // Shortest cfg.bin we still accept: the layout as of CFG_MAGIC 0xCF, i.e. everything before the appended tail.
@@ -142,7 +147,9 @@ void saveCfg()
 		  {},
 		  g_rumbleStyle,
 		  g_suspendOff,
-		  (uint8_t)(g_audioHapticGain / 2) };
+		  (uint8_t)(g_audioHapticGain / 2),
+		  g_sessCh,
+		  g_autoChannel };
 	for (int i = 0; i < ET_COUNT; i++) {
 		c.type[i] = g_type[i];
 		c.padStick[i][0] = g_padStickCfg[i][0];
@@ -247,6 +254,10 @@ void loadCfg()
 					pct = 500;
 				g_audioHapticGain = pct;
 			}
+			if (c.sessCh >= 1 && c.sessCh <= 80)
+				g_sessCh = c.sessCh;
+			if (c.autoChannel <= 1)
+				g_autoChannel = c.autoChannel;
 			// The poll RX window is now FIXED (g_rxWin is const) -- any persisted rxWin10 is ignored.
 		}
 		f.close();
