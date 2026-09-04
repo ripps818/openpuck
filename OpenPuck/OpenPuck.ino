@@ -206,8 +206,8 @@ void setup()
 
 	if (dynamic) {
 		// Dynamic mount: present only ACTIVELY-CONNECTED controllers; usbReenumerate re-attaches (no reboot)
-		// as the set changes. Emulated modes are never puck; clean-PS drops the wake mouse + WebUSB.
-		s_dynWantWakeMouse = !psClean;
+		// as the set changes. Emulated modes are never puck; clean-PS drops WebUSB; all PS modes drop the wake mouse.
+		s_dynWantWakeMouse = !psClean && !modeIsPS(g_usbMode);
 		s_dynWantWebusb = !psClean;
 		USBDevice.detach();
 		delay(30);
@@ -281,8 +281,8 @@ void setup()
 
 		// Boot-mouse wake interface for clean (non-puck) modes, and for puck on the one-shot debug boot (CDC on,
 		// no endpoint room for wake mouse on a normal puck boot -- wake is registered above instead). Skipped for PS
-		// modes so the device stays a single clean HID gamepad (see psClean above).
-		if (!puckMode && !keepCdc && !psClean)
+		// modes so the device stays a genuine PlayStation controller without an unexpected mouse interface.
+		if (!puckMode && !keepCdc && !psClean && !modeIsPS(g_usbMode))
 			wakeHidBegin();
 
 		// WebUSB config panel -- every mode EXCEPT the PlayStation modes. Puck: registered above (IF 0) before wake +

@@ -68,6 +68,12 @@ static inline bool modeIsCleanPS(uint8_t m)
 	return m == MODE_PS5_GAME || m == MODE_DS4_GAME || m == MODE_PS3;
 }
 
+static inline bool modeIsPS(uint8_t m)
+{
+	return m == MODE_PS5 || m == MODE_PS5_GAME || m == MODE_HIDGYRO ||
+	       m == MODE_DS4_GAME || m == MODE_PS3;
+}
+
 static inline bool modeIsPuck(uint8_t m)
 {
 	return m == MODE_STEAM || m == MODE_LIZARD;
