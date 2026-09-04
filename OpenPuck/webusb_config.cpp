@@ -101,8 +101,8 @@ static bool boardCommand(uint8_t op)
 //                [v20: p[187..194] per-type trackpad->stick map, 4x2B {left pad, right pad} (PS_OFF/LEFT/RIGHT)]
 //                [v21: p[53] rumble strength as PERCENT/2 (field 22, revived); p[195] rumble style
 //                 (field 39, RUMBLE_STYLE_* in haptics.h); p[196] audioHapticGain (field 30)]
-//                [v22: p[197] g_sessCh (field 90); p[198] g_autoChannel (field 91)]
-#define WB_PAYLEN 197
+//                [v22: p[197] g_sessCh (field 90); p[198] g_autoChannel (field 91); p[199] g_isMachineInternal (field 29)]
+#define WB_PAYLEN 198
 // The blob send is drop-on-full (never blocks loop), so the vendor TX FIFO MUST be able to hold a whole blob
 // -- otherwise tud_vendor_write_available() never reaches the frame size and EVERY frame is dropped (blank
 // panel / stale mappings). The Makefile sets -DCFG_TUD_VENDOR_TX_BUFSIZE=256; guard it here so a build without
@@ -317,9 +317,10 @@ static void webusbSendBlob()
 	p[195] = g_rumbleStyle;
 	// DualSense audio haptic gain as PERCENT/2 (10-500%, default 200)
 	p[196] = (uint8_t)(g_audioHapticGain / 2);
-	// v22: active RF session channel + auto-channel select flag
+	// v22: active RF session channel + auto-channel select flag + Steam Machine emulation flag
 	p[197] = g_sessCh;
 	p[198] = g_autoChannel;
+	p[199] = (uint8_t)(g_isMachineInternal ? 0xEE : 0);
 	// v20: per-type trackpad->stick mapping, {left pad, right pad} per emulated type
 	for (int et = 0; et < ET_COUNT; et++) {
 		p[187 + et * 2] = g_padStickCfg[et][0];
@@ -1141,9 +1142,10 @@ void webusbPoll()
 					// (field 25, poll RX window, removed -- g_rxWin is now FIXED/not configurable)
 					// (fields 27/28, post-connect haptic block, removed -- permanently disabled)
 
-				// Used to be experimental g_landAll87. Persisted; blob p[181] reflects state. Now ignored.
+				// Field 29: Emulate Steam Machine internal receiver (28DE:1305)
 				case 29:
-					// g_landAll87 = v ? 1 : 0;
+					g_isMachineInternal =
+						(v == 0xEE || v == 1);
 					break;
 
 				// Set RF session channel (1..80). If changed, migrates connected

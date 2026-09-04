@@ -22,6 +22,8 @@ bool g_touchpadDisabled = false;
 bool g_persistMode = false;
 uint8_t g_bootMode = 0xFF;
 
+bool g_isMachineInternal = false;
+
 bool g_debugCdcThisBoot = false;
 
 // persisted one-shot arm, stored in Cfg.rsvd0 (1 = keep CDC for the next boot)
@@ -119,6 +121,8 @@ struct Cfg {
 	uint8_t sessCh;
 	// 0 = manual, 1 = auto clean channel select at boot/idle; 0xFF -> default 0
 	uint8_t autoChannel;
+	// 0xEE = emulate Steam Machine internal receiver (28DE:1305); 0 / 0xFF -> default 0
+	uint8_t isMachineInternal;
 }; // rsvd0 = ex-padSmooth, now the one-shot debug-CDC arm
 
 // Shortest cfg.bin we still accept: the layout as of CFG_MAGIC 0xCF, i.e. everything before the appended tail.
@@ -149,7 +153,8 @@ void saveCfg()
 		  g_suspendOff,
 		  (uint8_t)(g_audioHapticGain / 2),
 		  g_sessCh,
-		  g_autoChannel };
+		  g_autoChannel,
+		  (uint8_t)(g_isMachineInternal ? 0xEE : 0) };
 	for (int i = 0; i < ET_COUNT; i++) {
 		c.type[i] = g_type[i];
 		c.padStick[i][0] = g_padStickCfg[i][0];
@@ -258,6 +263,7 @@ void loadCfg()
 				g_sessCh = c.sessCh;
 			if (c.autoChannel <= 1)
 				g_autoChannel = c.autoChannel;
+			g_isMachineInternal = (c.isMachineInternal == 0xEE);
 			// The poll RX window is now FIXED (g_rxWin is const) -- any persisted rxWin10 is ignored.
 		}
 		f.close();
