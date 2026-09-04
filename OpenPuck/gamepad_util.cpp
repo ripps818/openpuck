@@ -1,6 +1,33 @@
 #include "gamepad_util.h"
 #include "triton.h"
 #include "config.h"
+#include "haptics.h"
+#include "bonds.h"
+
+static bool g_psPadClickDown[NSLOT] = {};
+static unsigned long g_psPadClickReplyMs[NSLOT] = {};
+
+void psPadClickEdge(uint8_t slot, bool pressed)
+{
+	if (slot >= NSLOT)
+		return;
+	const unsigned long replyMs = g_connReplyMs[slot];
+	const bool linkUp = hapticLinkUp(slot);
+	if (!linkUp ||
+	    (g_psPadClickReplyMs[slot] && replyMs &&
+	     (unsigned long)(replyMs - g_psPadClickReplyMs[slot]) >= 300u))
+		g_psPadClickDown[slot] = false;
+	if (replyMs)
+		g_psPadClickReplyMs[slot] = replyMs;
+	if (!linkUp)
+		return;
+	bool rising = pressed && !g_psPadClickDown[slot];
+	g_psPadClickDown[slot] = pressed;
+	if (!rising || !g_padHaptics || haptic82Blocked(slot))
+		return;
+	static const uint8_t click[3] = { 0x01, 0x01, 0xF7 };
+	relayEnqueue(0x82, click, sizeof click, true, slot);
+}
 
 void psNeutralCalib(uint8_t *buf)
 {
@@ -208,13 +235,11 @@ static void psOrBackCode(uint32_t *b, uint8_t c)
 	case 8:
 		*b |= TB_R3;
 		break;
-	// 9 = Select-side (Create/Share), 10 = Start-side (Options) -- TB_VIEW/TB_MENU are named backwards
-	// with respect to the physical buttons, see tritonFromCode() and triton.h.
 	case 9:
-		*b |= TB_MENU;
+		*b |= TB_VIEW;
 		break;
 	case 10:
-		*b |= TB_VIEW;
+		*b |= TB_MENU;
 		break;
 	case 11:
 		*b |= TB_STEAM;
@@ -252,7 +277,7 @@ uint32_t psButtonsFromSteam(uint32_t raw)
 	uint32_t b = raw;
 	if (g_qamMap && (b & TB_QAM)) {
 		b &= ~(uint32_t)TB_QAM;
-		b |= tritonFromCode(g_qamMap);
+		psOrBackCode(&b, g_qamMap);
 	}
 	if ((b & CHORD_BACK4) == CHORD_BACK4)
 		b &= ~(uint32_t)(TB_A | TB_B | TB_X | TB_Y | TB_DUP | TB_DDN |
@@ -276,7 +301,7 @@ uint8_t psShouldersByte(uint32_t b, uint8_t lt, uint8_t rt)
 	       ((rt > SW_TRIG_ON || (b & 0x800000u)) ? 0x08 : 0) |
 	       // 0x10 = Create/Share, 0x20 = Options; TB_MENU/TB_VIEW are the
 	       // Select/Start-side buttons respectively (see triton.h)
-	       ((b & TB_MENU) ? 0x10 : 0) | ((b & TB_VIEW) ? 0x20 : 0) |
+	       ((b & TB_VIEW) ? 0x10 : 0) | ((b & TB_MENU) ? 0x20 : 0) |
 	       ((b & TB_L3) ? 0x40 : 0) | ((b & TB_R3) ? 0x80 : 0);
 }
 uint8_t psHatNibble(uint32_t b)

@@ -210,6 +210,7 @@ static ds4_setcb_t const DS4_SETCB[NSLOT] = { hidGyroSet0, hidGyroSet1,
 static void hidGyroBuild(uint8_t usbSlot, uint8_t slot, uint8_t out[63])
 {
 	uint32_t b = psButtonsFromSteam(g_in[slot].buttons);
+	psPadClickEdge(slot, (b & (TB_LPADC | TB_RPADC)) != 0);
 	if ((g_in[slot].buttons & CHORD_BACK4) == CHORD_BACK4)
 		b &= ~(TB_A | TB_B | TB_X | TB_Y | TB_DDN | TB_DRT | TB_DLF |
 		       TB_DUP | TB_LPADC | TB_RPADC);

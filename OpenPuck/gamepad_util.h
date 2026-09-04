@@ -40,6 +40,7 @@ void psNeutralCalib(uint8_t *buf);
 //    (~16.384 counts/dps) against the PS pads' 16 counts/dps -- 0.4% apart. psNeutralCalib() presents the
 //    matching calibration so hosts that trust it land on the same numbers as hosts that fall back to raw.
 void psImuPack(uint8_t *out, const PuckInput &in);
+void psPadClickEdge(uint8_t slot, bool pressed);
 
 // Steam trackpad s16 coords -> absolute touch surface. TOUCH_PAD_W is split into left/right halves so both
 // pads can co-exist as two contacts on a single DualSense/DS4 touchpad.
