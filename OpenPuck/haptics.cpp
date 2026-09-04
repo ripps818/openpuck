@@ -769,6 +769,19 @@ void hapticOnReconnect(int slot)
 	if (g_audioLow[slot] || g_audioHigh[slot])
 		hapticUpdateRumble(slot);
 
+	if (g_usbMode == MODE_SW_PRO) {
+		static const uint8_t RAW_IMU[] = {
+			SETTING_IMU_MODE,
+			SETTING_GYRO_MODE_SEND_RAW_ACCEL |
+				SETTING_GYRO_MODE_SEND_RAW_GYRO,
+			0x00
+		};
+
+		// Steam can leave the controller's persisted IMU mode off. Switch
+		// Pro reports require the raw RF samples that setting suppresses.
+		relayEnqueue(IBEX_CMD_SET_SETTINGS_VALUES, RAW_IMU,
+			     sizeof RAW_IMU, false, (uint8_t)slot);
+	}
 	// NO automatic haptic re-init. hapticReinit lands 0x81 (CLEAR DIGITAL MAPPINGS -- rid < 0x87 so it
 	// EXECUTES even on legacy framing). 0x81 is NON-IDEMPOTENT (ibex FUN_0001f554): EVERY call re-runs the
 	// lizard-disable event + func_0x0001bbf0 (a hardware peripheral re-arm unique to the 0x81 path) -- so

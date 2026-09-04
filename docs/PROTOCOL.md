@@ -336,8 +336,10 @@ does a `detach -> rebuild -> attach` so the host re-reads the descriptor cleanly
   feature `0x01` passthrough). Each `0x87` payload is a sequence of `[setting][value u16 LE]` tuples;
   OpenPuck removes setting `0x30` (`IMU_MODE`) and any incomplete trailing tuple before relaying it.
   Steam writes IMU mode for its native puck path, but landing that write disables the controller's RF
-  motion stream, which every gyro-capable emulated mode still needs. Restricting haptics to `0x82`
-  alone silently dropped the ping/grip/test haptics, which use other report IDs.
+  motion stream, which every gyro-capable emulated mode still needs. Additionally, Switch Pro mode
+  writes raw accelerometer + gyroscope (`0x18`) when the RF link comes up to clear any retained
+  IMU-off state. Restricting haptics to `0x82` alone silently dropped the ping/grip/test haptics,
+  which use other report IDs.
 
 #### ⚠️ Two different `0x8x` id spaces — never share a rule between them
 

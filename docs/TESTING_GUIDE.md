@@ -16,7 +16,7 @@
 - Is battery level shown and correct?
 - Is the polling rate and response rate the same? Is it around 250hz?
 
-### Testing Steam settings relay and translated gyro
+### Testing Steam settings relay and Switch Pro gyro
 
 This test catches controller-side IMU state changes that survive an ordinary
 firmware downgrade:
@@ -29,9 +29,10 @@ firmware downgrade:
 4. Repeat in DS4/HID-gyro mode to ensure the shared RF IMU stream is still live.
 
 Steam's `0x87 SET_SETTINGS` blocks can contain setting `0x30` (`IMU_MODE`). The
-puck must relay the other complete three-byte settings tuples while filtering
-that tuple and any malformed trailing bytes; forwarding it disables the RF IMU
-stream required by translated gyro modes.
+puck must relay other complete settings tuples while filtering setting `0x30`.
+Additionally, Switch Pro mode writes `0x18` (raw accelerometer + raw gyroscope)
+when the controller connects so that any retained IMU-off state does not
+suppress the RF motion samples used for Switch motion reports.
 
 ### Testing the DirectInput mode (mode 11)
 
