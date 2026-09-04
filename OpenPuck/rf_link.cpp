@@ -240,6 +240,58 @@ static void rfHostFrameOnce(int slot, bool discovery)
 	NRF_RADIO->EVENTS_DISABLED = 0;
 }
 
+#define RF_QOS_MIN_RESIDENCE_MS 10000u
+#define RF_QOS_IDLE_TIMEOUT_MS 3500u
+#define RF_HOP_STICK_DEADZONE 2500
+#define RF_HOP_TRIGGER_THRESHOLD 12
+
+static inline int32_t rfHopAbs16(int16_t v)
+{
+	return v == (int16_t)0x8000 ? 32767 : (v < 0 ? -v : v);
+}
+
+// Return true if slot s has active user input (buttons, triggers, or sticks
+// pushed beyond deadzone). Used by QoS to find an inter-input pause.
+static bool rfSlotHasActiveInput(int s)
+{
+	if (s < 0 || s >= NSLOT || !g_slot[s].used)
+		return false;
+
+	const PuckInput &in = g_in[s];
+	const uint32_t digitalMask =
+		TB_A | TB_B | TB_X | TB_Y | TB_QAM | TB_R3 | TB_VIEW | TB_R4 |
+		TB_R5 | TB_RB | TB_DDN | TB_DRT | TB_DLF | TB_DUP | TB_MENU |
+		TB_L3 | TB_STEAM | TB_L4 | TB_L5 | TB_LB | TB_RPADC | TB_LPADC |
+		TB_R2 | TB_L2 | TB_TOUCH | TB_MUTE | TB_LPADT | TB_RPADT;
+
+	if (in.buttons & digitalMask)
+		return true;
+	if (rfHopAbs16(in.lx) > RF_HOP_STICK_DEADZONE ||
+	    rfHopAbs16(in.ly) > RF_HOP_STICK_DEADZONE)
+		return true;
+	if (rfHopAbs16(in.rx) > RF_HOP_STICK_DEADZONE ||
+	    rfHopAbs16(in.ry) > RF_HOP_STICK_DEADZONE)
+		return true;
+	if (in.lt > RF_HOP_TRIGGER_THRESHOLD ||
+	    in.rt > RF_HOP_TRIGGER_THRESHOLD)
+		return true;
+
+	return false;
+}
+
+// Return true if any connected controller currently has active input.
+static bool rfAnyConnectedControllerActive()
+{
+	for (int s = 0; s < NSLOT; s++) {
+		if (g_slot[s].used && g_connReplyMs[s] != 0 &&
+		    (millis() - g_connReplyMs[s] < 300u)) {
+			if (rfSlotHasActiveInput(s))
+				return true;
+		}
+	}
+	return false;
+}
+
 // Mid-session channel migration: announce newCh to connected controllers on the
 // current frequency across all active slots before migrating the polling loop.
 //
@@ -278,8 +330,10 @@ void rfSetSessionChannel(uint8_t newCh, bool persist)
 {
 	if (newCh < 1 || newCh > 80)
 		return;
-	if (newCh != g_sessCh)
+	if (newCh != g_sessCh) {
 		rfHopTo(newCh);
+		g_qosLastHopMs = millis();
+	}
 	if (persist)
 		saveCfg();
 }
@@ -1189,24 +1243,80 @@ void rfLinkTask()
 		}
 		wasRfConn = nowRfConn;
 	}
-	// QoS: if the current channel is degrading, survey candidate channels and hop to the cleanest one.
-	if (g_qos && anySlotLinkUp() && millis() - g_qosCheckMs >= 600) {
-		uint16_t bad = g_qosBad;
-		g_qosBad = 0;
-		g_qosCheckMs = millis();
-		if (bad > 50 && millis() - g_qosLastHopMs > 3000) {
-			uint8_t nextCh = rfFindCleanestChannel(NULL, 0);
-			if (nextCh && nextCh != g_sessCh) {
-				if (Serial.availableForWrite() > 60)
-					Serial.printf(
-						"# QoS: ch%u bad=%u -> hop clean ch%u\n",
-						g_sessCh, bad, nextCh);
-				rfSetSessionChannel(nextCh, true);
-				g_qosLastHopMs = millis();
+	// QoS: survey candidate channels and migrate when quality degrades.
+	// Anti-thrashing enforces 10s minimum channel residence and requires
+	// two consecutive degraded sample windows before arming a migration.
+	// Once armed, migration holds off until an idle window across all
+	// connected controllers (or a 3.5s timeout / hard disconnect).
+	if (g_qos) {
+		static uint8_t s_hopTargetCh = 0;
+		static unsigned long s_hopArmedMs = 0;
+		static uint8_t s_badStreak = 0;
+
+		if (anySlotLinkUp()) {
+			if (millis() - g_qosCheckMs >= 600) {
+				uint16_t bad = g_qosBad;
+				g_qosBad = 0;
+				g_qosCheckMs = millis();
+
+				bool residenceOk = (millis() - g_qosLastHopMs >=
+						    RF_QOS_MIN_RESIDENCE_MS);
+
+				if (residenceOk && bad > 50) {
+					s_badStreak++;
+				} else if (bad < 20 && s_badStreak > 0) {
+					s_badStreak--;
+				}
+
+				if (residenceOk &&
+				    (s_badStreak >= 2 || bad > 120) &&
+				    !s_hopTargetCh) {
+					uint8_t nextCh =
+						rfFindCleanestChannel(NULL, 0);
+					if (nextCh && nextCh != g_sessCh) {
+						s_hopTargetCh = nextCh;
+						s_hopArmedMs = millis();
+					}
+					s_badStreak = 0;
+				}
 			}
+
+			if (s_hopTargetCh) {
+				bool idle = !rfAnyConnectedControllerActive();
+				bool timeout = (millis() - s_hopArmedMs >=
+						RF_QOS_IDLE_TIMEOUT_MS);
+				// Immediate hop if all pads dropped link for >1s
+				bool linkSevered = true;
+				for (int s = 0; s < NSLOT; s++) {
+					if (g_slot[s].used &&
+					    (millis() - g_connReplyMs[s] <
+					     1000u)) {
+						linkSevered = false;
+						break;
+					}
+				}
+
+				if (idle || timeout || linkSevered) {
+					if (Serial.availableForWrite() > 60)
+						Serial.printf(
+							"# QoS: ch%u -> hop clean ch%u (%s)\n",
+							g_sessCh, s_hopTargetCh,
+							idle ? "idle window" :
+							       (linkSevered ?
+									"urgent" :
+									"timeout"));
+					rfSetSessionChannel(s_hopTargetCh,
+							    true);
+					s_hopTargetCh = 0;
+					s_badStreak = 0;
+				}
+			}
+		} else {
+			s_hopTargetCh = 0;
+			s_badStreak = 0;
 		}
 	}
-	// Auto-channel: at boot or when all slots are idle, survey candidate channels and adopt the cleanest.
+	// Auto-channel: survey candidate channels and adopt cleanest when idle.
 	if (g_autoChannel && !anySlotLinkUp()) {
 		static unsigned long s_lastAutoScanMs = 0;
 		static bool s_bootScanned = false;
