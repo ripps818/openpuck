@@ -252,11 +252,12 @@ static void hidGyroBuild(uint8_t usbSlot, uint8_t slot, uint8_t out[63])
 		static uint8_t tstamp[NSLOT] = { 0 };
 		out[32] = 1;
 		out[33] = tstamp[usbSlot]++;
-		touchPackPads(out + 34, lTouch, rTouch, tlx, tly, trx, trry);
+		touchPackPadsStateful(slot, out + 34, lTouch, rTouch, tlx, tly,
+				      trx, trry);
 	} else {
 		out[32] = 0;
-		touchPackPads(
-			out + 34, false, false, 0, 0, 0,
+		touchPackPadsStateful(
+			slot, out + 34, false, false, 0, 0, 0,
 			0); // contact 0x80 -- memset(0) reads as touch @0,0
 	}
 }

@@ -53,6 +53,9 @@ void touchPackPoint(uint8_t *base, int finger, bool touch, uint16_t x,
 // DualSense / DS4: many hosts only honor contact slot 0 -- put a lone pad in slot 0, both pads in 0+1.
 void touchPackPads(uint8_t *pts, bool lTouch, bool rTouch, uint16_t lx,
 		   uint16_t ly, uint16_t rx, uint16_t ry);
+void touchPackPadsStateful(uint8_t stateSlot, uint8_t *pts, bool lTouch,
+			   bool rTouch, uint16_t lx, uint16_t ly, uint16_t rx,
+			   uint16_t ry);
 void steamPadsToTouch(uint32_t b, uint16_t touchH, int16_t lpx, int16_t lpy,
 		      int16_t rpx, int16_t rpy, uint16_t *lx, uint16_t *ly,
 		      uint16_t *rx, uint16_t *ry);

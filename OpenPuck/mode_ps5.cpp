@@ -256,16 +256,18 @@ static void ps5Build(uint8_t usbSlot, uint8_t slot, uint8_t out[63])
 	out[14] = (uint8_t)((s >> 24) & 0xFF);
 	// gyro X/Y/Z then accel X/Y/Z, 6 x le16 (hid-playstation: dualsense_input_report gyro[]/accel[])
 	psImuPack(out + 15, g_in[slot]);
-	uint32_t ts = micros();
-	out[27] = (uint8_t)(ts & 0xFF);
-	out[28] = (uint8_t)((ts >> 8) & 0xFF);
-	out[29] = (uint8_t)((ts >> 16) & 0xFF);
-	out[30] = (uint8_t)((ts >> 24) & 0xFF);
+	// SDL treats the normal DualSense 32-bit sensor timestamp as ~1/3 us ticks.
+	uint32_t ps5SensorTimestamp = g_in[slot].imuTimestampUs * 3u;
+	out[27] = (uint8_t)(ps5SensorTimestamp & 0xFF);
+	out[28] = (uint8_t)((ps5SensorTimestamp >> 8) & 0xFF);
+	out[29] = (uint8_t)((ps5SensorTimestamp >> 16) & 0xFF);
+	out[30] = (uint8_t)((ps5SensorTimestamp >> 24) & 0xFF);
 	uint16_t tlx, tly, trx, trry;
 	steamPadsToTouch(b, PS5_TOUCH_H, g_in[slot].lpx, g_in[slot].lpy,
 			 g_in[slot].rpx, g_in[slot].rpy, &tlx, &tly, &trx,
 			 &trry);
-	touchPackPads(out + 32, lTouch, rTouch, tlx, tly, trx, trry);
+	touchPackPadsStateful(slot, out + 32, lTouch, rTouch, tlx, tly, trx,
+			      trry);
 	out[52] = PS5_STATUS_USB;
 	out[53] = 0x08; // USB connected state
 }
