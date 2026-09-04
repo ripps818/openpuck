@@ -293,10 +293,10 @@ static void psOrBackCode(uint32_t *b, uint8_t c)
 		*b |= TB_R3;
 		break;
 	case 9:
-		*b |= TB_VIEW;
+		*b |= TB_MENU;
 		break;
 	case 10:
-		*b |= TB_MENU;
+		*b |= TB_VIEW;
 		break;
 	case 11:
 		*b |= TB_STEAM;
@@ -358,7 +358,7 @@ uint8_t psShouldersByte(uint32_t b, uint8_t lt, uint8_t rt)
 	       ((rt > SW_TRIG_ON || (b & 0x800000u)) ? 0x08 : 0) |
 	       // 0x10 = Create/Share, 0x20 = Options; TB_MENU/TB_VIEW are the
 	       // Select/Start-side buttons respectively (see triton.h)
-	       ((b & TB_VIEW) ? 0x10 : 0) | ((b & TB_MENU) ? 0x20 : 0) |
+	       ((b & TB_MENU) ? 0x10 : 0) | ((b & TB_VIEW) ? 0x20 : 0) |
 	       ((b & TB_L3) ? 0x40 : 0) | ((b & TB_R3) ? 0x80 : 0);
 }
 uint8_t psHatNibble(uint32_t b)

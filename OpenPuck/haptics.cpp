@@ -768,7 +768,6 @@ void hapticOnReconnect(int slot)
 	}
 	if (g_audioLow[slot] || g_audioHigh[slot])
 		hapticUpdateRumble(slot);
-
 	if (g_usbMode == MODE_SW_PRO) {
 		static const uint8_t RAW_IMU[] = {
 			SETTING_IMU_MODE,

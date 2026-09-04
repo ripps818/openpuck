@@ -102,8 +102,8 @@ struct Cfg {
 	// RUMBLE_SCALE_PCT default. This revives the byte the removed rumble-strength slider used, so the
 	// on-flash layout is unchanged and an existing cfg.bin still loads.
 	// rxWin10: legacy RF tunable slot (window now fixed; ignored). lizKeep: the id9=0 hold enable (see
-	// haptics.h LIZKEEP_MS). rsvd2 used to be landAll87, this is now ignored.
-	uint8_t rxWin10, lizKeep, rsvd2;
+	// haptics.h LIZKEEP_MS). isMachineInternal used to be landAll87, now toggles Steam Machine emulation.
+	uint8_t rxWin10, lizKeep, isMachineInternal;
 	TypeCfg type[ET_COUNT]; // per-emulated-type back/qam/abSwap/padHaptics
 	// TAIL (appended after CFG_MAGIC 0xCF shipped): back4+D-pad mode assignments. New tail fields go HERE, at
 	// the end, and loadCfg accepts a short file so an upgrade keeps every existing setting -- see CFG_LEN_MIN.
@@ -121,8 +121,8 @@ struct Cfg {
 	uint8_t sessCh;
 	// 0 = manual, 1 = auto clean channel select at boot/idle; 0xFF -> default 0
 	uint8_t autoChannel;
-	// 0xEE = emulate Steam Machine internal receiver (28DE:1305); 0 / 0xFF -> default 0
-	uint8_t isMachineInternal;
+	// DualSense audio haptics enable (0/1; 0xFF -> default 1)
+	uint8_t audioHaptics;
 }; // rsvd0 = ex-padSmooth, now the one-shot debug-CDC arm
 
 // Shortest cfg.bin we still accept: the layout as of CFG_MAGIC 0xCF, i.e. everything before the appended tail.
@@ -144,7 +144,7 @@ void saveCfg()
 		  (uint8_t)(g_rumbleScale / 2), // host-rumble strength, pct/2
 		  (uint8_t)(g_rxWin / 10),
 		  g_lizKeep,
-		  g_audioHaptics, // rsvd2: audio haptics enable
+		  (uint8_t)(g_isMachineInternal ? 0xEE : 0),
 		  {},
 		  { g_chordDpad[0], g_chordDpad[1], g_chordDpad[2],
 		    g_chordDpad[3] },
@@ -154,7 +154,7 @@ void saveCfg()
 		  (uint8_t)(g_audioHapticGain / 2),
 		  g_sessCh,
 		  g_autoChannel,
-		  (uint8_t)(g_isMachineInternal ? 0xEE : 0) };
+		  g_audioHaptics };
 	for (int i = 0; i < ET_COUNT; i++) {
 		c.type[i] = g_type[i];
 		c.padStick[i][0] = g_padStickCfg[i][0];
@@ -233,8 +233,9 @@ void loadCfg()
 			// through -> keep the on default)
 			if (c.lizKeep <= 1)
 				g_lizKeep = c.lizKeep;
-			if (c.rsvd2 <= 1)
-				g_audioHaptics = c.rsvd2;
+
+			// isMachineInternal: 0xEE for Steam Machine receiver emulation
+			g_isMachineInternal = (c.isMachineInternal == 0xEE);
 			// host-rumble strength (pct/2; 0 = never set, or a cfg.bin from before this
 			// field was revived -> keep the RUMBLE_SCALE_PCT default)
 			if (c.rumbScale2) {
