@@ -7,7 +7,7 @@
 // Evaluate the binding table for ONE controller's button word, merging its keyboard/mouse-button/
 // consumer outputs into the shared accumulators. Pulled out of rfLizard so every bonded controller can
 // feed the same outputs. doRpadMouse/doLpadScroll are map-level (set if such a binding exists at all).
-static void lizardEvalSlot(uint32_t buttons, uint8_t &outMod,
+static void lizardEvalSlot(uint64_t buttons, uint8_t &outMod,
 			   uint8_t outKeys[6], uint8_t &nKeys, uint8_t &outMBtn,
 			   uint8_t &consumerBits, bool &doRpadMouse,
 			   bool &doLpadScroll)
@@ -16,7 +16,7 @@ static void lizardEvalSlot(uint32_t buttons, uint8_t &outMod,
 		buttons &= ~(TB_LPADT | TB_RPADT | TB_LPADC | TB_RPADC);
 	// kbdConsumed (per controller): trig bits claimed by a hold-modifier binding so simpler
 	// single-button bindings sharing those bits are suppressed for THIS controller.
-	uint32_t kbdConsumed = 0;
+	uint64_t kbdConsumed = 0;
 	for (uint8_t i = 0; i < g_lizardMap.count; i++) {
 		const LizardBinding &b = g_lizardMap.bindings[i];
 		if (b.outType == LZ_OUT_NONE)
@@ -77,9 +77,9 @@ static void lizardEvalSlot(uint32_t buttons, uint8_t &outMod,
 // grip touch, bit 29 = left grip touch (PROTOCOL.md §8). Merely holding the controller sets the grip
 // bits, which would masquerade as an L-stick deflection and fire the bound key. Clear the top 4 bits of
 // the physical word (grips are not a bindable lizard input) so these flags reflect ONLY stick deflection.
-static uint32_t lizardButtons(const PuckInput &in)
+static uint64_t lizardButtons(const PuckInput &in)
 {
-	uint32_t buttons = in.buttons & 0x0FFFFFFFu;
+	uint64_t buttons = (uint64_t)in.buttons;
 	if (in.lx > 12000)
 		buttons |= LZ_BTN_LSTICK_RT;
 	if (in.lx < -12000)
@@ -88,6 +88,14 @@ static uint32_t lizardButtons(const PuckInput &in)
 		buttons |= LZ_BTN_LSTICK_DN;
 	if (in.ly > 12000)
 		buttons |= LZ_BTN_LSTICK_UP;
+	if (in.rx > 12000)
+		buttons |= LZ_BTN_RSTICK_RT;
+	if (in.rx < -12000)
+		buttons |= LZ_BTN_RSTICK_LF;
+	if (in.ry < -12000)
+		buttons |= LZ_BTN_RSTICK_DN;
+	if (in.ry > 12000)
+		buttons |= LZ_BTN_RSTICK_UP;
 	return buttons;
 }
 
