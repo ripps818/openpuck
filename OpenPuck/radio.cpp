@@ -1,5 +1,6 @@
 #include "radio.h"
 #include "bonds.h" // g_slot[]
+#include "config.h"
 
 // Pairing rendezvous bytes from IBEX rodata. The 0x91A2A793 key preceding "ibex" is a DIFFERENT key,
 // NOT the discovery address.
@@ -7,17 +8,10 @@ const uint8_t PAIR_BASE[4] = { 0x69, 0x62, 0x65, 0x78 }; // "ibex"
 uint8_t g_rfPrefix = 0x10;
 uint8_t g_rfCh = 2;
 uint8_t g_rfBase[4] = { 0x69, 0x62, 0x65, 0x78 }; // "ibex"
-// Default session channel is 18 (2418 MHz). On domestic networks using 2.4 GHz
-// Wi-Fi Channel 1 (2401-2423 MHz), ch 18 suffers heavy packet collisions.
+// ch18: clean channel in the real puck's active hop set {18,2,80}; bad channels collide with trackpad
+// data bursts -> reply-rate crash. Tunable 'C'.
 uint8_t g_sessCh = 18;
-uint8_t g_autoChannel = 0;
-
-// Preferred frequencies outside and between standard 20 MHz 2.4 GHz Wi-Fi channels:
-// - Channels 74..80 (2474-2480 MHz): completely above Wi-Fi Channel 11 (2451-2473 MHz).
-// - Channel 52 (2452 MHz): guard band between Wi-Fi Channel 6 and Channel 11.
-// - Channels 26, 46: guard edges avoiding center lobes.
-// - Channels 22, 18: default fallbacks when upper spectrum is restricted.
-const uint8_t g_cleanCandidates[10] = { 80, 78, 76, 74, 68, 52, 46, 26, 22, 18 };
+uint8_t g_rfStartupLastGoodChannel = 0;
 
 // Safe defaults; rfGenSessionAddr(slot) overwrites each used slot at boot. Discovery base "ibex" as a
 // degenerate starting point means an UN-bonded slot (and a not-yet-initialized one) won't accidentally
@@ -81,6 +75,30 @@ void rfGenSessionAddr(int slot)
 	    g_sessBase[slot][2] == g_rfBase[2] &&
 	    g_sessBase[slot][3] == g_rfBase[3])
 		g_sessBase[slot][0] ^= 0x80;
+}
+
+void rfApplyStartupLastGoodChannel()
+{
+	const uint8_t saved = cfgExtRead(0u);
+	g_rfStartupLastGoodChannel = (saved > 0u && saved <= 100u) ? saved : 0u;
+	cfgExtWrite(1u, 1u);
+	cfgExtWrite(2u, 1u);
+	if (g_rfStartupLastGoodChannel)
+		g_sessCh = g_rfStartupLastGoodChannel;
+}
+
+bool saveRfStartupLastGoodChannel(uint8_t channel)
+{
+	if (channel == 0u || channel > 100u)
+		return false;
+	if (g_rfStartupLastGoodChannel == channel)
+		return true;
+	g_rfStartupLastGoodChannel = channel;
+	cfgExtWrite(0u, channel);
+	cfgExtWrite(1u, 1u);
+	cfgExtWrite(2u, 1u);
+	saveCfg();
+	return true;
 }
 
 uint8_t rfrx[100], rftx[100];
@@ -161,87 +179,4 @@ void rfConfig(uint8_t ch)
 	NRF_RADIO->CRCINIT = g_crcinit;
 	NRF_RADIO->DATAWHITEIV = g_whiteiv;
 	NRF_RADIO->PACKETPTR = (uint32_t)rfrx;
-}
-
-// Sample background RF energy on channel ch over sampleUs microseconds.
-// Wi-Fi traffic is bursty (frames last 50-500 us, beacons arrive every ~100 ms).
-// A single instant sample would frequently land in the silence between packets;
-// taking repeated samples across a dwell window captures peak burst interference.
-//
-// nRF52840 RSSISAMPLE returns magnitude |dBm| (e.g. 50 = -50 dBm, 90 = -90 dBm).
-// Lower values represent higher received power (stronger collision risk); tracking
-// the minimum magnitude records the strongest interfering burst seen.
-uint8_t rfMeasureChannelNoise(uint8_t ch, uint16_t sampleUs)
-{
-	if (ch < 1 || ch > 80)
-		return 0;
-
-	NRF_RADIO->TASKS_DISABLE = 1;
-	RWAIT_DISABLED();
-	NRF_RADIO->EVENTS_DISABLED = 0;
-
-	NRF_RADIO->FREQUENCY = ch;
-	NRF_RADIO->SHORTS = RADIO_SHORTS_READY_START_Msk;
-	NRF_RADIO->EVENTS_READY = 0;
-	NRF_RADIO->EVENTS_RSSIEND = 0;
-	NRF_RADIO->TASKS_RXEN = 1;
-
-	uint32_t t0 = micros();
-	while (!NRF_RADIO->EVENTS_READY && (uint32_t)(micros() - t0) < 1000) {
-	}
-	if (!NRF_RADIO->EVENTS_READY) {
-		NRF_RADIO->TASKS_DISABLE = 1;
-		RWAIT_DISABLED();
-		NRF_RADIO->EVENTS_DISABLED = 0;
-		return 0;
-	}
-
-	uint8_t maxNoise = 127;
-	uint32_t startUs = micros();
-	do {
-		NRF_RADIO->EVENTS_RSSIEND = 0;
-		NRF_RADIO->TASKS_RSSISTART = 1;
-		uint32_t waitRssi = micros();
-		while (!NRF_RADIO->EVENTS_RSSIEND &&
-		       (uint32_t)(micros() - waitRssi) < 200) {
-		}
-		if (NRF_RADIO->EVENTS_RSSIEND) {
-			uint8_t s = (uint8_t)(NRF_RADIO->RSSISAMPLE & 0x7F);
-			if (s && s < maxNoise)
-				maxNoise = s;
-		}
-		delayMicroseconds(80);
-	} while ((uint32_t)(micros() - startUs) < sampleUs);
-
-	NRF_RADIO->TASKS_DISABLE = 1;
-	RWAIT_DISABLED();
-	NRF_RADIO->EVENTS_DISABLED = 0;
-	return (maxNoise == 127) ? 0 : maxNoise;
-}
-
-// Evaluate candidate channels and return the frequency with the lowest peak noise
-// (highest |dBm| magnitude, farthest below 0 dBm). Restores the radio to g_rfCh
-// before returning.
-uint8_t rfFindCleanestChannel(const uint8_t *cands, uint8_t count)
-{
-	if (!cands || count == 0) {
-		cands = g_cleanCandidates;
-		count = (uint8_t)(sizeof(g_cleanCandidates) /
-				  sizeof(g_cleanCandidates[0]));
-	}
-	uint8_t bestCh = cands[0];
-	uint8_t bestNoiseFloor = 0;
-
-	for (uint8_t i = 0; i < count; i++) {
-		uint8_t ch = cands[i];
-		if (ch < 1 || ch > 80)
-			continue;
-		uint8_t noise = rfMeasureChannelNoise(ch, 1000);
-		if (noise > bestNoiseFloor) {
-			bestNoiseFloor = noise;
-			bestCh = ch;
-		}
-	}
-	rfConfig(g_rfCh);
-	return bestCh;
 }
