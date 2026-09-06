@@ -266,7 +266,7 @@ bool hapticLinkUp(int slot)
 	int s = (slot >= 0) ? slot : g_curSlot;
 	if (s < 0 || s >= NSLOT)
 		return false;
-	return g_slot[s].used && (millis() - g_connReplyMs[s]) < 300;
+	return g_slot[s].used && (millis() - g_connReplyMs[s]) < RF_LINK_UP_MS;
 }
 bool haptic82Blocked(int slot)
 {
@@ -519,13 +519,14 @@ void hapticStabTask()
 	static const uint8_t off[3] = { 0x01, 0x01, 0x00 };
 	static unsigned long lastOn = 0, offAt = 0;
 	unsigned long now = millis();
-	// Buzz only slots whose controller is actually answering polls (same 300ms liveness the panel/0x79 use).
+	// Buzz only slots whose controller is actually answering polls (same liveness the panel/0x79 use).
 	// The old 0xFF broadcast kept stuffing a powered-off controller's relay ring -- pure eviction churn plus
 	// wasted TX at a radio that can't hear it, right inside the power-off hang window (issue #72 repro).
 	auto enqLive = [&](const uint8_t *p) {
 		for (uint8_t s = 0; s < NSLOT; s++)
 			if (g_slot[s].used && g_connReplyMs[s] &&
-			    (unsigned long)(now - g_connReplyMs[s]) < 300u)
+			    (unsigned long)(now - g_connReplyMs[s]) <
+				    RF_LINK_UP_MS)
 				relayEnqueue(0x82, p, 3, true, s);
 	};
 	if (lastOn == 0 || (uint32_t)(now - lastOn) >= 10000u) {

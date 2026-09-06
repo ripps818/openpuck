@@ -529,12 +529,13 @@ static unsigned long g_lastStream = 0;
 // controller has adopted the session). EITHER way the payload advertises the session base/prefix/channel,
 // so the controller always learns the unique address to connect on.
 
-// Any-slot link helper: true if ANY bonded slot is currently hearing F-type replies (within 300 ms).
+// Any-slot link helper: true if ANY bonded slot is currently hearing F-type replies (within RF_LINK_UP_MS).
 // Used for the "we're connected to at least one controller" decisions (beacon pacing, wake detect).
 bool anySlotLinkUp()
 {
 	for (int s = 0; s < NSLOT; s++)
-		if (g_slot[s].used && millis() - g_connReplyMs[s] < 300)
+		if (g_slot[s].used &&
+		    millis() - g_connReplyMs[s] < RF_LINK_UP_MS)
 			return true;
 	return false;
 }
@@ -739,7 +740,8 @@ static void rfStartupChannelTask()
 	for (int slot = 0; slot < NSLOT; slot++) {
 		const bool up = g_slot[slot].used &&
 				g_connReplyMs[slot] != 0u &&
-				(uint32_t)(now - g_connReplyMs[slot]) < 300u;
+				(uint32_t)(now - g_connReplyMs[slot]) <
+					RF_LINK_UP_MS;
 		if (up && !g_startupWasUp[slot])
 			rfStartupChannelBeginObservation(slot);
 		if (!up && g_startupWasUp[slot])
@@ -3436,7 +3438,8 @@ uint8_t rfConnTx(uint8_t ch, uint8_t s1, const uint8_t *payload, uint8_t plen,
 				int others = 0;
 				for (int i = 0; i < NSLOT; i++)
 					if (i != g_curSlot && g_slot[i].used &&
-					    millis() - g_connReplyMs[i] < 300)
+					    millis() - g_connReplyMs[i] <
+						    RF_LINK_UP_MS)
 						others++;
 				faultDiagTrace(FR_RFDN,
 					       (uint16_t)((g_curSlot << 8) |
@@ -4244,7 +4247,7 @@ void rfLinkTask()
 		static const uint8_t neutral45[46] = { 0x45 };
 		for (int s = 0; s < NSLOT; s++) {
 			bool up = g_slot[s].used && g_connReplyMs[s] != 0 &&
-				  (millis() - g_connReplyMs[s] < 300u);
+				  (millis() - g_connReplyMs[s] < RF_LINK_UP_MS);
 			if (wasUp[s] && !up) {
 				memset(&g_in[s], 0, sizeof g_in[s]);
 				tritonTimestamp47Reset((uint8_t)s);

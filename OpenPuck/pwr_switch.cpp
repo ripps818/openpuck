@@ -60,8 +60,8 @@ void pwrSwitchTask()
 
 		// A dropped link forces g_in[s] to zero (rf_link.cpp's own down-edge handling), which
 		// would otherwise look like a same-frame button release here -- only trust g_in while
-		// this slot is actually link-up (same 300ms threshold as anySlotLinkUp()).
-		if (millis() - g_connReplyMs[s] >= 300u) {
+		// this slot is actually link-up (same threshold as anySlotLinkUp()).
+		if (millis() - g_connReplyMs[s] >= RF_LINK_UP_MS) {
 			steamWasDown[s] = false;
 			continue;
 		}

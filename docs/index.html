@@ -1157,7 +1157,7 @@ async function manualSurveyRf(){
   }
 }
 async function refreshRfStatus(survey=false){
-  if(!dev||isDongle||!rfCapable||rfBusy) return;
+  if(!dev||isDongle||!rfCapable||rfBusy||fieldBusy) return;
   rfBusy=true;
   try{
     await waitIdle(); if(!dev) return;
@@ -1229,6 +1229,7 @@ const USB_FILTERS=[{vendorId:0x28DE},{vendorId:0x045E},{vendorId:0x057E},{vendor
 async function openDevice(d){
   try{
     dev=d;
+    pendingInRead=null;
     await dev.open();
     if(dev.configuration===null) await dev.selectConfiguration(1);
     let found=null;
@@ -1301,7 +1302,7 @@ function onGone(){
   window._flightAuto=false; // re-arm the one-shot flight-trail auto-load for the next reconnect
   window._wedgeEp=false; window._wedgePeak=0; // re-arm the live wedge logger for the next wedge episode
   window._lastBlobTs=0; window._hbLostEp=false; // re-arm the heartbeat watchdog (don't fire on a stale pre-reset timestamp)
-  polling=false; dev=null; tabInited=false; // re-default the config tab to the mode on next connect
+  polling=false; dev=null; tabInited=false; pendingInRead=null; // re-default the config tab to the mode on next connect
   checkUpdateNotice(); // no device = no notice
   $("#connState").textContent="reconnecting…"; $("#connState").className="pill dn";
   $("#panel").classList.add("hide");
@@ -1319,13 +1320,19 @@ async function send(bytes){
   try{ await dev.transferOut(epOut, new Uint8Array(bytes)); }
   catch(e){ log("write err: "+e.message); }
 }
+let pendingInRead = null;
 // Read one framed reply and return its payload (with the 2-byte [marker][len] header stripped). The blob and
 // the bond-export dump share the same framing, distinguished by the marker byte (0xA5 status, 0xA7 bonds).
-async function readFrame(marker, minLen, readLen){
+async function readFrame(marker, minLen, readLen, timeoutMs=1500){
   try{
     // largest frame (status blob) spans multiple USB-FS packets; read generously to capture it in one call.
     // readLen is overridable: the dongle's 0xAC paired-pucks list reaches 213 B (8 pucks) and needs 256.
-    const r = await dev.transferIn(epIn, readLen||256);
+    if(!pendingInRead) pendingInRead = dev.transferIn(epIn, readLen||256);
+    const r = await Promise.race([
+      pendingInRead,
+      new Promise((_, rej)=>setTimeout(()=>rej(new Error("timeout")), timeoutMs))
+    ]);
+    pendingInRead = null;
     if(r.status!=="ok"||r.data.byteLength<2) return null;
     const d=new Uint8Array(r.data.buffer);
     // Live wedge reporter (0xA9): emitted from the firmware's SOF callback (usbd task) while loop() is stalled --
@@ -1342,7 +1349,12 @@ async function readFrame(marker, minLen, readLen){
     if(i+2+len>d.length) return null;
     const p=d.slice(i+2, i+2+len);
     return p.length>=(minLen||0) ? p : null;
-  }catch(e){ if(dev) log("read err: "+e.message); return null; }
+  }catch(e){
+    if(e.message === "timeout") return null;
+    pendingInRead = null;
+    if(dev) log("read err: "+e.message);
+    return null;
+  }
 }
 async function readBlob(){ return readFrame(0xA5, 12); }
 function applyBlob(p){
@@ -1631,9 +1643,9 @@ function applyBlob(p){
 function fmtSlider(id,v){ return id==="hapBlockS" ? v+" s" : ""+v; }
 function setSlider(id,v){ const el=$("#"+id); if(document.activeElement!==el){ el.value=v; } $("#"+id+"V").textContent=fmtSlider(id,el.value); }
 
-let inflight=false;
+let inflight=false, fieldBusy=false;
 async function refresh(){
-  if(!dev||inflight||capturing||backupBusy||flightBusy||lizardBusy||rfBusy) return; inflight=true;
+  if(!dev||inflight||capturing||backupBusy||flightBusy||lizardBusy||rfBusy||fieldBusy) return; inflight=true;
   // try/finally: an exception anywhere in here (applyBlob included) must never leave inflight latched true --
   // that would silently kill all future polls and read as a fake "heartbeat lost".
   try{
@@ -1864,7 +1876,18 @@ async function importBackup(file){
   } finally { backupBusy=false; }
 }
 async function setField(field,value){
-  await send([0x02, field, value&0xff]); const p=await readBlob(); if(p) applyBlob(p);
+  if(!dev) return;
+  for(let i=0; i<60 && (inflight || rfBusy || fieldBusy); i++) await new Promise(r=>setTimeout(r,5));
+  fieldBusy=true;
+  try{
+    await send([0x02, field, value&0xff]);
+    const p=await readBlob();
+    if(p) applyBlob(p);
+  }catch(e){
+    log("setField err: "+e.message);
+  }finally{
+    fieldBusy=false;
+  }
 }
 function fmtCapEntry(e,maxMs){
   const hex=e.bytes.map(x=>x.toString(16).padStart(2,"0")).join(" ");

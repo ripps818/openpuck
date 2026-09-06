@@ -64,8 +64,8 @@ extern uint8_t g_connF3v;
 // the decode path (g_in[g_curSlot]), the haptic flush (per-slot session address), the wake detect, and the
 // stat dump.
 extern int g_curSlot;
-// True if ANY bonded slot is currently link-up (heard an F-reply within 300 ms). Used by the haptic
-// re-init gating (we only re-init on a real link) and the beacon pacing.
+// True if ANY bonded slot is currently link-up (heard an F-reply within
+// RF_LINK_UP_MS). Used by the haptic re-init gating and the beacon pacing.
 bool anySlotLinkUp();
 
 // QoS adaptive channel hopping

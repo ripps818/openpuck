@@ -119,7 +119,10 @@ static void webusbSendBlob()
 	// presents to Steam on 0x79). The blob is sent on the panel's poll, so the slot + up flag change
 	// every ~250ms in normal use.
 	int cs = (g_curSlot >= 0 && g_curSlot < NSLOT) ? g_curSlot : 0;
-	bool up = (g_curSlot >= 0 && (millis() - g_connReplyMs[cs]) < 300);
+
+	// RF_LINK_UP_MS absorbs flash pause during saveCfg without false disconnect
+	bool up = (g_curSlot >= 0 &&
+		   (millis() - g_connReplyMs[cs]) < RF_LINK_UP_MS);
 	// STATIC, not stack: this runs on the usbd task, whose 800B stack (hardcoded USBD_STACK_SZ in the
 	// Adafruit core, not growable from the sketch) is the prime overflow suspect behind the issue-72
 	// watchdog hangs (hang boots report usbd stack free = 0). A 178B frame on that stack was the single
@@ -221,7 +224,7 @@ static void webusbSendBlob()
 		unsigned long nowMs = millis();
 		for (int s = 0; s < NSLOT; s++) {
 			bool sup = g_slot[s].used && g_connReplyMs[s] != 0 &&
-				   (nowMs - g_connReplyMs[s]) < 300u;
+				   (nowMs - g_connReplyMs[s]) < RF_LINK_UP_MS;
 			p[63 + s * 3] = sup ? 1 : 0;
 			p[64 + s * 3] = g_battery[s];
 			p[65 + s * 3] = g_linkRssi[s];

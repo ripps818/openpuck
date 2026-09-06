@@ -30,6 +30,13 @@ extern Slot g_slot[NSLOT];
 // B4/0x79/0x7B against its own entry here, so the four interfaces present four independent controllers
 // (each marked connected on its own).
 extern unsigned long g_connReplyMs[NSLOT];
+
+// Liveness window: a slot counts as linked if it received an F-type reply
+// within this window. 600ms absorbs flash-write CPU pauses (~150-200ms LittleFS
+// saveCfg) during idle ~250ms polling without dropping the link, while staying
+// well under Steam's 1200ms timeout.
+#define RF_LINK_UP_MS 600u
+
 extern volatile bool g_dirty; // bonds changed -> flush to flash from loop()
 extern bool g_pairing;
 

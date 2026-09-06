@@ -1019,7 +1019,8 @@ void SteamPuckController::task()
 		// otherwise a stray dying reply bounces conn true -> a phantom 0x79=02 that Steam reads as a reconnect
 		// and answers by re-running its connect config (the "reappears for a split second").
 		bool conn = !slotPoweringOff(s) &&
-			    ((millis() - g_connReplyMs[s] < 300) ||
+			    ((millis() - g_connReplyMs[s] <
+			      RF_LINK_UP_MS) ||
 			     rfChannelHandoffHostGrace(s));
 		// 0x79 connection state: on edge, then repeated every 750ms ONLY until Steam reacts (its first OUTPUT/
 		// settings write after the edge -- g_steamAliveMs). The real puck sends 0x79 ONCE, edge-triggered; an
