@@ -18,6 +18,7 @@
 // the Feather pin map -- SPI MISO, unused here). We drive BOTH pins so the indicator works on either board.
 // Override the pins/polarity below if your board differs.
 #pragma once
+#include <stdint.h>
 
 #ifndef WAKE_LED_PIN_A
 
@@ -30,14 +31,32 @@
 #define WAKE_LED_PIN_B 24
 #endif
 #ifndef WAKE_LED_ON
-#define WAKE_LED_ON HIGH // set LOW if your board's LED is wired active-low
+
+// Set LOW if your board's LED is wired active-low
+#define WAKE_LED_ON HIGH
 #endif
+
+#define LED_PIN_NONE 0xFF
+
+#define LED_MODE_STATUS 0
+#define LED_MODE_HEARTBEAT 1
+#define LED_MODE_WAKE_ONLY 2
+#define LED_MODE_OFF 3
+#define LED_MODE_ON 4
+#define LED_MODE_MAX 4
 
 #define LED_FAST_BLINK_MS 100u
 #define LED_SLOW_BLINK_MS 500u
+
+extern uint8_t g_ledMode;
+extern uint8_t g_ledPinA;
+extern uint8_t g_ledPinB;
+extern uint8_t g_ledActiveLevel;
 
 void ledInit(); // call once from setup(): pins to output, LED off
 
 // call at each USBDevice.remoteWakeup() site: LED on now, off after 500ms
 void ledWakePulse();
 void ledTask(); // call every loop()
+void ledApplyPins(uint8_t pinA, uint8_t pinB, uint8_t activeLevel);
+void ledTriggerTest(uint32_t ms);

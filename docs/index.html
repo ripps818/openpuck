@@ -300,6 +300,38 @@
       <p id="rumbleOld" class="note hide">This puck's firmware predates the rumble-shaping settings — update it to configure them.</p>
     </div>
 
+    <div class="card" id="ledCard">
+      <h2>Status LED</h2>
+      <div id="ledBlock">
+        <div class="row"><label>Behavior</label><select id="ledMode">
+          <option value="0">Connection status (solid link, blink search)</option>
+          <option value="1">Heartbeat (pulsing heartbeat rhythm)</option>
+          <option value="2">Wake only (dark steady, flash on host wake)</option>
+          <option value="3">Always off (disabled / stealth)</option>
+          <option value="4">Always on</option>
+        </select></div>
+        <div class="row"><label>Pin preset</label><select id="ledPreset">
+          <option value="default">Default (Pin 3 Red + Pin 24 SuperMini)</option>
+          <option value="feather_red">Feather Red only (Pin 3 / P1.15)</option>
+          <option value="feather_blue">Feather Blue only (Pin 4 / P1.10 / CONN)</option>
+          <option value="supermini">SuperMini only (Pin 24 / P0.15)</option>
+          <option value="custom">Custom GPIO pins…</option>
+        </select></div>
+        <div id="ledCustomPins" class="hide">
+          <div class="row"><label>Primary Pin (A)</label><input type="number" id="ledPinA" min="0" max="47" step="1" style="width:70px"><span class="note" style="margin-left:8px">Feather Red: 3, Blue: 4, SuperMini: 24 (255 = None)</span></div>
+          <div class="row"><label>Secondary Pin (B)</label><input type="number" id="ledPinB" min="0" max="255" step="1" style="width:70px"><span class="note" style="margin-left:8px">Optional second pin driven together (255 = None)</span></div>
+        </div>
+        <div class="row"><label>Polarity</label><select id="ledPolarity">
+          <option value="1">Active High (HIGH = lit)</option>
+          <option value="0">Active Low (LOW = lit)</option>
+        </select></div>
+        <div class="row" style="margin:10px 0 0"><button id="ledTest">Test LED (2s flash)</button>
+          <span class="note" style="flex:1">Flashes the configured pin(s) for 2 seconds to visually identify which LED is connected.</span></div>
+        <p class="note">If testing Pin 4 or Pin 24 does not light up your blue LED, it is likely the onboard battery charger IC (TP4054), which pulses when no battery is attached and cannot be controlled by firmware.</p>
+      </div>
+      <p id="ledOld" class="note hide">This puck's firmware predates the status LED settings — update it to configure them.</p>
+    </div>
+
     <div class="card wide">
       <h2>Button mapping</h2>
       <p class="note" style="margin-top:0">Separate mappings per emulated controller type — each only offers targets that exist on that controller. The type matching the current mode is highlighted. Steam &amp; Lizard are native puck modes (Steam does its own remapping) and aren't configured here.</p>
@@ -1163,6 +1195,27 @@ function applyBlob(p){
       // a strength set from the console can land between the presets -- show the nearest one
       if(document.activeElement!==scl) scl.value=RUMBLE_SCALES.reduce((a,b)=>Math.abs(b-rumbleScale)<Math.abs(a-rumbleScale)?b:a);
     } }
+  { const ledCap = (p.length >= 198);
+    $("#ledBlock").classList.toggle("hide", !ledCap);
+    $("#ledOld").classList.toggle("hide", ledCap);
+    if(ledCap){
+      const ledMode = p[194], ledPinA = p[195], ledPinB = p[196], ledPolarity = p[197];
+      const modeSel = $("#ledMode"), polSel = $("#ledPolarity"), preSel = $("#ledPreset");
+      const pinAIn = $("#ledPinA"), pinBIn = $("#ledPinB");
+      if(document.activeElement !== modeSel) modeSel.value = ledMode;
+      if(document.activeElement !== polSel) polSel.value = ledPolarity;
+      if(document.activeElement !== pinAIn) pinAIn.value = ledPinA;
+      if(document.activeElement !== pinBIn) pinBIn.value = ledPinB;
+      if(document.activeElement !== preSel){
+        let preset = "custom";
+        if(ledPinA === 3 && ledPinB === 24) preset = "default";
+        else if(ledPinA === 3 && ledPinB === 255) preset = "feather_red";
+        else if(ledPinA === 4 && ledPinB === 255) preset = "feather_blue";
+        else if(ledPinA === 24 && ledPinB === 255) preset = "supermini";
+        preSel.value = preset;
+        $("#ledCustomPins").classList.toggle("hide", preset !== "custom");
+      }
+    } }
   for(const sel of document.querySelectorAll("select.chord")){ if(document.activeElement!==sel) sel.value=chord[+sel.dataset.i]; }
   $("#dpadChords").classList.toggle("hide", !dpadCap);
   $("#dpadOld").classList.toggle("hide", dpadCap);
@@ -1270,6 +1323,9 @@ function buildBackup(p, bp){
   if(p[0]>=18 && p.length>183) cfg.chordD=[p[180],p[181],p[182],p[183]];
   if(p[0]>=19 && p.length>184) cfg.swGyroLegacy=p[184];
   if(p[0]>=21 && p.length>179) cfg.emulateSteamMachine=p[179];
+  if(p.length>=198){
+    cfg.ledMode=p[194]; cfg.ledPinA=p[195]; cfg.ledPinB=p[196]; cfg.ledPolarity=p[197];
+  }
   // version 2: include the lizard map so it survives a backup/restore cycle.
   // Guard on !lizardBusy to avoid a race with the one-shot lazy load (lizardExchange sets
   // lizardBusy while the initial 0x11 fetch is in flight); if the load is still pending the
@@ -1321,7 +1377,8 @@ async function importBackup(file){
   // slots, and the final commit.
   const typeN=Array.isArray(c.types)?Math.min(c.types.length,4):0;
   const lizardN=(Array.isArray(c.lizardMap) && lizardCapable())?Math.min(c.lizardMap.length,LZ_MAX):0;
-  const baseN=6 + (Array.isArray(c.chordD)?4:0) + (c.swGyroLegacy!==undefined?1:0);
+  const ledN=(c.ledMode!==undefined?1:0)+(c.ledPinA!==undefined?1:0)+(c.ledPinB!==undefined?1:0)+(c.ledPolarity!==undefined?1:0);
+  const baseN=6 + (Array.isArray(c.chordD)?4:0) + (c.swGyroLegacy!==undefined?1:0) + (c.emulateSteamMachine!==undefined?1:0) + ledN;
   const padStickN=Array.isArray(c.types)?c.types.slice(0,typeN).filter(t=>Array.isArray(t.padStick)).length*2:0;
   const total=baseN + typeN*9 + padStickN + lizardN + 4 + 1;
   let step=0, stage="";
@@ -1353,7 +1410,10 @@ async function importBackup(file){
     // removed settings; those fields no longer exist on the puck, so they are not replayed.
     if(c.swGyroLegacy!==undefined) await sf(38, c.swGyroLegacy?1:0);
     if(c.emulateSteamMachine!==undefined) await sf(29, c.emulateSteamMachine==0xEE?1:0);
-    
+    if(c.ledMode!==undefined) await sf(32, c.ledMode);
+    if(c.ledPinA!==undefined) await sf(33, c.ledPinA);
+    if(c.ledPinB!==undefined) await sf(90, c.ledPinB);
+    if(c.ledPolarity!==undefined) await sf(91, c.ledPolarity);
     // c.types is absent in some very old backups created before per-type paddle/haptic config
     // was added to the panel export; guard so a missing field never crashes the import mid-flight.
     if(typeN){
@@ -2316,6 +2376,28 @@ $("#rumbleTest").onclick=async()=>{ if(dev){ await send([0x16]); log("test rumbl
 $("#rumbleStyle").addEventListener("change", ()=>setField(39, +$("#rumbleStyle").value));
 $("#rumbleScale").addEventListener("change", ()=>setField(22, (+$("#rumbleScale").value)/2));
 $("#swGyroMap").addEventListener("change", ()=>setField(38, +$("#swGyroMap").value));
+$("#ledMode").addEventListener("change", ()=>setField(32, +$("#ledMode").value));
+$("#ledPolarity").addEventListener("change", ()=>setField(91, +$("#ledPolarity").value));
+$("#ledPreset").addEventListener("change", ()=>{
+  const v = $("#ledPreset").value;
+  $("#ledCustomPins").classList.toggle("hide", v !== "custom");
+  if(v === "default"){
+    setField(33, 3);
+    setField(90, 24);
+  } else if(v === "feather_red"){
+    setField(33, 3);
+    setField(90, 255);
+  } else if(v === "feather_blue"){
+    setField(33, 4);
+    setField(90, 255);
+  } else if(v === "supermini"){
+    setField(33, 24);
+    setField(90, 255);
+  }
+});
+$("#ledPinA").addEventListener("change", ()=>setField(33, +$("#ledPinA").value));
+$("#ledPinB").addEventListener("change", ()=>setField(90, +$("#ledPinB").value));
+$("#ledTest").onclick=async()=>{ if(dev){ await setField(92, 1); log("LED test flash triggered (2s)"); } };
 for(const sel of document.querySelectorAll("select.chord")){
   sel.addEventListener("change", ()=>setField(CHORD_FIELD[+sel.dataset.i], +sel.value));
 }
