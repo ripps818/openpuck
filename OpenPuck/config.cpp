@@ -124,9 +124,10 @@ struct Cfg {
 // tail field treats as "unset" and replaces with its default.
 #define CFG_LEN_MIN (offsetof(struct Cfg, chordDpad))
 
-static uint8_t g_cfgExt[CFG_EXT_STORAGE_BYTES] = {
-	0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF
-};
+static uint8_t g_cfgExt[CFG_EXT_STORAGE_BYTES] = { 0xFF, 0xFF, 0xFF, 0xFF,
+						   0xFF, 0xFF, 0xFF, 0xFF,
+						   0xFF, 0xFF, 0xFF, 0xFF,
+						   0xFF, 0xFF, 0xFF, 0xFF };
 
 uint8_t cfgExtRead(uint8_t index)
 {
@@ -147,6 +148,8 @@ void saveCfg()
 	cfgExtWrite(6u, g_ledPinA);
 	cfgExtWrite(7u, g_ledPinB);
 	cfgExtWrite(8u, g_ledActiveLevel);
+	cfgExtWrite(9u, g_ledModeB);
+	cfgExtWrite(10u, g_ledActiveLevelB);
 	Cfg c = { CFG_MAGIC,
 		  g_usbMode,
 		  (uint8_t)g_mDiv,
@@ -290,11 +293,16 @@ void loadCfg()
 			const uint8_t ledModeVal = cfgExtRead(5u);
 			if (ledModeVal <= LED_MODE_MAX)
 				g_ledMode = ledModeVal;
+			const uint8_t ledModeBVal = cfgExtRead(9u);
+			if (ledModeBVal <= LED_MODE_MAX)
+				g_ledModeB = ledModeBVal;
 			const uint8_t ledPinAVal = cfgExtRead(6u);
 			const uint8_t ledPinBVal = cfgExtRead(7u);
 			const uint8_t ledActiveLevelVal = cfgExtRead(8u);
+			const uint8_t ledActiveLevelBVal = cfgExtRead(10u);
 			if (ledPinAVal != 0xFF || ledPinBVal != 0xFF ||
-			    ledActiveLevelVal != 0xFF) {
+			    ledActiveLevelVal != 0xFF ||
+			    ledActiveLevelBVal != 0xFF) {
 				uint8_t pa = (ledPinAVal != 0xFF) ? ledPinAVal :
 								    g_ledPinA;
 				uint8_t pb = (ledPinBVal != 0xFF) ? ledPinBVal :
@@ -302,7 +310,10 @@ void loadCfg()
 				uint8_t al = (ledActiveLevelVal <= 1) ?
 						     ledActiveLevelVal :
 						     g_ledActiveLevel;
-				ledApplyPins(pa, pb, al);
+				uint8_t alb = (ledActiveLevelBVal <= 1) ?
+						      ledActiveLevelBVal :
+						      g_ledActiveLevelB;
+				ledApplyPins(pa, pb, al, alb);
 			}
 
 			// The poll RX window is now FIXED (g_rxWin is const) -- any persisted rxWin10 is ignored.
