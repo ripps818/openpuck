@@ -1,7 +1,8 @@
 #include "config.h"
 #include "radio.h"
-#include "rf_link.h" // g_rxWin (poll RX window persisted here)
-#include "haptics.h" // g_hapticBlockOn, g_hapticBlockMs
+#include "rf_link.h"
+#include "haptics.h"
+#include "status_led.h"
 #include <Adafruit_LittleFS.h>
 #include <InternalFileSystem.h>
 #include <string.h>
@@ -142,6 +143,10 @@ void saveCfg()
 {
 	cfgExtWrite(3u, (uint8_t)(g_audioHapticGain / 2));
 	cfgExtWrite(4u, g_audioHaptics);
+	cfgExtWrite(5u, g_ledMode);
+	cfgExtWrite(6u, g_ledPinA);
+	cfgExtWrite(7u, g_ledPinB);
+	cfgExtWrite(8u, g_ledActiveLevel);
 	Cfg c = { CFG_MAGIC,
 		  g_usbMode,
 		  (uint8_t)g_mDiv,
@@ -281,6 +286,26 @@ void loadCfg()
 			const uint8_t audioHapticsVal = cfgExtRead(4u);
 			if (audioHapticsVal <= 1)
 				g_audioHaptics = audioHapticsVal;
+
+			const uint8_t ledModeVal = cfgExtRead(5u);
+			if (ledModeVal <= LED_MODE_MAX)
+				g_ledMode = ledModeVal;
+			const uint8_t ledPinAVal = cfgExtRead(6u);
+			const uint8_t ledPinBVal = cfgExtRead(7u);
+			const uint8_t ledActiveLevelVal = cfgExtRead(8u);
+			if (ledPinAVal != 0xFF || ledPinBVal != 0xFF ||
+			    ledActiveLevelVal != 0xFF) {
+				uint8_t pa = (ledPinAVal != 0xFF) ?
+						     ledPinAVal :
+						     g_ledPinA;
+				uint8_t pb = (ledPinBVal != 0xFF) ?
+						     ledPinBVal :
+						     g_ledPinB;
+				uint8_t al = (ledActiveLevelVal <= 1) ?
+						     ledActiveLevelVal :
+						     g_ledActiveLevel;
+				ledApplyPins(pa, pb, al);
+			}
 
 			// The poll RX window is now FIXED (g_rxWin is const) -- any persisted rxWin10 is ignored.
 		}

@@ -11,6 +11,7 @@
 #include "build_info.h"
 #include "fault_diag.h"
 #include "fw_update.h"
+#include "status_led.h"
 #include "usb_tx.h"
 #include "usb_mount.h" // modeSwitchReboot()
 #include <Arduino.h>
@@ -102,8 +103,9 @@ static bool boardCommand(uint8_t op)
 //                [v21: p[53] rumble strength as PERCENT/2 (field 22, revived); p[195] rumble style
 //                 (field 39, RUMBLE_STYLE_* in haptics.h)]
 //                [v22: p[196] 0x52 RF recovery transport capability marker]
-//                [local: p[197] audioHapticGain (field 30); p[198] audioHaptics (field 31)]
-#define WB_PAYLEN 197
+//                [local: p[197] audioHapticGain (field 30); p[198] audioHaptics (field 31);
+//                 p[199..202] LED config (fields 32,33,90,91)]
+#define WB_PAYLEN 201
 // The blob send is drop-on-full (never blocks loop), so the vendor TX FIFO MUST be able to hold a whole blob
 // -- otherwise tud_vendor_write_available() never reaches the frame size and EVERY frame is dropped (blank
 // panel / stale mappings). The Makefile sets -DCFG_TUD_VENDOR_TX_BUFSIZE=256; guard it here so a build without
@@ -337,6 +339,11 @@ static void webusbSendBlob()
 	// Local extensions: DualSense audio haptic gain (percent / 2) and enable toggle
 	p[197] = (uint8_t)(g_audioHapticGain / 2);
 	p[198] = g_audioHaptics;
+	// Status LED configuration
+	p[199] = g_ledMode;
+	p[200] = g_ledPinA;
+	p[201] = g_ledPinB;
+	p[202] = g_ledActiveLevel;
 	// CRITICAL: usb_web.write() SPINS (`while (remain && _connected) yield();`) until the IN FIFO drains or the
 	// panel disconnects. If the panel holds the WebUSB interface open but stops reading its IN endpoint -- a
 	// backgrounded tab, or the host briefly not servicing transferIn under load -- the FIFO never empties and
@@ -1296,6 +1303,34 @@ void webusbPoll()
 				// Used to be g_landAll87, now g_isMachineInternal. Persisted to blob p[181].
 				case 29:
 					g_isMachineInternal = v ? 0xEE : 0;
+					break;
+
+				// LED behavior mode (0=status, 1=heartbeat, 2=wake only, 3=off, 4=on)
+				case 32:
+					if (v <= LED_MODE_MAX)
+						g_ledMode = v;
+					break;
+
+				// LED primary pin (Pin A: 0..47, 0xFF=none)
+				case 33:
+					ledApplyPins(v, g_ledPinB, g_ledActiveLevel);
+					break;
+
+				// LED secondary pin (Pin B: 0..47, 0xFF=none)
+				case 90:
+					ledApplyPins(g_ledPinA, v, g_ledActiveLevel);
+					break;
+
+				// LED polarity (1=active high, 0=active low)
+				case 91:
+					ledApplyPins(g_ledPinA, g_ledPinB,
+						     v ? 1 : 0);
+					break;
+
+				// LED test pulse (temporary flash, no persistence)
+				case 92:
+					ledTriggerTest(v ? 2000u : 0u);
+					persist = false;
 					break;
 
 				// RF recovery controls reuse the field setter without its generic
