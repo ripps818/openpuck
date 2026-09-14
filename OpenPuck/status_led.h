@@ -1,6 +1,14 @@
-// status_led.h -- LED indication of wake activity.
+// status_led.h -- LED status and wake indicator.
 //
-// The LED is DARK in all steady states -- including while wake is armed (host suspended) -- and flashes for
+// Active state priorities (while host is awake):
+//   1. Controller connected (anySlotLinkUp): solid ON (highest active priority;
+//      immune to background RF ambient noise surveys or journal sweeps).
+//   2. Controller scanning / connecting (g_pairing or anySlotConnecting):
+//      fast blink at 5 Hz.
+//   3. Idle / disconnected: slow blink at 1 Hz.
+//
+// Wake debugger behavior (while host is suspended):
+// The LED is DARK in all steady states while wake is armed (host suspended), and flashes for
 // half a second when a wake is actually sent (USBDevice.remoteWakeup()). It's a wake debugger: flash + PC
 // stays asleep = resume signal was sent and the HOST ignored it (fix host-side: powercfg /deviceenablewake);
 // no flash = firmware never fired (didn't see the gesture, or didn't consider the bus suspended).
@@ -25,8 +33,11 @@
 #define WAKE_LED_ON HIGH // set LOW if your board's LED is wired active-low
 #endif
 
+#define LED_FAST_BLINK_MS 100u
+#define LED_SLOW_BLINK_MS 500u
+
 void ledInit(); // call once from setup(): pins to output, LED off
 
 // call at each USBDevice.remoteWakeup() site: LED on now, off after 500ms
 void ledWakePulse();
-void ledTask(); // call every loop(): times out the pulse
+void ledTask(); // call every loop()

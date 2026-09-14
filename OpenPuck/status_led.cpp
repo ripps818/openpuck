@@ -1,4 +1,7 @@
 #include "status_led.h"
+#include "rf_link.h"
+#include "bonds.h"
+#include <Adafruit_TinyUSB.h>
 #include <Arduino.h>
 
 #if defined(OPK_BOARD_MDBT50Q_CX_40)
@@ -15,6 +18,7 @@
 
 static unsigned long g_pulseMs = 0;
 static bool g_lit = false;
+static int s_lastLevel = -1;
 
 static void ledWrite(int level)
 {
@@ -26,6 +30,14 @@ static void ledWrite(int level)
 #endif
 }
 
+static void ledSet(int level)
+{
+	if (level == s_lastLevel)
+		return;
+	s_lastLevel = level;
+	ledWrite(level);
+}
+
 void ledInit()
 {
 #if defined(OPK_BOARD_MDBT50Q_CX_40)
@@ -34,7 +46,8 @@ void ledInit()
 	pinMode(WAKE_LED_PIN_A, OUTPUT);
 	pinMode(WAKE_LED_PIN_B, OUTPUT);
 #endif
-	ledWrite(WAKE_LED_OFF);
+	s_lastLevel = -1;
+	ledSet(WAKE_LED_OFF);
 }
 
 void ledWakePulse()
@@ -43,13 +56,37 @@ void ledWakePulse()
 	g_lit = true;
 
 	// light immediately at the remoteWakeup() call site, not on the next loop
-	ledWrite(WAKE_LED_ON);
+	ledSet(WAKE_LED_ON);
 }
 
 void ledTask()
 {
-	if (g_lit && millis() - g_pulseMs >= PULSE_MS) {
-		g_lit = false;
-		ledWrite(WAKE_LED_OFF);
+	if (g_lit) {
+		if (millis() - g_pulseMs >= PULSE_MS)
+			g_lit = false;
+		else {
+			ledSet(WAKE_LED_ON);
+			return;
+		}
 	}
+
+	if (USBDevice.suspended()) {
+		ledSet(WAKE_LED_OFF);
+		return;
+	}
+
+	if (anySlotLinkUp()) {
+		ledSet(WAKE_LED_ON);
+		return;
+	}
+
+	if (g_pairing || anySlotConnecting()) {
+		bool on = (millis() % (LED_FAST_BLINK_MS * 2)) <
+			  LED_FAST_BLINK_MS;
+		ledSet(on ? WAKE_LED_ON : WAKE_LED_OFF);
+		return;
+	}
+
+	bool on = (millis() % (LED_SLOW_BLINK_MS * 2)) < LED_SLOW_BLINK_MS;
+	ledSet(on ? WAKE_LED_ON : WAKE_LED_OFF);
 }

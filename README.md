@@ -121,6 +121,14 @@ If you want to use the second slot for OpenPuck, you'll need to first turn the c
 
 Switching slots requires turning the controller off (Steam + Y if steam is running, Steam + Y held for 2 seconds if Steam isn't running or if you're in a different mode, or just hold the Steam button for an eternity until the controller shuts off) and then you hold RB for slot 1 and LB for slot 2 while holding A and Steam to turn the controller back on.
 
+# Status LED
+The onboard LED indicates connection and pairing state:
+
+- **Solid ON**: Connected to controller.
+- **Fast blink (5 Hz)**: Scanning, pairing, or connecting.
+- **Slow blink (1 Hz)**: Idle / disconnected.
+- **Off**: Host PC asleep (flashes 500 ms when waking the PC).
+
 # Configuration
 A webusb based configuration UI is available [here](https://safijari.github.io/openpuck/). It allows Switching the mode manually and changing the back button mapping for other modes among other things. This will likely only work in Chrome and Edge and needs the pro micro to be connected via USB to the same computer for it to function. Note that it might not work in all modes on all machines but should always work in the Steam Controller mode (which you can revert to with back-4 + A). Note that in some modes the webusb connection might not work. If you're encountering that try going back to the Steam Controller mode and unplugging and replugging the dongle.
 
