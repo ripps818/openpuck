@@ -101,8 +101,8 @@ static bool boardCommand(uint8_t op)
 //                [v20: p[187..194] per-type trackpad->stick map, 4x2B {left pad, right pad} (PS_OFF/LEFT/RIGHT)]
 //                [v21: p[53] rumble strength as PERCENT/2 (field 22, revived); p[195] rumble style
 //                 (field 39, RUMBLE_STYLE_* in haptics.h)]
-//                [v22: p[196..199] LED config (fields 32,33,90,91)]
-#define WB_PAYLEN 198
+//                [v22: p[196..201] LED config (fields 32,33,90,91,93,94)]
+#define WB_PAYLEN 200
 // The blob send is drop-on-full (never blocks loop), so the vendor TX FIFO MUST be able to hold a whole blob
 // -- otherwise tud_vendor_write_available() never reaches the frame size and EVERY frame is dropped (blank
 // panel / stale mappings). The Makefile sets -DCFG_TUD_VENDOR_TX_BUFSIZE=256; guard it here so a build without
@@ -338,6 +338,8 @@ static void webusbSendBlob()
 	p[197] = g_ledPinA;
 	p[198] = g_ledPinB;
 	p[199] = g_ledActiveLevel;
+	p[200] = g_ledModeB;
+	p[201] = g_ledActiveLevelB;
 	// CRITICAL: usb_web.write() SPINS (`while (remain && _connected) yield();`) until the IN FIFO drains or the
 	// panel disconnects. If the panel holds the WebUSB interface open but stops reading its IN endpoint -- a
 	// backgrounded tab, or the host briefly not servicing transferIn under load -- the FIFO never empties and
@@ -1121,25 +1123,41 @@ void webusbPoll()
 				// LED primary pin (Pin A: 0..47, 0xFF=none)
 				case 33:
 					ledApplyPins(v, g_ledPinB,
-						     g_ledActiveLevel);
+						     g_ledActiveLevel,
+						     g_ledActiveLevelB);
 					break;
 
 				// LED secondary pin (Pin B: 0..47, 0xFF=none)
 				case 90:
 					ledApplyPins(g_ledPinA, v,
-						     g_ledActiveLevel);
+						     g_ledActiveLevel,
+						     g_ledActiveLevelB);
 					break;
 
-				// LED polarity (1=active high, 0=active low)
+				// LED primary polarity (1=active high, 0=active low)
 				case 91:
 					ledApplyPins(g_ledPinA, g_ledPinB,
-						     v ? 1 : 0);
+						     v ? 1 : 0,
+						     g_ledActiveLevelB);
 					break;
 
 				// LED test pulse (temporary flash, no persistence)
 				case 92:
 					ledTriggerTest(v ? 2000u : 0u);
 					persist = false;
+					break;
+
+				// LED secondary behavior mode (0=status, 1=heartbeat, 2=wake only, 3=off, 4=on)
+				case 93:
+					if (v <= LED_MODE_MAX)
+						g_ledModeB = v;
+					break;
+
+				// LED secondary polarity (1=active high, 0=active low)
+				case 94:
+					ledApplyPins(g_ledPinA, g_ledPinB,
+						     g_ledActiveLevel,
+						     v ? 1 : 0);
 					break;
 				}
 				if (persist)
