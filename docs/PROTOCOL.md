@@ -392,7 +392,10 @@ Messages:
   - `0x01`: get status blob
   - `0x02 <field> <value>`: set one field. Notable fields: `22` host-rumble strength as **percent/2**
     (10–500%, revived in blob version 21), `39` host-rumble style (`RUMBLE_STYLE_*` in `haptics.h`:
-    0 normal, 1 mono, 2 heavy, 3 light, 4 swapped, 5 punchy, 6 soft), `38` Switch Pro gyro mapping
+    0 normal, 1 mono, 2 heavy, 3 light, 4 swapped, 5 punchy, 6 soft), `38` Switch Pro gyro mapping,
+    `32` status LED behavior mode (0 connection status, 1 heartbeat, 2 wake only, 3 off/stealth, 4 on),
+    `33` status LED primary pin A, `90` status LED secondary pin B, `91` status LED polarity (1 active high,
+    0 active low), `92` status LED test flash (temporary 2-second pulse)
   - `0x03 <mode>`: switch mode and reboot
   - `0x07`: re-init haptics (clear a stuck buzz)
   - `0x08`: send controller power-off
@@ -473,6 +476,11 @@ the per-emulated-type trackpad-to-stick mapping at payload bytes 187..194 — tw
 A mapped pad **blends** with its stick: while the pad is touched each axis reports whichever of the two
 sources is deflected further from center (signed); an untouched pad contributes nothing and the physical
 stick passes straight through. A mapped pad also stops reporting as a touchpad contact / mouse.
+
+From version 22, the status blob payload is extended to 198 bytes (`WB_PAYLEN 198`) and includes status
+LED configuration at payload bytes 194..197 (`p[196..199]`): `[194]` mode (`0` connection status,
+`1` heartbeat, `2` wake only, `3` off/stealth, `4` on), `[195]` primary pin A, `[196]` secondary pin B,
+and `[197]` polarity (`1` active high, `0` active low).
 
 
 ### 10.1 Backup / clone (bond export & import)

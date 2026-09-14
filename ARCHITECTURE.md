@@ -236,7 +236,9 @@ it reflects connection state (solid ON when connected, fast blink when scanning/
 idle). When the host is suspended, it is dark in all steady states (including while armed), and flashes for
 500 ms at the moment a `remoteWakeup()` is actually sent. Flash + host stays asleep = the resume was sent
 and the host ignored it (fix host-side, e.g. `powercfg /deviceenablewake`); no flash = the firmware never fired
-(it didn't see the gesture, or didn't consider the bus suspended). USB remote wakeup is a **device-level**
+(it didn't see the gesture, or didn't consider the bus suspended). LED behavior modes, pin presets, and
+polarity are configurable via the WebUSB configurator panel and persisted in flash `struct Cfg`.
+USB remote wakeup is a **device-level**
 signal — one wake line per device, armed by a single `SET_FEATURE(DEVICE_REMOTE_WAKEUP)`; there is no
 per-interface arming on the wire. Which Windows device *node* gets credited is host-internal policy.
 
