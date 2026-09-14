@@ -129,7 +129,7 @@ The onboard user LED (P0.15 / Pin 24 on the SuperMini) indicates connection and 
 - **Slow blink (1 Hz)**: Idle / disconnected.
 - **Off**: Host PC asleep (flashes 500 ms when waking the PC).
 
-LED behavior can be customized in the [WebUSB configurator](https://safijari.github.io/openpuck/) under the **Status LED** card. You can choose different behaviors (Connection status, Heartbeat pulse, Wake-only flash, Always on, or Always off / stealth mode), select pin presets (SuperMini, Feather), configure custom GPIO pins with independent behaviors per LED, invert polarity, and trigger a test flash.
+LED behavior can be customized in the [WebUSB configurator](https://safijari.github.io/openpuck/) under the **Status LED** card. You can choose different behaviors (Connection status, Heartbeat pulse, Wake-only flash, Always on, or Always off / stealth mode), select pin presets (SuperMini / Nice!Nano, Nordic Dongle PCA10059, Feather), configure custom GPIO pins with independent behaviors per LED, invert polarity, and trigger a test flash.
 
 # Configuration
 A webusb based configuration UI is available [here](https://safijari.github.io/openpuck/). It allows switching the mode manually, changing back button mappings, adjusting rumble strength/style, configuring status LED behavior, and more. This will likely only work in Chrome and Edge and needs the pro micro to be connected via USB to the same computer for it to function. Note that it might not work in all modes on all machines but should always work in the Steam Controller mode (which you can revert to with back-4 + A). Note that in some modes the webusb connection might not work. If you're encountering that try going back to the Steam Controller mode and unplugging and replugging the dongle.

@@ -330,10 +330,11 @@
     <div class="card" id="ledCard">
       <h2>Status LED</h2>
       <div id="ledBlock">
-        <div class="row"><label>Pin preset</label><select id="ledPreset">
-          <option value="supermini">SuperMini (Pin 24 / P0.15)</option>
-          <option value="feather">Feather D3 (Pin 3 / P1.15)</option>
-          <option value="feather_conn">Feather D4 (Pin 4 / P1.10)</option>
+        <div class="row" id="ledPresetRow"><label>Pin preset</label><select id="ledPreset">
+          <option value="supermini">SuperMini / Nice!Nano (Pin 24 / P0.15)</option>
+          <option value="nordic_dongle">Nordic Dongle PCA10059 (Pin 11 / P0.06)</option>
+          <option value="feather">Feather (Pin 3 / P1.15)</option>
+          <option value="feather_conn">Feather (Pin 4 / P1.10)</option>
           <option value="custom">Custom GPIO pins…</option>
         </select></div>
         <div class="row" id="ledModeRow"><label>Behavior</label><select id="ledMode">
@@ -351,7 +352,7 @@
           <div class="row" style="margin-top:10px;padding-top:10px;border-top:1px solid #232a3a">
             <label style="font-weight:600">Primary LED (Pin A)</label>
           </div>
-          <div class="row"><label>GPIO Pin</label><input type="number" id="ledPinA" min="0" max="255" step="1" style="width:70px"><span class="note" style="margin-left:8px">SuperMini: 24, Feather D3: 3, Feather D4: 4 (255 = None)</span></div>
+          <div class="row"><label>GPIO Pin</label><input type="number" id="ledPinA" min="0" max="255" step="1" style="width:70px"><span class="note" style="margin-left:8px">SuperMini / Nice!Nano: 24, Nordic PCA10059: 11, Feather: 3 or 4 (255 = None)</span></div>
           <div class="row"><label>Behavior</label><select id="ledModeA">
             <option value="0">Connection status (solid link, blink search)</option>
             <option value="1">Heartbeat (pulsing heartbeat rhythm)</option>
@@ -1717,9 +1718,10 @@ function applyBlob(p){
       const customFocused = $("#ledCustomPins").contains(document.activeElement);
       if(document.activeElement !== preSel && !customFocused){
         let preset = "custom";
-        if(ledPinA === 24 && ledPinB === 255) preset = "supermini";
-        else if(ledPinA === 3 && ledPinB === 255) preset = "feather";
-        else if(ledPinA === 4 && ledPinB === 255) preset = "feather_conn";
+        if(ledPinA === 24 && ledPinB === 255 && ledPolarity === 1) preset = "supermini";
+        else if(ledPinA === 11 && ledPinB === 255 && ledPolarity === 0) preset = "nordic_dongle";
+        else if(ledPinA === 3 && ledPinB === 255 && ledPolarity === 1) preset = "feather";
+        else if(ledPinA === 4 && ledPinB === 255 && ledPolarity === 1) preset = "feather_conn";
         if(preSel.value !== "custom" || preset === "custom"){
           preSel.value = preset;
           const isCustom = (preset === "custom");
@@ -2943,12 +2945,27 @@ $("#ledPreset").addEventListener("change", ()=>{
   if(v === "supermini"){
     setField(33, 24);
     setField(90, 255);
+    setField(91, 1);
+    $("#ledPolarity").value = 1;
+    const pa = $("#ledPolarityA"); if(pa) pa.value = 1;
+  } else if(v === "nordic_dongle"){
+    setField(33, 11);
+    setField(90, 255);
+    setField(91, 0);
+    $("#ledPolarity").value = 0;
+    const pa = $("#ledPolarityA"); if(pa) pa.value = 0;
   } else if(v === "feather"){
     setField(33, 3);
     setField(90, 255);
+    setField(91, 1);
+    $("#ledPolarity").value = 1;
+    const pa = $("#ledPolarityA"); if(pa) pa.value = 1;
   } else if(v === "feather_conn"){
     setField(33, 4);
     setField(90, 255);
+    setField(91, 1);
+    $("#ledPolarity").value = 1;
+    const pa = $("#ledPolarityA"); if(pa) pa.value = 1;
   }
 });
 $("#ledPinA").addEventListener("change", ()=>setField(33, +$("#ledPinA").value));
