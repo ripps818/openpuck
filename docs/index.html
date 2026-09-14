@@ -1335,6 +1335,7 @@ function onGone(){
   window._wedgeEp=false; window._wedgePeak=0; // re-arm the live wedge logger for the next wedge episode
   window._lastBlobTs=0; window._hbLostEp=false; // re-arm the heartbeat watchdog (don't fire on a stale pre-reset timestamp)
   polling=false; dev=null; tabInited=false; pendingInRead=null; // re-default the config tab to the mode on next connect
+  const preSel=$("#ledPreset"); if(preSel) preSel.value="default";
   checkUpdateNotice(); // no device = no notice
   $("#connState").textContent="reconnecting…"; $("#connState").className="pill dn";
   $("#panel").classList.add("hide");
@@ -1678,14 +1679,16 @@ function applyBlob(p){
       if(document.activeElement !== polSel) polSel.value = ledPolarity;
       if(document.activeElement !== pinAIn) pinAIn.value = ledPinA;
       if(document.activeElement !== pinBIn) pinBIn.value = ledPinB;
-      if(document.activeElement !== preSel){
+      if(document.activeElement !== preSel && document.activeElement !== pinAIn && document.activeElement !== pinBIn){
         let preset = "custom";
         if(ledPinA === 3 && ledPinB === 24) preset = "default";
         else if(ledPinA === 3 && ledPinB === 255) preset = "feather_red";
         else if(ledPinA === 4 && ledPinB === 255) preset = "feather_blue";
         else if(ledPinA === 24 && ledPinB === 255) preset = "supermini";
-        preSel.value = preset;
-        $("#ledCustomPins").classList.toggle("hide", preset !== "custom");
+        if(preSel.value !== "custom" || preset === "custom"){
+          preSel.value = preset;
+          $("#ledCustomPins").classList.toggle("hide", preset !== "custom");
+        }
       }
     } }
   for(const sel of document.querySelectorAll("select.chord")){ if(document.activeElement!==sel) sel.value=chord[+sel.dataset.i]; }
@@ -2884,6 +2887,10 @@ $("#ledPreset").addEventListener("change", ()=>{
 });
 $("#ledPinA").addEventListener("change", ()=>setField(33, +$("#ledPinA").value));
 $("#ledPinB").addEventListener("change", ()=>setField(90, +$("#ledPinB").value));
+for(const id of ["ledPinA", "ledPinB"]){
+  const el = $("#"+id);
+  if(el) el.addEventListener("keydown", e => { if(e.key === "Enter") el.blur(); });
+}
 $("#ledTest").onclick=async()=>{ if(dev){ await setField(92, 1); log("LED test flash triggered (2s)"); } };
 $("#rfSurvey").onclick=()=>manualSurveyRf();
 $("#rfBuilder").onclick=()=>manualJournalBuilderRf();

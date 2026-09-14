@@ -138,8 +138,7 @@ void ledTask()
 
 	if (g_ledMode == LED_MODE_HEARTBEAT) {
 		unsigned long cycle = millis() % 1200u;
-		bool beat = (cycle < 70u) ||
-			    (cycle >= 180u && cycle < 250u);
+		bool beat = (cycle < 70u) || (cycle >= 180u && cycle < 250u);
 		ledSet(beat ? HIGH : LOW);
 		return;
 	}
@@ -159,4 +158,3 @@ void ledTask()
 	bool on = (millis() % (LED_SLOW_BLINK_MS * 2)) < LED_SLOW_BLINK_MS;
 	ledSet(on ? HIGH : LOW);
 }
-

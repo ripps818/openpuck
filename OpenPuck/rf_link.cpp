@@ -761,10 +761,9 @@ static void rfStartupChannelTask()
 {
 	const unsigned long now = millis();
 	for (int slot = 0; slot < NSLOT; slot++) {
-		const bool up = g_slot[slot].used &&
-				g_connReplyMs[slot] != 0u &&
-				(uint32_t)(now - g_connReplyMs[slot]) <
-					RF_LINK_UP_MS;
+		const bool up =
+			g_slot[slot].used && g_connReplyMs[slot] != 0u &&
+			(uint32_t)(now - g_connReplyMs[slot]) < RF_LINK_UP_MS;
 		if (up && !g_startupWasUp[slot])
 			rfStartupChannelBeginObservation(slot);
 		if (!up && g_startupWasUp[slot])

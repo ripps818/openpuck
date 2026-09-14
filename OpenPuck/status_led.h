@@ -60,4 +60,3 @@ void ledWakePulse();
 void ledTask(); // call every loop()
 void ledApplyPins(uint8_t pinA, uint8_t pinB, uint8_t activeLevel);
 void ledTriggerTest(uint32_t ms);
-

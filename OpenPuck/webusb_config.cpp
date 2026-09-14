@@ -1313,12 +1313,14 @@ void webusbPoll()
 
 				// LED primary pin (Pin A: 0..47, 0xFF=none)
 				case 33:
-					ledApplyPins(v, g_ledPinB, g_ledActiveLevel);
+					ledApplyPins(v, g_ledPinB,
+						     g_ledActiveLevel);
 					break;
 
 				// LED secondary pin (Pin B: 0..47, 0xFF=none)
 				case 90:
-					ledApplyPins(g_ledPinA, v, g_ledActiveLevel);
+					ledApplyPins(g_ledPinA, v,
+						     g_ledActiveLevel);
 					break;
 
 				// LED polarity (1=active high, 0=active low)

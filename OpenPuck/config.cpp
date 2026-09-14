@@ -295,12 +295,10 @@ void loadCfg()
 			const uint8_t ledActiveLevelVal = cfgExtRead(8u);
 			if (ledPinAVal != 0xFF || ledPinBVal != 0xFF ||
 			    ledActiveLevelVal != 0xFF) {
-				uint8_t pa = (ledPinAVal != 0xFF) ?
-						     ledPinAVal :
-						     g_ledPinA;
-				uint8_t pb = (ledPinBVal != 0xFF) ?
-						     ledPinBVal :
-						     g_ledPinB;
+				uint8_t pa = (ledPinAVal != 0xFF) ? ledPinAVal :
+								    g_ledPinA;
+				uint8_t pb = (ledPinBVal != 0xFF) ? ledPinBVal :
+								    g_ledPinB;
 				uint8_t al = (ledActiveLevelVal <= 1) ?
 						     ledActiveLevelVal :
 						     g_ledActiveLevel;
