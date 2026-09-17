@@ -51,6 +51,18 @@ static void initPs5Macs()
 	g_ps5MacInit = true;
 }
 
+// USB firmware-information payload from a DualSense, excluding report ID 0x20.
+// This emulated identity is independent of OpenPuck's own build version.
+static const uint8_t PS5_FIRMWARE_INFO[] = {
+	0x4A, 0x75, 0x6C, 0x20, 0x20, 0x34, 0x20, 0x32, 0x30, 0x32, 0x35,
+	0x31, 0x30, 0x3A, 0x31, 0x30, 0x3A, 0x33, 0x32, 0x02, 0x00, 0x04,
+	0x00, 0x13, 0x04, 0x00, 0x00, 0x2A, 0x00, 0x10, 0x01, 0x50, 0x38,
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x30,
+	0x06, 0x00, 0x00, 0x2A, 0x00, 0x01, 0x00, 0x0A, 0x00, 0x02, 0x00,
+	0x06, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+};
+static_assert(sizeof PS5_FIRMWARE_INFO == 63, "PS5 firmware report size");
+
 // GET_FEATURE handler. Per-slot dispatch via per-instance callback. Sizes per drivers/hid/hid-playstation.c:
 // 0x05=41, 0x09=20, 0x20=64. TinyUSB writes the report id itself and hands us the buffer PAST it, so we
 // fill only the PAYLOAD and return size-1.
@@ -118,27 +130,10 @@ static uint16_t ps5GetCommon(uint8_t slot, uint8_t rid, hid_report_type_t type,
 			return 0;
 		return 26;
 	case 0x20: // firmware info (64 incl id)
-		if (reqlen < 63)
+		if (reqlen < sizeof PS5_FIRMWARE_INFO)
 			return 0;
-		memcpy(buf, "Sep 10 202316:01:06", 19);
-		// hw_version le32 @ kernel payload offset 24 = our buf[24].
-		// 0x00000300 matches a DualSense hardware revision 3.
-		buf[24] = 0x00;
-		buf[25] = 0x03;
-		buf[26] = 0x00;
-		buf[27] = 0x00;
-		// fw_version le32 @ kernel payload offset 28 = our buf[28].
-		// 0x0228000B = fw 2.40 build 11 -- above hid-playstation's
-		// enhanced-haptics gate in kernel 6.3+.
-		buf[28] = 0x0B;
-		buf[29] = 0x00;
-		buf[30] = 0x28;
-		buf[31] = 0x02;
-		// update_version le16 @ kernel payload offset 44 = our buf[44].
-		// 0x0228 enables vibration-v2 and audio haptics in hid-playstation.
-		buf[44] = 0x28;
-		buf[45] = 0x02;
-		return 63;
+		memcpy(buf, PS5_FIRMWARE_INFO, sizeof PS5_FIRMWARE_INFO);
+		return sizeof PS5_FIRMWARE_INFO;
 	case 0x21: // build info (5 incl id)
 		if (reqlen < 4)
 			return 0;
@@ -157,7 +152,7 @@ static void ps5SetCommon(uint8_t slot, uint8_t rid, hid_report_type_t type,
 {
 	if ((type != HID_REPORT_TYPE_OUTPUT &&
 	     type != HID_REPORT_TYPE_INVALID) ||
-	    n < 1)
+	    !b || n < 1)
 		return;
 	uint8_t id;
 	const uint8_t *p;
