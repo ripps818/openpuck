@@ -76,7 +76,7 @@ Note: to use the Switch mode on a real Switch you'll need to [enable the pro con
 ### DualSense Mode & Audio Haptics
 DualSense mode presents a UAC1 4-channel USB audio sink (`Wireless Controller`) alongside the gamepad to stream voice-coil haptics (channels 3 & 4) to the Steam Controller haptic actuators.
 - **PipeWire / WirePlumber:** Run `make install-wireplumber` (or copy `tools/wireplumber/60-openpuck-dualsense.conf` to `~/.config/wireplumber/wireplumber.conf.d/`) to configure the device as a 4.0 surround sink.
-- **Proton / Games:** In DualSense haptic games (e.g. *Final Fantasy XIV*), enable controller sound effects in game settings. If needed on Proton, launch with `PROTON_USE_PIPEWIRE=0 PROTON_SONY_DUALSENSE_AS_DUALSHOCK4=1 %command%`.
+- **Proton / Games:** No launch options are needed on Valve Proton or GE-Proton. On builds that use Wine's PipeWire audio driver (e.g. Proton-Wineland), add `PROTON_USE_PIPEWIRE=0 %command%` so the 4-channel stream goes through PulseAudio. In DualSense haptic games, enable controller sound effects in the game settings.
 
 ### A note on the Lizard mode:
 The Lizard mode behaves similarly to how the controller behaves when Steam is closed, but this will work even when Steam is open. This has a few advantages
