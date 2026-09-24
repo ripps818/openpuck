@@ -154,6 +154,10 @@ bool hapticRelaySlotOk(int slot);
 bool hapticSteamRumble(uint16_t lowFreq, uint16_t highFreq, uint8_t slot = 0);
 // queue an audio-driven 0x80 haptic rumble frame (gated on g_audioHaptics rather than g_rumble).
 bool hapticAudioRumble(uint16_t lowFreq, uint16_t highFreq, uint8_t slot = 0);
+// queue an audio-driven 0x83 tone on one actuator (side 0 = left, 1 = right). The tone plays for durMs, so
+// a stream that stops refreshing it ends on its own; gainDb -128 cuts a playing tone within ~25-50 ms.
+bool hapticAudioTone(uint8_t side, int8_t gainDb, uint16_t freqHz,
+		     uint16_t durMs, uint8_t slot = 0);
 
 // queue + flush the pending host/test/stop relay inside the poll cadence (called from rf_link).
 // rfConnFlushRelay's s1 must carry a PID distinct from the GET poll that follows it. g_relayPid

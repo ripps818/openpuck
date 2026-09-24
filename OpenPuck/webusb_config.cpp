@@ -101,7 +101,8 @@ static bool boardCommand(uint8_t op)
 //                [v21: p[53] rumble strength as PERCENT/2 (field 22, revived); p[195] rumble style
 //                 (field 39, RUMBLE_STYLE_* in haptics.h); p[196] audioHapticGain (field 30);
 //                 p[197] audioHaptics (field 31, DualSense audio-driven haptics: 0=off, 1=on)]
-#define WB_PAYLEN 196
+//                [v22: p[198] audioHapticStyle (field 88, AUDIO_STYLE_* in config.h)]
+#define WB_PAYLEN 197
 // The blob send is drop-on-full (never blocks loop), so the vendor TX FIFO MUST be able to hold a whole blob
 // -- otherwise tud_vendor_write_available() never reaches the frame size and EVERY frame is dropped (blank
 // panel / stale mappings). The Makefile sets -DCFG_TUD_VENDOR_TX_BUFSIZE=256; guard it here so a build without
@@ -128,7 +129,8 @@ static void webusbSendBlob()
 
 	// clang-format off
 	// protocol version
-	// (21 = +rumble style (field 39, blob p[195]) and the REVIVED rumble-strength field 22 at blob p[53], 
+	// (22 = +DualSense audio haptics style (field 88, blob p[198]);
+	// 21 = +rumble style (field 39, blob p[195]) and the REVIVED rumble-strength field 22 at blob p[53], 
 	// now carrying percent/2; 
 	// 20 = +per-type trackpad->stick mapping (fields 80..87, blob p[187..194]); 
 	// 19 = +Switch Pro legacy-gyro select (field 38, blob p[186]); the Switch report-rate and
@@ -149,7 +151,7 @@ static void webusbSendBlob()
 	// 7 = +raw accel; 
 	// 6 = +swPro120/gyroScale)
 	// clang-format on
-	p[2] = 21;
+	p[2] = 22;
 	p[3] = g_usbMode;
 	p[4] = (uint8_t)g_mDiv;
 	p[5] = (uint8_t)g_mFric;
@@ -331,9 +333,10 @@ static void webusbSendBlob()
 	}
 	// v21: host-rumble style (RUMBLE_STYLE_* -- see haptics.h)
 	p[195] = g_rumbleStyle;
-	// DualSense audio haptic gain as PERCENT/2 (10-500%, default 200)
+	// DualSense audio haptic gain as PERCENT/2 (10-500%); 0 = auto (default)
 	p[196] = (uint8_t)(g_audioHapticGain / 2);
 	p[197] = g_audioHaptics;
+	p[198] = g_audioHapticStyle;
 	// CRITICAL: usb_web.write() SPINS (`while (remain && _connected) yield();`) until the IN FIFO drains or the
 	// panel disconnects. If the panel holds the WebUSB interface open but stops reading its IN endpoint -- a
 	// backgrounded tab, or the host briefly not servicing transferIn under load -- the FIFO never empties and
@@ -1103,10 +1106,21 @@ void webusbPoll()
 					g_audioHaptics = v ? 1 : 0;
 					break;
 
-				// DualSense audio-driven haptic gain (percent / 2, 10-500%)
+				// DualSense audio-driven haptics style (AUDIO_STYLE_*). Protocol v22. Past
+				// the per-type cfg range (40..75) and the pad->stick fields (80..87).
+				case 88:
+					g_audioHapticStyle =
+						v > AUDIO_STYLE_SPLIT ?
+							AUDIO_STYLE_TONE :
+							v;
+					break;
+
+				// DualSense audio-driven haptic gain (percent / 2, 10-500%; 0 = auto)
 				case 30: {
 					uint16_t pct = (uint16_t)v * 2;
-					if (pct < 10)
+					if (!v)
+						pct = 0;
+					else if (pct < 10)
 						pct = 10;
 					else if (pct > 500)
 						pct = 500;
