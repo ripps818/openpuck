@@ -742,7 +742,7 @@ function setTab(et){
     tab.innerHTML='<span>'+def.name+'</span><span class="active-dot" style="display:none;font-size:11px;color:var(--acc)"> ●</span>';
     tab.onclick=()=>setTab(et); bar.appendChild(tab);
     const sec=document.createElement("div"); sec.style.cssText="background:#0e1017;border:1px solid #232a3a;border-radius:8px;padding:12px 14px;display:none";
-    const rec={sec,tab,activeDot:tab.querySelector(".active-dot"),back:[],qam:null,abSwap:null,pad:null,led:null,ledV:null,rumble:null,audioHaptics:null,audioGain:null,audioGainV:null,padStick:[]};
+    const rec={sec,tab,activeDot:tab.querySelector(".active-dot"),back:[],qam:null,abSwap:null,pad:null,led:null,ledV:null,rumble:null,audioHaptics:null,audioStyle:null,audioGain:null,audioGainV:null,padStick:[]};
     // A/B swap + trackpad haptics + rumble toggles
     const tog=document.createElement("div"); tog.className="row"; tog.style.cssText="display:flex;align-items:center;gap:8px 10px;margin:12px 0;flex-wrap:wrap";
     const abLbl=document.createElement("label"); abLbl.textContent="A/B + X/Y swap"; abLbl.style.cssText="flex:0 0 auto;margin:0"; tog.appendChild(abLbl);
@@ -756,6 +756,12 @@ function setTab(et){
       const aud=document.createElement("button"); aud.textContent="on"; tog.appendChild(aud);
       rec.audioHaptics=aud;
       aud.onclick=()=>{ const on=aud.classList.contains("active"); setField(31, on?0:1); };
+      // Haptics style (protocol v22): 0 rumble = the motor-style rumble, 1 tone = smooth per-actuator tones (default),
+      // 2 split = below ~80 Hz as rumble, the rest as tones. Clicking cycles tone -> split -> rumble.
+      const styLbl=document.createElement("label"); styLbl.textContent="Haptics style"; styLbl.style.cssText="flex:0 0 auto;margin:0 0 0 6px"; tog.appendChild(styLbl);
+      const sty=document.createElement("button"); sty.textContent="tone"; sty.dataset.v="1"; tog.appendChild(sty);
+      rec.audioStyle=sty;
+      sty.onclick=()=>{ setField(88, ((+sty.dataset.v)+1)%3); };
     }
     sec.appendChild(tog);
     rec.abSwap=ab; rec.pad=pad; rec.rumble=rumble;
@@ -790,10 +796,11 @@ function setTab(et){
     if(def.key==="DS5"){
       const row=document.createElement("div"); row.className="row";
       const lab=document.createElement("label"); lab.textContent="Audio Haptics Gain"; row.appendChild(lab);
-      const sl=document.createElement("input"); sl.type="range"; sl.min=10; sl.max=500; sl.step=10; row.appendChild(sl);
+      // 0 = Auto (firmware default): the loudest recent haptic plays at full strength
+      const sl=document.createElement("input"); sl.type="range"; sl.min=0; sl.max=500; sl.step=10; row.appendChild(sl);
       const vspan=document.createElement("span"); vspan.className="val"; row.appendChild(vspan);
-      sl.value=200; vspan.textContent="200%";
-      sl.addEventListener("input",()=>{ vspan.textContent=sl.value+"%"; });
+      sl.value=0; vspan.textContent="Auto";
+      sl.addEventListener("input",()=>{ vspan.textContent=(+sl.value===0)?"Auto":sl.value+"%"; });
       sl.addEventListener("change",()=>setField(30, (+sl.value)/2));
       sec.appendChild(row);
       rec.audioGain=sl; rec.audioGainV=vspan;
@@ -1656,11 +1663,17 @@ function applyBlob(p){
         rec.audioHaptics.textContent=audOn?"on":"off";
         rec.audioHaptics.classList.toggle("active",audOn);
       }
+      if(rec.audioStyle){
+        const v = (p.length>203 && p[203]<=2)?p[203]:1;
+        rec.audioStyle.dataset.v=v;
+        rec.audioStyle.textContent=["rumble","tone","split"][v];
+        rec.audioStyle.classList.toggle("active",v!==0);
+      }
       if(rec.audioGain && p.length>195){
-        const gain = (p[195]>0)?(p[195]*2):200;
+        const gain = p[195]*2;
         if(document.activeElement!==rec.audioGain){
           rec.audioGain.value = gain;
-          rec.audioGainV.textContent = gain + "%";
+          rec.audioGainV.textContent = (gain===0)?"Auto":gain + "%";
         }
       }
       if(document.activeElement!==rec.led){ rec.led.value=led; rec.ledV.textContent=(led===0)?"Auto":led+"%"; }

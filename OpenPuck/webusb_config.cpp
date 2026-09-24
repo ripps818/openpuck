@@ -103,9 +103,10 @@ static bool boardCommand(uint8_t op)
 //                [v21: p[53] rumble strength as PERCENT/2 (field 22, revived); p[195] rumble style
 //                 (field 39, RUMBLE_STYLE_* in haptics.h)]
 //                [v22: p[196] 0x52 RF recovery transport capability marker]
-//                [local: p[197] audioHapticGain (field 30); p[198] audioHaptics (field 31);
-//                 p[199..204] LED config (fields 32,33,90,91,93,94)]
-#define WB_PAYLEN 203
+//                [local: p[197] audioHapticGain (field 30, percent/2; 0 = auto); p[198] audioHaptics (field 31);
+//                 p[199..204] LED config (fields 32,33,90,91,93,94); p[205] audioHapticStyle (field 88,
+//                 AUDIO_STYLE_* in config.h)]
+#define WB_PAYLEN 204
 // The blob send is drop-on-full (never blocks loop), so the vendor TX FIFO MUST be able to hold a whole blob
 // -- otherwise tud_vendor_write_available() never reaches the frame size and EVERY frame is dropped (blank
 // panel / stale mappings). The Makefile sets -DCFG_TUD_VENDOR_TX_BUFSIZE=256; guard it here so a build without
@@ -135,7 +136,8 @@ static void webusbSendBlob()
 
 	// clang-format off
 	// protocol version
-	// (21 = +rumble style (field 39, blob p[195]) and the REVIVED rumble-strength field 22 at blob p[53], 
+	// (22 = +DualSense audio haptics style (field 88, blob p[198]);
+	// 21 = +rumble style (field 39, blob p[195]) and the REVIVED rumble-strength field 22 at blob p[53], 
 	// now carrying percent/2; 
 	// 22 = +RF recovery capability marker at blob p[196];
 	// 20 = +per-type trackpad->stick mapping (fields 80..87, blob p[187..194]); 
@@ -336,7 +338,7 @@ static void webusbSendBlob()
 	// v22: append-only RF recovery transport capability. p[181] remains the
 	// upstream Steam Machine toggle; older RF builds used that byte for 0x52.
 	p[196] = 0x52;
-	// Local extensions: DualSense audio haptic gain (percent / 2) and enable toggle
+	// Local extensions: DualSense audio haptic gain (percent / 2; 0 = auto) and enable toggle
 	p[197] = (uint8_t)(g_audioHapticGain / 2);
 	p[198] = g_audioHaptics;
 	// Status LED configuration
@@ -346,6 +348,7 @@ static void webusbSendBlob()
 	p[202] = g_ledActiveLevel;
 	p[203] = g_ledModeB;
 	p[204] = g_ledActiveLevelB;
+	p[205] = g_audioHapticStyle;
 	// CRITICAL: usb_web.write() SPINS (`while (remain && _connected) yield();`) until the IN FIFO drains or the
 	// panel disconnects. If the panel holds the WebUSB interface open but stops reading its IN endpoint -- a
 	// backgrounded tab, or the host briefly not servicing transferIn under load -- the FIFO never empties and
@@ -1287,10 +1290,21 @@ void webusbPoll()
 					g_audioHaptics = v ? 1 : 0;
 					break;
 
-				// DualSense audio-driven haptic gain (percent / 2, 10-500%)
+				// DualSense audio-driven haptics style (AUDIO_STYLE_*). Protocol v22. Past
+				// the per-type cfg range (40..75) and the pad->stick fields (80..87).
+				case 88:
+					g_audioHapticStyle =
+						v > AUDIO_STYLE_SPLIT ?
+							AUDIO_STYLE_TONE :
+							v;
+					break;
+
+				// DualSense audio-driven haptic gain (percent / 2, 10-500%; 0 = auto)
 				case 30: {
 					uint16_t pct = (uint16_t)v * 2;
-					if (pct < 10)
+					if (!v)
+						pct = 0;
+					else if (pct < 10)
 						pct = 10;
 					else if (pct > 500)
 						pct = 500;

@@ -485,23 +485,38 @@ bool hapticSteamRumble(uint16_t lowFreq, uint16_t highFreq, uint8_t slot)
 
 // Audio-driven haptics bypass the standard motor rumble toggle (g_rumble)
 // and check g_audioHaptics instead, allowing standard game motor rumble
-// to be muted in the UI while retaining pure audio-driven haptics.
+// to be muted in the UI while retaining pure audio-driven haptics. The
+// strengths arrive with g_audioHapticGain already applied (ps5AudioTask).
 bool hapticAudioRumble(uint16_t lowFreq, uint16_t highFreq, uint8_t slot)
 {
 	if (slot >= NSLOT)
 		return false;
 
-	if (lowFreq || highFreq) {
-		uint32_t l = (uint32_t)lowFreq * g_audioHapticGain / 100,
-			 h = (uint32_t)highFreq * g_audioHapticGain / 100;
-		lowFreq = (l > 0xFFFF) ? 0xFFFF : (uint16_t)l;
-		highFreq = (h > 0xFFFF) ? 0xFFFF : (uint16_t)h;
-	}
-
 	g_audioLow[slot] = lowFreq;
 	g_audioHigh[slot] = highFreq;
 
 	return hapticUpdateRumble(slot);
+}
+
+// Report 0x83 is MsgHapticLfoTone (SDL steam/controller_structs.h): {u8 side; s8 gain_db; u16 frequency;
+// u16 duration_ms; u16 lfo_freq; u8 lfo_depth}. Measured on the controller's IMU: its tone generator is
+// smooth where the 0x80 rumble imitates a spinning motor at every setting, and a tone re-sent before it ends
+// plays on without a seam. No LFO -- the audio envelope already carries the modulation.
+bool hapticAudioTone(uint8_t side, int8_t gainDb, uint16_t freqHz,
+		     uint16_t durMs, uint8_t slot)
+{
+	if (slot >= NSLOT || haptic82Blocked(slot) || !hapticLinkUp(slot))
+		return false;
+	uint8_t p[9] = { side,
+			 (uint8_t)gainDb,
+			 (uint8_t)(freqHz & 0xFF),
+			 (uint8_t)(freqHz >> 8),
+			 (uint8_t)(durMs & 0xFF),
+			 (uint8_t)(durMs >> 8),
+			 0,
+			 0,
+			 0 };
+	return relayEnqueue(0x83, p, sizeof p, true, slot);
 }
 // Queue a pending test-haptic / stop relay (runs inside the poll cadence -- never at raw loop rate). Test
 // haptics broadcast to all connected slots (slot 0xFF); the stop frame is broadcast too (a stuck latch can

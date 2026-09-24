@@ -44,8 +44,11 @@ EXTRA_FLAGS ?=
 # TinyUSB dispatches every vendor-type control request through one global callback, which the Adafruit core
 # already defines to serve WebUSB. Original Xbox mode needs the XID requests that arrive on it.
 # Overriding the weak symbol would claim the whole hook and force a copy of Adafruit's WebUSB body,
+# so we wrap: webusb_config.cpp takes XID and passes everything else to __real_.
+# The device descriptor is wrapped the same way (mode_ps5.cpp): the clean DualSense mode must report no
+# serial string, and the Adafruit core always sets iSerialNumber.
 RF_JOURNAL_BASE ?= 0x86000
-OPENPUCK_LINK_FLAGS ?= -Wl,--wrap=tud_vendor_control_xfer_cb -Wl,--section-start=.rf_journal_guard=$(RF_JOURNAL_BASE)
+OPENPUCK_LINK_FLAGS ?= -Wl,--wrap=tud_vendor_control_xfer_cb -Wl,--wrap=tud_descriptor_device_cb -Wl,--section-start=.rf_journal_guard=$(RF_JOURNAL_BASE)
 # {build.flags.usb} is expanded by arduino-cli (VID/PID/strings); pass it through verbatim.
 USB_EXTRA_FLAGS = -DNRF52840_XXAA {build.flags.usb} -DCFG_TUD_HID=$(CFG_TUD_HID) -DCFG_TUD_TASK_QUEUE_SZ=$(CFG_TUD_TASK_QUEUE_SZ) -DCFG_TUD_VENDOR_TX_BUFSIZE=$(CFG_TUD_VENDOR_TX_BUFSIZE) -DOPK_RF_JOURNAL_BASE=$(RF_JOURNAL_BASE) $(EXTRA_FLAGS)
 # When BUILD_PATH is set, --clean + path flags are injected; omitted for fast incremental dev builds.
@@ -190,19 +193,25 @@ check: format-check
 
 WIREPLUMBER_CONF_DIR ?= $(HOME)/.config/wireplumber/wireplumber.conf.d
 
-## Install the WirePlumber 4-channel surround haptics rule to ~/.config/wireplumber/wireplumber.conf.d/
-install-wireplumber:
-	mkdir -p "$(WIREPLUMBER_CONF_DIR)"
-	cp tools/wireplumber/60-openpuck-dualsense.conf "$(WIREPLUMBER_CONF_DIR)/"
-	@if command -v systemctl >/dev/null 2>&1; then \
-		systemctl --user restart wireplumber 2>/dev/null || true; \
-	fi
-	@echo "Installed WirePlumber DualSense haptics config to $(WIREPLUMBER_CONF_DIR)/60-openpuck-dualsense.conf"
+WIREPLUMBER_SCRIPT_DIR ?= $(HOME)/.local/share/wireplumber/scripts
 
-## Remove the WirePlumber DualSense haptics rule.
-uninstall-wireplumber:
-	rm -f "$(WIREPLUMBER_CONF_DIR)/60-openpuck-dualsense.conf"
+## Optional: install the WirePlumber hook that starts the haptic channels of the DualSense-mode audio output at
+## full volume (instead of WirePlumber's 40% default, which weakens audio haptics). Leaves the mic and the
+## speaker/headphone channels alone. Config to WIREPLUMBER_CONF_DIR, script to WIREPLUMBER_SCRIPT_DIR.
+install-wireplumber:
+	mkdir -p "$(WIREPLUMBER_CONF_DIR)" "$(WIREPLUMBER_SCRIPT_DIR)"
+	cp tools/wireplumber/60-openpuck-dualsense.conf "$(WIREPLUMBER_CONF_DIR)/"
+	cp tools/wireplumber/openpuck-dualsense-haptics.lua "$(WIREPLUMBER_SCRIPT_DIR)/"
 	@if command -v systemctl >/dev/null 2>&1; then \
 		systemctl --user restart wireplumber 2>/dev/null || true; \
 	fi
-	@echo "Removed WirePlumber DualSense haptics config from $(WIREPLUMBER_CONF_DIR)/"
+	@echo "Installed the WirePlumber DualSense haptic-volume hook ($(WIREPLUMBER_CONF_DIR)/60-openpuck-dualsense.conf)"
+
+## Remove the WirePlumber DualSense haptic-volume hook.
+uninstall-wireplumber:
+	rm -f "$(WIREPLUMBER_CONF_DIR)/60-openpuck-dualsense.conf" \
+		"$(WIREPLUMBER_SCRIPT_DIR)/openpuck-dualsense-haptics.lua"
+	@if command -v systemctl >/dev/null 2>&1; then \
+		systemctl --user restart wireplumber 2>/dev/null || true; \
+	fi
+	@echo "Removed the WirePlumber DualSense haptic-volume hook"

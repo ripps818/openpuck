@@ -76,28 +76,21 @@ Note: to use the Switch mode on a real Switch you'll need to [enable the pro con
 
 ### Enhancements in this Fork
 Compared to upstream OpenPuck, this fork adds:
-- **DualSense 4-Channel USB Audio & Real-Time Voice-Coil Haptics:** Implements a UAC1 4-channel isochronous audio stream on the puck. Channels 3 & 4 (rear surround) are decoded in real-time and converted to voice-coil/LRA haptic feedback on the Steam Controller over the 2.4GHz RF link.
-- **Enhanced PlayStation HID & Feature Reports:** Implements DualSense Feature Reports `0x03`, `0x08`, `0x09` (pairing & MAC), `0x0A`, `0x20` (accurate hardware revision and firmware version fields), `0x21`, and `0x22`, plus `GET_REPORT(0x01)` support for DirectInput game polling.
+- **DualSense 4-Channel USB Audio & Voice-Coil Haptics:** DualSense mode presents the same USB audio function as a real DualSense (4-channel output, silent 2-channel mic). Channels 3 & 4 (the haptic tracks) are turned into Steam Controller haptic commands in real time and sent over the 2.4GHz RF link, in one of three styles: rumble, tone, or split (low frequencies as rumble, the rest as tones).
+- **Enhanced PlayStation HID & Feature Reports:** A byte-for-byte copy of a real DualSense's report descriptor, and Feature Reports `0x03`, `0x08`, `0x09` (pairing & MAC), `0x0A`, `0x20` (accurate hardware revision and firmware version fields), `0x21`, and `0x22`, plus `GET_REPORT(0x01)` support for DirectInput game polling.
 - **Touchpad Toggle Chord:** Hold all 4 back buttons (`Back-4`) and click either trackpad (`LPADC` or `RPADC`) to toggle touchpad reporting on/off on the fly (high buzz = enabled, low buzz = disabled). Useful to prevent accidental trackpad touches when gripping in stick-only mode.
-- **WirePlumber 4.0 Surround Profile:** Includes `tools/wireplumber/60-openpuck-dualsense.conf` to automatically configure the USB Audio device as a 4.0 Analog Surround sink named `Wireless Controller` while preventing ALSA UCM channel-splitting conflicts.
 
 ### DualSense Mode & Audio Haptics on Linux / Proton
-In DualSense mode, OpenPuck exposes a USB UAC1 4-channel audio device alongside the HID gamepad to emulate physical DualSense voice-coil haptics (channels 3+4 = rear channels = haptics):
+Full notes, measurements and known issues: [docs/DUALSENSE_HAPTICS.md](docs/DUALSENSE_HAPTICS.md).
 
-1. **PipeWire / WirePlumber setup:**
-   Install the provided configuration to ensure PipeWire configures the audio sink as a 4.0 surround device named `Wireless Controller` and automatically routes 4-channel haptic streams to the puck:
+1. **PipeWire:** no WirePlumber config is needed. The stock DualSense profile gives a 4-channel `...Wireless_Controller-00.Direct__Direct__sink`. Set its haptic channels to 100% once (WirePlumber starts new outputs at about 6% signal):
    ```sh
-   make install-wireplumber
+   pactl set-sink-volume alsa_output.usb-Sony_Interactive_Entertainment_Wireless_Controller-00.Direct__Direct__sink 40% 40% 100% 100%
    ```
-   *(Or manually copy `tools/wireplumber/60-openpuck-dualsense.conf` to `~/.config/wireplumber/wireplumber.conf.d/` and run `systemctl --user restart wireplumber pipewire`)*
-2. **Proton 11 / GE-Proton 11 Configuration (e.g. FFXIV):**
-   Proton 11.x uses `winepipewire.drv` by default, which can interfere with the 4-channel WASAPI endpoint matching. Add the following environment variables to your Steam or XIVLauncher launch arguments:
-   ```sh
-   PROTON_USE_PIPEWIRE=0 PROTON_SONY_DUALSENSE_AS_DUALSHOCK4=1 %command%
-   ```
-3. **In-game audio settings:**
-   In games that support DualSense audio haptics (such as *Final Fantasy XIV*), enable **"Play sound effects on controller speaker"** (SoundPad) in the sound settings.
-
+   Optional: `make install-wireplumber` installs a hook that does this automatically for a new output.
+2. **Proton:** games that open the "Wireless Controller" audio endpoint by name (e.g. *Hi-Fi Rush*) work on any Proton. Sony PC ports using libScePad (e.g. *Stellar Blade*) need GE-Proton 11-6 or newer and Steam Input turned off for the game. Don't set `PROTON_SONY_DUALSENSE_AS_DUALSHOCK4`, which hides the DualSense. On builds that use Wine's PipeWire audio driver (e.g. Proton-Wineland), add `PROTON_USE_PIPEWIRE=0 %command%`.
+3. ***Final Fantasy XIV*:** its DualSense mode currently ignores the puck (no input, no haptics). GE-Proton with `PROTON_SONY_HIDRAW_XINPUT=1` gives working buttons through XInput, without haptics.
+4. **In-game:** enable the controller haptics / controller sound effects option where the game has one. Pick the haptics style (split feels best so far) and gain in the web panel's DualSense tab.
 ### A note on the Lizard mode:
 The Lizard mode behaves similarly to how the controller behaves when Steam is closed, but this will work even when Steam is open. This has a few advantages
 the biggest one being that you can use inputs when a high privilege application is in the foreground (like the Task Manager, when using Steam if you wanna be able to do that Steam must be run as admin).

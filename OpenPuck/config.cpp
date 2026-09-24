@@ -55,7 +55,8 @@ uint8_t g_qamMap = 0;
 uint8_t g_padHaptics = 1;
 uint8_t g_rumble = 1;
 uint8_t g_audioHaptics = 1;
-uint16_t g_audioHapticGain = 200;
+uint16_t g_audioHapticGain = 0;
+uint8_t g_audioHapticStyle = AUDIO_STYLE_TONE;
 uint8_t g_ledBright = 0;
 
 void applyActiveType()
@@ -144,6 +145,7 @@ void saveCfg()
 {
 	cfgExtWrite(3u, (uint8_t)(g_audioHapticGain / 2));
 	cfgExtWrite(4u, g_audioHaptics);
+	cfgExtWrite(11u, g_audioHapticStyle);
 	cfgExtWrite(5u, g_ledMode);
 	cfgExtWrite(6u, g_ledPinA);
 	cfgExtWrite(7u, g_ledPinB);
@@ -289,6 +291,9 @@ void loadCfg()
 			const uint8_t audioHapticsVal = cfgExtRead(4u);
 			if (audioHapticsVal <= 1)
 				g_audioHaptics = audioHapticsVal;
+			const uint8_t audioStyleVal = cfgExtRead(11u);
+			if (audioStyleVal <= AUDIO_STYLE_SPLIT)
+				g_audioHapticStyle = audioStyleVal;
 
 			const uint8_t ledModeVal = cfgExtRead(5u);
 			if (ledModeVal <= LED_MODE_MAX)
@@ -315,7 +320,6 @@ void loadCfg()
 						      g_ledActiveLevelB;
 				ledApplyPins(pa, pb, al, alb);
 			}
-
 			// The poll RX window is now FIXED (g_rxWin is const) -- any persisted rxWin10 is ignored.
 		}
 		f.close();
