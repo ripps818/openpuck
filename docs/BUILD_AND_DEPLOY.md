@@ -262,7 +262,7 @@ reboot copies staged→app from RAM (~5 s dark) and comes back up on the new fir
 > (`ripps-` plus 6 hash digits). The nightly workflow also mirrors the `.uf2`s of the newest 15 releases (nightly included) onto the `firmware`
 > branch (one force-pushed commit), so the panel's release list can flash them in-page. The panel reads releases
 > from the repo whose GitHub Pages site serves it (`<owner>.github.io/<repo>/`), and from this fork when served
-> from anywhere else; this fork's panel is at https://ripps818.github.io/openpuck/ (Pages: `main`, `/docs`). The upstream workflows (`build.yml`, `format.yml`, `release.yml`) run only in
+> from anywhere else; this fork's panel is at https://ripps818.github.io/openpuck/, deployed by `nightly.yml` after each successful build (Pages source: GitHub Actions). The upstream workflows (`build.yml`, `format.yml`, `release.yml`) run only in
 > `safijari/openpuck`; in the fork their jobs show as skipped. Run `make check` locally for formatting.
 
 Failure safety: **nothing is armed until the staged image verifies in flash**, so a disconnect, error, or

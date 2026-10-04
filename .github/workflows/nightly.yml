@@ -3,10 +3,18 @@ name: Nightly
 # ripps818/openpuck only: every push to main builds the firmware with a "ripps-<hash>" version and replaces the
 # single pre-release tagged "nightly" with it. promote-nightly.yml turns the current nightly into a permanent
 # release. The upstream release flow (release.yml) does not run here.
+# Runs only for pushes that touch the firmware or the panel; workflow and documentation edits don't. A manual
+# run rebuilds both.
 on:
   push:
     branches:
       - main
+    paths:
+      - 'OpenPuck/**'
+      - 'Makefile'
+      - 'gen_version.sh'
+      - 'gen_uf2.sh'
+      - 'docs/*.html'
   workflow_dispatch:
 
 # a newer push supersedes a nightly still building
@@ -18,8 +26,48 @@ permissions:
   contents: write
 
 jobs:
-  build:
+  # What the push changed: the firmware (rebuild + new nightly) and/or the panel (redeploy Pages). A push of
+  # several commits is compared as a whole; an unknown base (new branch, force push) counts as both.
+  changes:
     if: github.repository == 'ripps818/openpuck'
+    runs-on: ubuntu-latest
+    outputs:
+      firmware: ${{ steps.diff.outputs.firmware }}
+      panel: ${{ steps.diff.outputs.panel }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Compare with the previous push
+        id: diff
+        env:
+          BEFORE: ${{ github.event.before }}
+        run: |
+          set -eu
+          if [ "$GITHUB_EVENT_NAME" != "push" ] || ! git cat-file -e "${BEFORE:-0000000}^{commit}" 2>/dev/null; then
+            echo "firmware=true" >> "$GITHUB_OUTPUT"
+            echo "panel=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          FILES="$(git diff --name-only "$BEFORE" "$GITHUB_SHA")"
+          echo "$FILES"
+          if echo "$FILES" | grep -Eq '^(OpenPuck/|Makefile$|gen_version\.sh$|gen_uf2\.sh$)'; then
+            echo "firmware=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "firmware=false" >> "$GITHUB_OUTPUT"
+          fi
+          if echo "$FILES" | grep -Eq '^docs/[^/]*\.html$'; then
+            echo "panel=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "panel=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  build:
+    needs: changes
+    if: needs.changes.outputs.firmware == 'true'
     runs-on: ubuntu-latest
 
     steps:
@@ -143,3 +191,36 @@ jobs:
             commit -q -m "mirror OpenPuck ${VERSION} and the newest builds for the panel"
           git -C "$NEW" push -f "$REPO" firmware
           ls -la "$NEW"
+
+  # The config panel (docs/) goes live when it changed, and only after the nightly it ships with (if the push
+  # also changed the firmware) built and published, so a failed build never leaves the panel ahead of the
+  # firmware. Needs Settings > Pages > Source: GitHub Actions.
+  pages:
+    needs: [changes, build]
+    if: >-
+      always() && needs.changes.outputs.panel == 'true' &&
+      (needs.build.result == 'success' || needs.build.result == 'skipped')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v6
+
+      - name: Upload the panel
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: docs
+
+      - name: Deploy
+        id: deploy
+        uses: actions/deploy-pages@v5
