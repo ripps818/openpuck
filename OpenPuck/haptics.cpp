@@ -311,6 +311,10 @@ static void hapticCancelPendingOn(int slot)
 				if (on)
 					m.rid = 0;
 			}
+			// 0x83 tones (PS5 audio haptics) play for up to 200 ms; keep only the -128 dB cuts.
+			if (m.rid == 0x83 && m.len >= 2 &&
+			    (int8_t)m.data[1] != -128)
+				m.rid = 0;
 			if (m.rid == 0x80) {
 				bool on = false;
 				for (uint8_t j = 0; j < m.len; j++)
