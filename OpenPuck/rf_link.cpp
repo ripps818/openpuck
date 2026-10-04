@@ -330,6 +330,10 @@ static uint32_t g_channelJournalNoLiveSinceMs = 0;
 static bool g_channelJournalSoftDeviceChecked = false;
 static bool g_channelJournalSoftDeviceEnabled = false;
 static bool g_channelJournalLiveWriteUnsafe = false;
+// set once rfChannelJournalLoad() has confirmed the window sits clear of the image; erases need it
+static bool g_channelJournalWindowOk = false;
+// user asked to clear the journal (WebUSB field 113); runs once no controller is live
+static bool g_channelJournalClearPending = false;
 
 // Current-boot evidence. A historical score is a prior, never current proof.
 static uint8_t
@@ -1240,6 +1244,7 @@ void rfRecoveryStatusSnapshot(RfRecoveryStatus *status)
 	status->ambientSurveyChannel =
 		g_ambientSurveyRunning ? g_ambientSurveyChannel : 0u;
 	status->journalSequence = g_channelJournalSequence;
+	status->journalClearPending = g_channelJournalClearPending;
 	status->handoffPhase = rfRecoveryHandoffPhase();
 	status->handoffOldChannel = g_rfChHandoffOld;
 	if (status->handoffPhase != RF_RECOVERY_HANDOFF_IDLE)
@@ -1424,7 +1429,7 @@ static bool rfChannelJournalProgramWord(uintptr_t address, uint32_t value,
 static bool rfChannelJournalErasePage(uint8_t page)
 {
 	rfChannelJournalCheckSoftDevice();
-	if (g_channelJournalSoftDeviceEnabled ||
+	if (!g_channelJournalWindowOk || g_channelJournalSoftDeviceEnabled ||
 	    page >= RF_CHANNEL_JOURNAL_PAGE_COUNT)
 		return false;
 	const uintptr_t address =
@@ -1467,6 +1472,7 @@ static void rfChannelJournalLoad()
 		g_channelJournalLiveWriteUnsafe = true;
 		return;
 	}
+	g_channelJournalWindowOk = true;
 	RfChannelJournalRecord latest = {};
 	bool haveLatest = false;
 	for (uint16_t slot = 0; slot < RF_CHANNEL_JOURNAL_TOTAL_RECORDS;
@@ -1663,6 +1669,41 @@ static bool rfChannelJournalMaybeCollect(uint32_t now, uint8_t liveMask)
 	return g_channelJournalFreeSlot >= 0;
 }
 
+// User-requested clean slate: erase both pages and forget the learned history. Like page reclaim it waits until
+// no controller has been live for the offline guard, since each page erase stalls the CPU for ~85 ms. The saved
+// startup channel (cfg) is kept.
+static void rfChannelJournalMaybeClear(uint32_t now, uint8_t liveMask)
+{
+	if (liveMask || g_rfChHandoffState != RF_CH_IDLE || g_rfChGroupActive ||
+	    !g_channelJournalNoLiveSinceMs ||
+	    (uint32_t)(now - g_channelJournalNoLiveSinceMs) <
+		    RF_CHANNEL_JOURNAL_OFFLINE_GUARD_MS)
+		return;
+	for (uint8_t page = 0; page < RF_CHANNEL_JOURNAL_PAGE_COUNT; page++)
+		if (!rfChannelJournalErasePage(page))
+			return;
+	g_channelJournalJobActive = false;
+	memset(g_channelHistoryPersistentWorstPct, 0,
+	       sizeof g_channelHistoryPersistentWorstPct);
+	memset(g_channelHistoryPersistentMeanPct, 0,
+	       sizeof g_channelHistoryPersistentMeanPct);
+	memset(g_channelHistoryPersistentConfidence, 0,
+	       sizeof g_channelHistoryPersistentConfidence);
+	memset(g_channelHistoryPersistentTrials, 0,
+	       sizeof g_channelHistoryPersistentTrials);
+	memset(g_channelHistoryPersistentPenalty, 0,
+	       sizeof g_channelHistoryPersistentPenalty);
+	memset(g_channelHistoryPersistentRecentOrder, 0,
+	       sizeof g_channelHistoryPersistentRecentOrder);
+	g_channelHistoryPersistentOrderCounter = 0;
+	g_channelHistoryPersistentDirty = false;
+	g_channelHistoryPersistentGeneration++;
+	g_channelJournalSequence = 0;
+	g_channelJournalLatestSlot = -1;
+	g_channelJournalFreeSlot = rfChannelJournalFindFreeSlot();
+	g_channelJournalClearPending = false;
+}
+
 static void rfChannelHistoryEnsureLoaded()
 {
 	rfChannelJournalLoad();
@@ -1795,6 +1836,13 @@ static void rfChannelHistoryMaybeCheckpoint(uint32_t now)
 	// paused across any channel handoff and automatically falls back to offline
 	// completion if a live word ever exceeds the conservative stall budget.
 	rfChannelJournalStep(now, liveMask);
+	if (g_channelJournalClearPending)
+		rfChannelJournalMaybeClear(now, liveMask);
+	// A full journal is reclaimed while offline even with nothing new to save: the Journal Builder needs a free
+	// slot but only runs with a controller live, when no page can be erased, so waiting for dirty history let a
+	// full journal block the Builder for good.
+	if (!g_channelJournalJobActive && g_channelJournalFreeSlot < 0)
+		rfChannelJournalMaybeCollect(now, liveMask);
 	if (g_channelJournalJobActive || !g_channelHistoryPersistentDirty ||
 	    g_channelHistoryPersistentWrites >=
 		    RF_CHANNEL_HISTORY_PERSIST_MAX_WRITES_PER_BOOT ||
@@ -2166,6 +2214,14 @@ bool rfRecoveryRequestJournalBuilder()
 	// The first +1 -> original pulse then refreshes inactivity immediately.
 	(void)rfChannelRecoverySetTarget(0u);
 	rfJournalBuilderResetQualityWindows();
+	return true;
+}
+
+bool rfRecoveryRequestJournalClear()
+{
+	if (rfJournalBuilderActive())
+		return false;
+	g_channelJournalClearPending = true;
 	return true;
 }
 

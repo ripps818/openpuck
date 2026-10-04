@@ -556,9 +556,9 @@ static bool webusbSendRfStatus()
 	// header/row offsets: 4 bytes legacy handoff telemetry + 7 bytes journal-
 	// builder status + 1 byte ambient-survey progress + 5 bytes automatic-
 	// handoff admission/retry diagnostics + 3 bytes ambient-survey retry/failure
-	// diagnostics + 8 bytes full-width handoff elapsed time.
+	// diagnostics + 8 bytes full-width handoff elapsed time + 1 byte journal-clear pending.
 	static uint8_t f[2 + 13 + RF_RECOVERY_STATUS_CHANNELS * 9 + 4 + 7 + 1 +
-			 5 + 3 + 8];
+			 5 + 3 + 8 + 1];
 	uint8_t *q = f + 2;
 	f[0] = 0xAD;
 	f[1] = (uint8_t)(sizeof f - 2u);
@@ -613,6 +613,7 @@ static bool webusbSendRfStatus()
 	*q++ = status.ambientSurveyFailureChannel;
 	for (uint8_t shift = 0; shift < 64u; shift += 8u)
 		*q++ = (uint8_t)(status.handoffElapsedMs >> shift);
+	*q++ = status.journalClearPending;
 	if (tud_vendor_write_available() < sizeof f)
 		return false;
 	usb_web.write(f, sizeof f);
@@ -1155,10 +1156,11 @@ void webusbPoll()
 
 				// every settable field persists (poll rate is no longer settable)
 				bool persist = true;
-				// RF controls (97..101) use the dedicated 0xAD reply only. Scheduling
+				// RF controls (97..101, 113) use the dedicated 0xAD reply only. Scheduling
 				// the generic 0xA5 blob as well lets the SOF drain expose either frame
 				// first and phase-shifts the browser's shared bulk-IN stream.
-				const bool rfStatusOnly = f >= 97u && f <= 101u;
+				const bool rfStatusOnly =
+					(f >= 97u && f <= 101u) || f == 113u;
 				// per-type cfg writes (protocol v10/v17): field = 40 + et*9 + k, k: 0..3 back, 4 qam, 5 abSwap,
 				// 6 padHaptics, 7 ledBright, 8 rumble. Edits g_type[et]; refresh the live mirrors if it's the active type.
 				if (f >= 40 && f < 40 + ET_COUNT * 9) {
@@ -1499,6 +1501,12 @@ void webusbPoll()
 					break;
 				case 99:
 					(void)rfRecoveryRequestHop(v);
+					g_rfStatusRequest = true;
+					persist = false;
+					break;
+				// 113: clear the RF journal (applied once no controller is live)
+				case 113:
+					(void)rfRecoveryRequestJournalClear();
 					g_rfStatusRequest = true;
 					persist = false;
 					break;

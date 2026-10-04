@@ -206,12 +206,15 @@ struct RfRecoveryStatus {
 	uint8_t ambientSurveyRetry;
 	uint8_t ambientSurveyFailure;
 	uint8_t ambientSurveyFailureChannel;
+	uint8_t journalClearPending;
 };
 
 bool rfRecoveryRequestAmbientSurvey();
 bool rfRecoveryRequestHop(uint8_t channel);
 bool rfRecoveryRequestJournalBuilder();
 void rfRecoveryCancelJournalBuilder();
+// Clear the RF journal and its learned history once no controller is live (refused while the Builder runs).
+bool rfRecoveryRequestJournalClear();
 void rfRecoveryStatusSnapshot(RfRecoveryStatus *status);
 
 // TX one connected packet [LEN][S1][payload] on channel ch, then RX the reply into rfrx; decodes 0xF1.
