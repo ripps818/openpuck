@@ -14,5 +14,9 @@ extern char g_board[16]; // "MXA99602xxxxx"
 // captured real-controller blob of any length drops in; ATTR83_LEN carries the true byte count.
 extern const uint8_t ATTR83[];
 extern const uint16_t ATTR83_LEN;
+extern const char CTRL_GIT_SHA[];
+
+// Value of one ATTR83 [tag][u32] record, or 0 if the tag is absent.
+uint32_t attr83Value(uint8_t tag);
 
 void genSerial();

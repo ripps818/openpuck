@@ -80,17 +80,17 @@ static void writeBond(int slot, const uint8_t *rec24)
 }
 
 // 0xAE string attribute by index, matching a real controller: 0=board serial, 1=unit serial (both our
-// unique generated values), 3=the Valve constant "7054257d2da7" Steam checks, everything else "NA".
+// unique generated values), 3=the firmware git SHA Steam checks, everything else "NA".
 static const char *aeString(uint8_t idx)
 {
 	return (idx == 0) ? g_board :
 	       (idx == 1) ? g_unit :
-	       (idx == 3) ? "7054257d2da7" :
+	       (idx == 3) ? CTRL_GIT_SHA :
 			    "NA";
 }
 
 // Build the controller's reply to a feature/command GET as [cmd][len][payload] -- the SAME shape a real
-// controller returns over USB (`83 19 …`, `AE 14 idx …`), confirmed by scmd. The inner length byte IS
+// controller returns over USB (`83 1E …`, `AE 14 idx …`), confirmed by scmd. The inner length byte IS
 // required (these are command-channel replies, NOT the 0x45 input report). The puck relays this value
 // straight back to Steam as the feature response. ctrl_link wraps it in the F1 type-6 TLV. Returns the
 // byte count written to out (out must hold >= 63).
@@ -160,7 +160,7 @@ static void handleSet(uint8_t rid, hid_report_type_t type, uint8_t const *b,
 		g_resp_len = 63;
 		break;
 	}
-	// string attributes: 0=board, 1=unit serial, 3="7054257d2da7"
+	// string attributes: 0=board, 1=unit serial, 3=firmware git SHA
 	case 0xAE: {
 		uint8_t idx = pln > 0 ? pl[0] : 1;
 		const char *s = aeString(idx);

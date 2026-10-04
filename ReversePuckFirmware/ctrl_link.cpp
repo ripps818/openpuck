@@ -2,6 +2,7 @@
 #include "radio.h"
 #include "ctrl_bonds.h"
 #include "ctrl_usb.h"
+#include "identity.h"
 #include "report45.h"
 #include "deck_input.h"
 #include "triton.h"
@@ -127,11 +128,34 @@ static void buildF3()
 	rftx[0] = 5;
 	rftx[1] = (uint8_t)((((g_pid++) & 3) << 1) | 1);
 	rftx[2] = 0xF3;
-	// payload[1] = connected state (real puck reads param_2[6]) -- MUST be nonzero
+	// payload[1] is the protocol version the controller accepted from E7 [00][01]: the puck takes 0 or
+	// 1, rejects >= 2, and only activates the slot when it is nonzero.
 	rftx[3] = 1;
 	rftx[4] = 0;
 	rftx[5] = 0;
 	rftx[6] = 1; // payload[4] = version (OpenPuck reads rfrx[6])
+}
+
+// Controller firmware >= 0x6ABC4999 pushes this identity frame once per session. Puck firmware
+// >= 0x6ABC4988 caches it and answers Steam's 0x83/0xAE reads for the slot locally; without it the puck
+// waits ~1 s at connect, then falls back to relaying those GETs over RF. Older pucks ignore F5.
+// payload: [F5][product u32][fw build u32][boot build u32][board rev u32][unit 14][board 14][sha 13]
+static bool g_f5Pending = false;
+
+static void buildF5()
+{
+	uint8_t *p = rftx + 3;
+
+	memset(rftx, 0, 2 + 58);
+	rftx[0] = 58;
+	rftx[1] = (uint8_t)((((g_pid++) & 3) << 1) | 1);
+	rftx[2] = 0xF5;
+	const uint32_t v[4] = { attr83Value(0x01), attr83Value(0x04),
+				attr83Value(0x0A), attr83Value(0x09) };
+	memcpy(p, v, sizeof v);
+	strncpy((char *)p + 16, g_unit, 13);
+	strncpy((char *)p + 30, g_board, 13);
+	strncpy((char *)p + 44, CTRL_GIT_SHA, 12);
 }
 
 // Transmit whatever is staged in rftx on the currently-configured channel/address, then return to RX
@@ -326,6 +350,7 @@ static uint8_t rxOnce(const uint8_t *base, uint8_t prefix, uint8_t ch,
 				} else if (type == 0xE7) {
 					buildF3();
 					txStaged();
+					g_f5Pending = true;
 				} else if (type >= 0xE0 && type <= 0xEF) {
 					// E3 GET: if it requests a NON-0x45 report (Steam enumeration -> 0x83
 					// attrs / 0xAE serial / 0x87 settings), answer THAT report; a bare poll
@@ -389,6 +414,9 @@ static uint8_t rxOnce(const uint8_t *base, uint8_t prefix, uint8_t ch,
 									rftx[i]);
 							Serial.println("]");
 						}
+					} else if (g_f5Pending) {
+						buildF5();
+						g_f5Pending = false;
 					} else {
 						buildF1();
 					}
@@ -459,6 +487,7 @@ static void discoveryScan()
 		g_sessCh = advCh;
 	g_linkSlot = slot;
 	g_linkAliveMs = millis();
+	g_f5Pending = true;
 	g_parkCh = 0; // start hunting the session channel set from scratch
 	g_huntIdx = 0;
 	g_huntStepMs = millis();

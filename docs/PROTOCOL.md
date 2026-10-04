@@ -186,15 +186,17 @@ Semantics:
 
 After discovery, the puck becomes the poll master.
 
-### 7.1 Controller wake / version frame (`E7`)
-
-OpenPuck sends:
+### 7.1 Protocol-version handshake (`E7`)
 
 ```text
-E7 00 00
+E7 [a][b]      puck -> controller   (the real puck always sends E7 00 01)
+F3 [ver]       controller -> puck
 ```
 
-This is the normal "host awake" form.
+The controller accepts `a <= 1` and treats `b != 0` as protocol v1 (`E7 00 00` selects v0). It answers
+`F3 [ver]`; `(1,0)` or `a >= 2` gets `F2` (disconnect). The puck stores `ver` (0 or 1) as the slot's
+protocol version; anything above 1 is rejected. OpenPuck skips the handshake by default because the
+controller streams `F1` to a bare `E3` regardless.
 
 ### 7.2 Input poll (`E3`)
 
@@ -216,7 +218,12 @@ Observed reply opcodes:
 
 - `0xF1`: full TLV container carrying input data
 - `0xF2`: disconnect / shutdown
-- `0xF3`: status
+- `0xF3`: protocol version (reply to `E7`, §7.1)
+- `0xF4`: pairing reply on the private channel. A connected puck logs one as invalid.
+- `0xF5`: identity push, sent once per session by controller firmware `6ABC4999`+.
+  Payload: `[product u32][fw build u32][boot build u32][board rev u32][unit serial 14][board serial 14][git SHA 13]`.
+  Puck firmware `6ABC4988`+ caches it and answers Steam's `0x83`/`0xAE` for that slot locally. See
+  `FIRMWARE_CHANGES.md`.
 
 #### `0xF1` container
 
@@ -228,15 +235,25 @@ The TLV scan starts at byte 6. Each record is:
 
 Known tags:
 
-- `0x02`: 4-byte control/status field
-- `0x04`: bulk data blob
-- `0x06`: embedded report wrapper
+- `0x02`: 4-byte result of a relayed feature SET (s32, 0 = OK)
+- `0x04`: feature GET response (up to 63 bytes)
+- `0x06`: embedded HID report
 
-For controller input, the embedded report is `0x45`.
+For controller input, the embedded report is `0x42` (current firmware) or `0x45`.
 
-## 8. Report `0x45` layout
+### 7.4 Channel list (`E4`)
 
-Report `0x45` is 46 bytes:
+```text
+E4 [ch0][ch1][ch2][ch3]     up to four channels; omitted entries read as 0xFF
+```
+
+The controller listens on `ch0` and cycles through the other entries while the puck is silent. Protocol-v1
+pucks send `[new ch][2][80]`; v0 sends `[new ch]` only.
+
+## 8. Report `0x45` / `0x42` layout
+
+Report `0x45` is 46 bytes. Report `0x42` is 54 bytes: the same layout for bytes `0x00`–`0x2D`, followed by
+the orientation quaternion.
 
 ```text
 offset  size  meaning
@@ -262,6 +279,7 @@ offset  size  meaning
 0x28    2     gyro X, s16
 0x2A    2     gyro Y, s16
 0x2C    2     gyro Z, s16
+0x2E    8     (0x42 only) orientation quaternion w, x, y, z, s16 Q15 (0x7FFF = 1.0)
 ```
 
 ### 8.1 Button bitfield

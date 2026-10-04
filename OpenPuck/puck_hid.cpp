@@ -490,7 +490,8 @@ static void handleSet(int slot, uint8_t rid, hid_report_type_t type,
 		// Report-id 1 = string attributes of the bonded CONTROLLER, not the puck. Not handled here, this request
 		// will have been forwarded to the controller by earlier code.
 		S.resp[0] = IBEX_CMD_GET_STRING_ATTRIBUTE;
-		S.resp[1] = 0x14; // todo: is this correct?
+		// Real puck/controller firmware always reports 0x14 and copies 20 bytes.
+		S.resp[1] = 0x14;
 		S.resp[2] = idx;
 		memset(S.resp + 3, 0, 60);
 		// Any other idx -> "NA".
