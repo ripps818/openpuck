@@ -417,7 +417,15 @@ Messages:
     `32` primary LED behavior mode (0 connection status, 1 heartbeat, 2 wake only, 3 off/stealth, 4 on),
     `33` primary LED pin A, `90` secondary LED pin B, `91` primary LED polarity (1 active high, 0 active low),
     `92` LED test flash (temporary 2-second pulse), `93` secondary LED behavior mode (0..4),
-    `94` secondary LED polarity (1 active high, 0 active low)
+    `94` secondary LED polarity (1 active high, 0 active low).
+    Switch Pro profiles / HD rumble / shortcuts (blob version ≥ 23): `190` profiles on/off, `191` active
+    profile (0-6), `194`-`209` profiles 1-4 back mappings (4 per profile, L4/R4/L5/R5), `210`-`216` profile
+    shortcut for B/X/Y/Left/Up/Right/Down (0 = keep the mode shortcut, 1-7 = profile), `218`-`229`
+    profiles 5-7 back mappings, `230` trackpad D-pad click feedback, `231` HD trackpad strength as
+    percent/2, `239` Quick Access + Select target, `240` shortcut flags (bit0 QAM modifier, bit1 profiles,
+    bit2 D-pad haptic shortcuts, bit3 confirmation pulses, bit4 QAM + Select, bit5 enabled), `241`-`243`
+    rumble options 1-3, `244`-`249` trackpad then grip strength steps as percent/2, `250` active rumble
+    option, `251`/`252` active trackpad/grip strength step. Field `39` also accepts `8` (HD Emulation).
   - `0x03 <mode>`: switch mode and reboot
   - `0x07`: re-init haptics (clear a stuck buzz)
   - `0x08`: send controller power-off
@@ -425,6 +433,9 @@ Messages:
     auto-stopped by the firmware. **Requires status-blob version ≥ 21**; older firmware drops it silently
     (the parser only accepts `0x01`–`0x15` and `0x20`–`0x25`).
   - `0x09`: export all bond slots (reply: `0xA7` frame) — see §10.1
+  - `0x27`: get the Switch Pro profiles / HD rumble / shortcut settings (reply: `0xAE` frame).
+    **Requires status-blob version ≥ 23.**
+  - `0x28`: save the live shortcut settings (rumble option / strength slots changed from the controller)
   - `0x0A 0x45 0x52 0x53`: factory erase (`"ERS"` magic), then reboot
   - `0x0B` / `0x0C`: reboot into serial DFU / UF2 bootloader
   - `0x0D <slot> <used> <24-byte rec>`: write one bond slot into RAM — see §10.1
@@ -449,6 +460,10 @@ Messages:
   - `0xA9 ...`: live wedge report
   - `0xAA <count> <count×16-byte bindings>`: lizard binding map
   - `0xAB 5 <status> <nextOff u32 LE>`: firmware-update ack
+  - `0xAE 55 <payload>`: Switch Pro profiles / HD rumble / shortcut settings: `[ver=1][SwProfiles 37]`
+    `[swDpadHaptics][storageState][hdPadScale/2][rumblePresets 3][rumbleSlot][swQamSelect][shortcutFlags]`
+    `[strengthSteps/2 2x3][strengthSlots 2]`. `SwProfiles` = `[enabled][active][back 4x4][chord 7]`
+    `[extraBack 3x4]`; storageState 0 unavailable, 1 mounted, 2 initialized blank flash, 3 save failed.
 
 Lizard binding wire format (16 bytes), matching `LizardBinding` in `lizard_map.h`:
 

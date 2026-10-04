@@ -2,6 +2,7 @@
 #include "board_config.h"
 #include "config.h"
 #include "radio.h"
+#include "storage.h"
 #include "bonds.h"
 #include "rf_link.h"
 #include "haptics.h"
@@ -48,6 +49,9 @@ static volatile bool g_blobRequest = false;
 // browser can save them to a file and restore them onto a second puck. Like the status blob, the actual send
 // is deferred to the usbd task (webusbSofDrain) so usb_web.write()/flush() never block loop().
 static volatile bool g_bondExportRequest = false;
+// Switch Pro profiles / HD rumble / shortcut settings (op 0x27 -> one 0xAE frame). Kept out of the status blob,
+// which is already at its 255-byte frame limit. Deferred to the usbd task like the blob.
+static volatile bool g_swFrameRequest = false;
 // Firmware-update ack ([0xAB][5][status][nextOff u32 LE]). Like the blob it is written from the usbd task
 // (webusbSofDrain), but unlike the blob it is NEVER dropped -- the panel's transfer flow-control is strict
 // ping-pong on these acks, so an unsent ack just stays pending until the FIFO has room (the panel is
@@ -136,7 +140,8 @@ static void webusbSendBlob()
 
 	// clang-format off
 	// protocol version
-	// (22 = +DualSense audio haptics style (field 88, blob p[198]);
+	// (23 = +0xAE Switch Pro profiles / HD rumble / shortcut frame (op 0x27), fields 190..252, op 0x28 save;
+	// 22 = +DualSense audio haptics style (field 88, blob p[198]);
 	// 21 = +rumble style (field 39, blob p[195]) and the REVIVED rumble-strength field 22 at blob p[53], 
 	// now carrying percent/2; 
 	// 22 = +RF recovery capability marker at blob p[196];
@@ -152,7 +157,7 @@ static void webusbSendBlob()
 	// cfg; 8 = +per-slot link status; 7 = +raw accel; 
 	// 6 = +swPro120/gyroScale)
 	// clang-format on
-	p[2] = 22;
+	p[2] = 23;
 	p[3] = g_usbMode;
 	p[4] = (uint8_t)g_mDiv;
 	p[5] = (uint8_t)g_mFric;
@@ -357,6 +362,36 @@ static void webusbSendBlob()
 	// ring; this didn't). So DROP the blob whenever the FIFO can't take it whole -- a status panel missing an
 	// occasional frame is invisible, and loop() can never stall here again. (Matches the closing-the-panel
 	// "fix": that just flips _connected=false to break the same spin.)
+	if (tud_vendor_write_available() >= sizeof p) {
+		usb_web.write(p, sizeof p);
+		usb_web.flush();
+	}
+}
+
+// Switch Pro profiles / HD rumble / shortcut settings frame (protocol v23, op 0x27):
+//   [0xAE][len][ver=1][SwProfiles 37][swDpadHaptics][storageState][hdPadScale/2][rumblePresets 3]
+//   [rumbleSlot][swQamSelect][shortcutFlags][strengthSteps/2 2x3][strengthSlots 2]   (len = 55)
+#define WB_SW_PAYLEN 55
+static void webusbSendSwitchFrame()
+{
+	static uint8_t p[2 + WB_SW_PAYLEN];
+	p[0] = 0xAE;
+	p[1] = WB_SW_PAYLEN;
+	p[2] = 1;
+	memcpy(p + 3, &g_swProfiles, sizeof g_swProfiles);
+	p[40] = g_swDpadHaptics;
+	p[41] = g_storageState;
+	p[42] = (uint8_t)(g_hdPadScale / 2);
+	memcpy(p + 43, g_rumblePresets, 3);
+	p[46] = g_rumbleSlot;
+	p[47] = g_swQamSelect;
+	p[48] = g_shortcutFlags;
+	for (uint8_t w = 0; w < 2; w++) {
+		for (uint8_t i = 0; i < 3; i++)
+			p[49 + w * 3 + i] = g_strengthSteps[w][i] / 2;
+		p[55 + w] = g_strengthSlots[w];
+	}
+	// drop-on-full, same anti-hang rule as the status blob
 	if (tud_vendor_write_available() >= sizeof p) {
 		usb_web.write(p, sizeof p);
 		usb_web.flush();
@@ -608,6 +643,10 @@ static void webusbSofDrain(void)
 		g_bondExportRequest = false;
 		webusbSendBondExport();
 	}
+	if (g_swFrameRequest) {
+		g_swFrameRequest = false;
+		webusbSendSwitchFrame();
+	}
 	if (g_rfStatusRequest && webusbSendRfStatus())
 		g_rfStatusRequest = false;
 }
@@ -817,10 +856,11 @@ void webusbPoll()
 			if (n == 0)
 				break;
 			uint8_t op = buf[0];
-			// 0x16 = test rumble (v21), 0x17..0x1A = lizard v2 (v21);
-			// extend this range whenever a new opcode is added, or the parser drops it as garbage.
+			// 0x16 = test rumble (v21), 0x17..0x1A = lizard v2 (v21), 0x27 = Switch Pro/shortcut frame
+			// request (v23), 0x28 = save shortcut settings (v23); extend this range whenever a new opcode
+			// is added, or the parser drops it as garbage.
 			if ((op < 0x01 || op > 0x1A) &&
-			    (op < 0x20 || op > 0x25)) { // resync: drop one byte
+			    (op < 0x20 || op > 0x28)) { // resync: drop one byte
 				memmove(buf, buf + 1, --n);
 				continue;
 			}
@@ -866,6 +906,10 @@ void webusbPoll()
 			else if (op == 0x09) {
 				g_bondExportRequest = true;
 			}
+			// 0x27: Switch Pro profiles / HD rumble / shortcut settings (one 0xAE frame, v23)
+			else if (op == 0x27) {
+				g_swFrameRequest = true;
+			}
 			// 0x0F: stability test on/off. Puck->controller haptics do NOT reset the controller's own
 			// user-input idle auto-off (we already poll it every 4ms without keeping it awake), so instead
 			// signal host-awake: enable the E7 announce (0xE7 00 00 = host-awake vs 00 01 = suspended, per
@@ -897,8 +941,10 @@ void webusbPoll()
 				hapticReinit();
 			}
 
-			// rumble test buzz: exercises the current style/strength (protocol v21)
-			else if (op == 0x16) {
+			else if (op == 0x28) {
+				saveCfg();
+				g_blobRequest = true;
+			} else if (op == 0x16) {
 				hapticTestRumble();
 			}
 
@@ -1139,7 +1185,42 @@ void webusbPoll()
 					n -= need;
 					continue;
 				}
+				if ((f >= 190 && f <= 216) ||
+				    (f >= 218 && f < 230)) {
+					if (f == 190 && v <= 1) {
+						g_swProfiles.enabled = v;
+						g_shortcutFlags =
+							(g_shortcutFlags &
+							 ~SHORTCUT_PROFILES) |
+							(v ? SHORTCUT_PROFILES :
+							     0);
+					} else if (f == 191 &&
+						   v < SW_PROFILE_COUNT)
+						g_swProfiles.active = v;
+					else if (f >= 194 && f < 210 && v <= 20)
+						g_swProfiles
+							.back[(f - 194) / 4]
+							     [(f - 194) % 4] =
+							v;
+					else if (f >= 218 && f < 230 && v <= 20)
+						g_swProfiles
+							.extraBack[(f - 218) / 4]
+								  [(f - 218) %
+								   4] = v;
+					else if (f >= 210 && f <= 216 &&
+						 v <= SW_PROFILE_COUNT)
+						g_swProfiles.chord[f - 210] = v;
+					applyActiveType();
+					saveCfg();
+					g_blobRequest = true;
+					memmove(buf, buf + need, n - need);
+					n -= need;
+					continue;
+				}
 				switch (f) {
+				case 230:
+					g_swDpadHaptics = v ? 1 : 0;
+					break;
 				case 1:
 					g_mDiv = v < 4 ? 4 : v;
 					break;
@@ -1270,11 +1351,85 @@ void webusbPoll()
 				}
 
 				// Host-rumble style (RUMBLE_STYLE_*). Protocol v21.
+				case 231:
+					g_hdPadScale =
+						v > 250 ? 500 : (uint16_t)v * 2;
+					break;
+				case 240:
+					if (v <= 63) {
+						bool entering =
+							!(g_shortcutFlags &
+							  SHORTCUT_PROFILES) &&
+							(v & SHORTCUT_PROFILES);
+						g_shortcutFlags = v;
+						g_swProfiles.enabled = !!(
+							v & SHORTCUT_PROFILES);
+						bool assigned = false;
+						for (uint8_t i = 0; i < 7; i++)
+							assigned |=
+								g_swProfiles
+									.chord[i] !=
+								0;
+						if (entering && !assigned)
+							for (uint8_t i = 0;
+							     i < 7; i++)
+								g_swProfiles
+									.chord[i] =
+									i + 1;
+						applyActiveType();
+					}
+					break;
+				case 241:
+				case 242:
+				case 243:
+					if (v <= 6 || v == 8) {
+						g_rumblePresets[f - 241] = v;
+						if (g_rumbleSlot < 3 &&
+						    g_rumblePresets[g_rumbleSlot] !=
+							    g_rumbleStyle)
+							g_rumbleSlot = 0xFF;
+					}
+					break;
+				case 244:
+				case 245:
+				case 246:
+				case 247:
+				case 248:
+				case 249:
+					if (v <= 250) {
+						uint8_t w = (f - 244) / 3;
+						if (w == 1 && v < 5)
+							break;
+						g_strengthSteps[w][(f - 244) %
+								   3] = v * 2;
+						g_strengthSlots[w] = 0xFF;
+					}
+					break;
+				case 250:
+					if (v < 3 &&
+					    g_rumblePresets[v] == g_rumbleStyle)
+						g_rumbleSlot = v;
+					break;
+				case 251:
+				case 252:
+					if (v < 3 &&
+					    g_strengthSteps[f - 251][v] ==
+						    (f == 251 ? g_hdPadScale :
+								g_rumbleScale))
+						g_strengthSlots[f - 251] = v;
+					break;
+				case 239:
+					if (v <= 20)
+						g_swQamSelect = v;
+					break;
 				case 39:
-					g_rumbleStyle =
-						v > RUMBLE_STYLE_MAX ?
-							RUMBLE_STYLE_MAX :
-							v;
+					g_rumbleStyle = v <= 6 ? v : 8;
+					g_rumbleSlot = 0xFF;
+					for (uint8_t i = 0; i < 3; i++)
+						if (g_rumblePresets[i] ==
+							    g_rumbleStyle &&
+						    g_rumbleSlot == 0xFF)
+							g_rumbleSlot = i;
 					break;
 
 				// Switch Pro gyro mapping: 0 = corrected (default), 1 = legacy

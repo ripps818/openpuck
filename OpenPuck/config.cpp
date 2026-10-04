@@ -1,7 +1,9 @@
 #include "config.h"
+#include "storage.h"
+#include "triton.h"
 #include "radio.h"
-#include "rf_link.h"
-#include "haptics.h"
+#include "rf_link.h" // g_rxWin (poll RX window persisted here)
+#include "haptics.h" // g_hapticBlockOn, g_hapticBlockMs
 #include "status_led.h"
 #include <Adafruit_LittleFS.h>
 #include <InternalFileSystem.h>
@@ -13,9 +15,9 @@ uint8_t g_usbMode = 0;
 bool g_xbox = false;
 uint8_t g_chordBtn[3] = {
 	MODE_LIZARD, MODE_XBOX, MODE_SW_PRO
-}; // back4+B/X/Y -> these modes (A always STEAM); Y defaults to Switch Pro
-// back4+D-pad (left/up/right/down). Defaults are the console personalities that ship WITHOUT a config
-// interface -- those modes can't be entered from the panel-less side any other way, and back4+A still returns
+}; // Quick Access+B/X/Y -> these modes (A always STEAM); Y defaults to Switch Pro
+// Quick Access+D-pad (left/up/right/down). Defaults are the console personalities that ship WITHOUT a config
+// interface -- those modes can't be entered from the panel-less side any other way, and Quick Access+A still returns
 // to Steam. Configurable like g_chordBtn (WebUSB fields 34..37).
 uint8_t g_chordDpad[4] = { MODE_PS3, MODE_DS4_GAME, MODE_PS5_GAME,
 			   MODE_SW_HORI };
@@ -59,6 +61,121 @@ uint16_t g_audioHapticGain = 0;
 uint8_t g_audioHapticStyle = AUDIO_STYLE_TONE;
 uint8_t g_ledBright = 0;
 
+SwProfiles g_swProfiles = {};
+uint8_t g_swDpadHaptics = 1;
+uint8_t g_swQamSelect = 18;
+// Default = the original shortcut arrangement: all four back buttons, controller modes, no D-pad haptic
+// shortcuts, no confirmation pulses, no Quick Access + Select capture.
+uint8_t g_shortcutFlags = SHORTCUT_ENABLED;
+uint8_t g_rumblePresets[3] = { 5, 0, 8 }, g_rumbleSlot = 2;
+uint16_t g_strengthSteps[2][3] = { { 200, 300, 500 }, { 200, 300, 500 } };
+uint8_t g_strengthSlots[2] = { 0xFF, 0xFF };
+
+uint8_t *swProfileBack(uint8_t profile)
+{
+	return profile < 4 ? g_swProfiles.back[profile] :
+			     g_swProfiles.extraBack[profile - 4];
+}
+
+bool rumbleChord(uint8_t slot, uint32_t buttons)
+{
+	static uint8_t count[NSLOT] = {}, held[NSLOT] = {};
+	if (slot >= NSLOT)
+		return false;
+	const uint32_t keys = TB_A | TB_B | TB_X | TB_Y | TB_DLF | TB_DUP |
+			      TB_DRT | TB_DDN;
+	uint32_t key = buttons & keys;
+	uint8_t choice = key == TB_DLF ? 1 :
+			 key == TB_DUP ? 2 :
+			 key == TB_DDN ? 3 :
+					 0;
+	if (!shortcutHeld(buttons) || !(g_shortcutFlags & SHORTCUT_HAPTICS) ||
+	    (buttons & TB_MENU) || !choice) {
+		count[slot] = held[slot] = 0;
+		return false;
+	}
+	if (held[slot] != choice) {
+		held[slot] = choice;
+		count[slot] = 0;
+	}
+	if (count[slot] < 12 && ++count[slot] == 12) {
+		uint8_t pulses;
+		if (choice == 1) {
+			g_rumbleSlot =
+				g_rumbleSlot < 3 ? (g_rumbleSlot + 1) % 3 : 0;
+			g_rumbleStyle = g_rumblePresets[g_rumbleSlot];
+			pulses = g_rumbleSlot + 1;
+		} else {
+			uint8_t which = choice - 2;
+			uint16_t &strength = which == 0 ? g_hdPadScale :
+							  g_rumbleScale;
+			uint8_t &index = g_strengthSlots[which];
+			if (index >= 3 ||
+			    g_strengthSteps[which][index] != strength) {
+				index = 0xFF;
+				for (uint8_t i = 0; i < 3; i++)
+					if (g_strengthSteps[which][i] ==
+						    strength &&
+					    index == 0xFF)
+						index = i;
+			}
+			index = index < 3 ? (index + 1) % 3 : 0;
+			strength = g_strengthSteps[which][index];
+			pulses = index + 1;
+		}
+		hapticShortcutFeedback(slot, pulses);
+	}
+	return true;
+}
+
+bool swProfileChord(uint8_t slot, uint32_t buttons)
+{
+	static uint8_t held[NSLOT] = {}, count[NSLOT] = {};
+	const uint32_t keys[7] = { TB_B,   TB_X,   TB_Y,  TB_DLF,
+				   TB_DUP, TB_DRT, TB_DDN };
+	if (slot >= NSLOT)
+		return false;
+	uint8_t target = 0;
+	if ((g_shortcutFlags & SHORTCUT_PROFILES) && g_swProfiles.enabled &&
+	    shortcutHeld(buttons) && !(buttons & (TB_A | TB_MENU))) {
+		for (uint8_t i = 0; i < 7; i++) {
+			if ((!(g_shortcutFlags & SHORTCUT_HAPTICS) ||
+			     (i != 3 && i != 4 && i != 6)) &&
+			    (buttons & keys[i])) {
+				target = g_swProfiles.chord[i];
+				break;
+			}
+		}
+	}
+	if (!target) {
+		held[slot] = count[slot] = 0;
+		return false;
+	}
+	if (target != held[slot]) {
+		held[slot] = target;
+		count[slot] = 0;
+	}
+	if (count[slot] < 12 && ++count[slot] == 12) {
+		g_swProfiles.active = target - 1;
+		applyActiveType();
+		shortcutModeRequest(MODE_SW_PRO, slot);
+	}
+	return true;
+}
+
+void captureFeedbackChord(uint8_t slot, uint32_t buttons)
+{
+	static bool held[NSLOT] = {};
+	if (slot >= NSLOT)
+		return;
+	bool active = g_usbMode == MODE_SW_PRO && g_swQamSelect &&
+		      (g_shortcutFlags & SHORTCUT_CAPTURE) &&
+		      (buttons & (TB_QAM | TB_MENU)) == (TB_QAM | TB_MENU);
+	if (active && !held[slot])
+		hapticShortcutFeedback(slot, 1);
+	held[slot] = active;
+}
+
 void applyActiveType()
 {
 	g_etype = etypeForMode(g_usbMode);
@@ -79,6 +196,9 @@ void applyActiveType()
 	const TypeCfg &t = g_type[g_etype];
 	for (int i = 0; i < 4; i++)
 		g_back[i] = t.back[i];
+	if (g_usbMode == MODE_SW_PRO && g_swProfiles.enabled)
+		for (int i = 0; i < 4; i++)
+			g_back[i] = swProfileBack(g_swProfiles.active)[i];
 	g_qamMap = t.qamMap;
 	g_abSwap = t.abSwap;
 	g_padHaptics = t.padHaptics;
@@ -107,7 +227,7 @@ struct Cfg {
 	// haptics.h LIZKEEP_MS). isMachineInternal used to be landAll87, now toggles Steam Machine emulation.
 	uint8_t rxWin10, lizKeep, isMachineInternal;
 	TypeCfg type[ET_COUNT]; // per-emulated-type back/qam/abSwap/padHaptics
-	// TAIL (appended after CFG_MAGIC 0xCF shipped): back4+D-pad mode assignments. New tail fields go HERE, at
+	// TAIL (appended after CFG_MAGIC 0xCF shipped): Quick Access+D-pad mode assignments. New tail fields go HERE, at
 	// the end, and loadCfg accepts a short file so an upgrade keeps every existing setting -- see CFG_LEN_MIN.
 	uint8_t chordDpad[4];
 	// per-type trackpad->stick mapping: [et][0] = left pad, [et][1] = right pad (PS_*)
@@ -118,6 +238,15 @@ struct Cfg {
 	// pre-tail file) -> compiled default (on)
 	uint8_t suspendOff;
 	uint8_t ext[CFG_EXT_STORAGE_BYTES];
+	// PR #303 tail: Switch Pro profiles, HD rumble and shortcut settings.
+	SwProfiles swProfiles;
+	uint8_t swDpadHaptics;
+	uint8_t hdPadScale2, reservedRumbleStyles[2], reservedWaveform;
+	uint8_t reservedWavePresets[2];
+	uint8_t reservedWaveThird, reservedWaveSlot;
+	uint8_t swQamSelect;
+	uint8_t shortcutFlags, rumblePresets[3], strengthSteps[2][3];
+	uint8_t strengthSlots[2], rumbleSlot;
 }; // rsvd0 = ex-padSmooth, now the one-shot debug-CDC arm
 
 // Shortest cfg.bin we still accept: the layout as of CFG_MAGIC 0xCF, i.e. everything before the appended tail.
@@ -171,23 +300,65 @@ void saveCfg()
 		  {},
 		  g_rumbleStyle,
 		  g_suspendOff,
-		  {} };
+		  {},
+		  g_swProfiles,
+		  g_swDpadHaptics,
+		  (uint8_t)(g_hdPadScale / 2),
+		  { 0xFF, 0xFF },
+		  0xFF,
+		  { 0xFF, 0xFF },
+		  0xFF,
+		  0xFF,
+		  g_swQamSelect,
+		  g_shortcutFlags,
+		  { g_rumblePresets[0], g_rumblePresets[1],
+		    g_rumblePresets[2] },
+		  {},
+		  { g_strengthSlots[0], g_strengthSlots[1] },
+		  g_rumbleSlot };
 	memcpy(c.ext, g_cfgExt, sizeof c.ext);
 	for (int i = 0; i < ET_COUNT; i++) {
 		c.type[i] = g_type[i];
 		c.padStick[i][0] = g_padStickCfg[i][0];
 		c.padStick[i][1] = g_padStickCfg[i][1];
 	}
-	InternalFS.remove(CFG_FILE);
-	File f(InternalFS);
-	if (f.open(CFG_FILE, FILE_O_WRITE)) {
-		f.write((uint8_t *)&c, sizeof c);
-		f.close();
-	}
+	for (uint8_t w = 0; w < 2; w++)
+		for (uint8_t i = 0; i < 3; i++)
+			c.strengthSteps[w][i] = g_strengthSteps[w][i] / 2;
+	storageWriteFile(CFG_FILE, "/cfg.tmp", (const uint8_t *)&c, sizeof c);
+}
+
+static void swProfilesLoad(const SwProfiles &saved, const uint8_t defaults[4])
+{
+	g_swProfiles = {};
+	for (int p = 0; p < SW_PROFILE_COUNT; p++)
+		memcpy(swProfileBack(p), defaults, 4);
+	if (saved.enabled > 1 || saved.active >= SW_PROFILE_COUNT)
+		return;
+	for (int p = 0; p < 4; p++)
+		for (int k = 0; k < 4; k++)
+			if (saved.back[p][k] > 20)
+				return;
+	for (int i = 0; i < 7; i++)
+		if (saved.chord[i] > SW_PROFILE_COUNT)
+			return;
+	// The prefix stays compatible with configs that lack extraBack.
+	memcpy(&g_swProfiles, &saved, 25);
+	bool extraValid = true;
+	for (int p = 0; p < 3; p++)
+		for (int k = 0; k < 4; k++)
+			if (saved.extraBack[p][k] > 20)
+				extraValid = false;
+	if (extraValid)
+		memcpy(g_swProfiles.extraBack, saved.extraBack, 12);
 }
 
 void loadCfg()
 {
+	if (g_storageState == 0) {
+		applyActiveType();
+		return;
+	}
 	Cfg c;
 	memset(g_cfgExt, 0xFF, sizeof g_cfgExt);
 	// 0xFF prefill: bytes a SHORT (pre-tail) cfg.bin never wrote stay 0xFF, which is not a valid mode/flag, so
@@ -324,6 +495,47 @@ void loadCfg()
 		}
 		f.close();
 	}
+	swProfilesLoad(c.swProfiles, g_type[ET_SWITCH].back);
+	if (c.swDpadHaptics <= 1)
+		g_swDpadHaptics = c.swDpadHaptics;
+	if (c.hdPadScale2 <= 250)
+		g_hdPadScale = (uint16_t)c.hdPadScale2 * 2;
+	if (g_rumbleStyle == 7)
+		g_rumbleStyle = 8;
+	if (c.swQamSelect <= 20)
+		g_swQamSelect = c.swQamSelect;
+	if (c.shortcutFlags <= 63)
+		g_shortcutFlags = c.shortcutFlags;
+	else
+		g_shortcutFlags =
+			SHORTCUT_ENABLED |
+			(g_swProfiles.enabled ? SHORTCUT_PROFILES : 0);
+	for (uint8_t i = 0; i < 3; i++) {
+		if (c.rumblePresets[i] <= 6 || c.rumblePresets[i] == 8)
+			g_rumblePresets[i] = c.rumblePresets[i];
+		for (uint8_t w = 0; w < 2; w++)
+			if (c.strengthSteps[w][i] <= 250 &&
+			    (w == 0 || c.strengthSteps[w][i] >= 5))
+				g_strengthSteps[w][i] =
+					c.strengthSteps[w][i] * 2;
+	}
+	g_rumbleSlot = 0xFF;
+	for (uint8_t i = 0; i < 3; i++)
+		if (g_rumblePresets[i] == g_rumbleStyle && g_rumbleSlot == 0xFF)
+			g_rumbleSlot = i;
+	if (c.rumbleSlot < 3 && g_rumblePresets[c.rumbleSlot] == g_rumbleStyle)
+		g_rumbleSlot = c.rumbleSlot;
+	for (uint8_t w = 0; w < 2; w++) {
+		uint16_t strength = w == 0 ? g_hdPadScale : g_rumbleScale;
+		g_strengthSlots[w] = 0xFF;
+		for (uint8_t i = 0; i < 3; i++)
+			if (g_strengthSteps[w][i] == strength &&
+			    g_strengthSlots[w] == 0xFF)
+				g_strengthSlots[w] = i;
+		if (c.strengthSlots[w] < 3 &&
+		    g_strengthSteps[w][c.strengthSlots[w]] == strength)
+			g_strengthSlots[w] = c.strengthSlots[w];
+	}
 	// resolve the active emulated type's settings into the live mirrors the mode builders read
 	applyActiveType();
 	// clear the one-shot so the NEXT cold boot reverts to the default/persist policy
@@ -382,7 +594,7 @@ void factoryResetOnce(const char *buildTag)
 	if (strncmp(tag, buildTag, sizeof tag - 1) == 0)
 		return; // this build already did its one-time reset -> persist
 	factoryErase(); // wipe cfg.bin + bonds.bin + the old tag
-	InternalFS.begin(); // remount the fresh FS
+	storageBegin(); // remount the fresh FS (re-enables saves if the boot mount had failed)
 	File g(InternalFS); // stamp the tag so subsequent boots skip the wipe
 	if (g.open(RESET_TAG_FILE, FILE_O_WRITE)) {
 		g.write((const uint8_t *)buildTag, strlen(buildTag));
