@@ -59,6 +59,7 @@ uint8_t g_rumble = 1;
 uint8_t g_audioHaptics = 1;
 uint16_t g_audioHapticGain = 0;
 uint8_t g_audioHapticStyle = AUDIO_STYLE_TONE;
+uint8_t g_trigInner = 0, g_trigOuter = 100;
 uint8_t g_ledBright = 0;
 
 SwProfiles g_swProfiles = {};
@@ -275,6 +276,8 @@ void saveCfg()
 	cfgExtWrite(3u, (uint8_t)(g_audioHapticGain / 2));
 	cfgExtWrite(4u, g_audioHaptics);
 	cfgExtWrite(11u, g_audioHapticStyle);
+	cfgExtWrite(12u, g_trigInner);
+	cfgExtWrite(13u, g_trigOuter);
 	cfgExtWrite(5u, g_ledMode);
 	cfgExtWrite(6u, g_ledPinA);
 	cfgExtWrite(7u, g_ledPinB);
@@ -465,6 +468,13 @@ void loadCfg()
 			const uint8_t audioStyleVal = cfgExtRead(11u);
 			if (audioStyleVal <= AUDIO_STYLE_WAVE)
 				g_audioHapticStyle = audioStyleVal;
+			const uint8_t trigInnerVal = cfgExtRead(12u),
+				      trigOuterVal = cfgExtRead(13u);
+			if (trigInnerVal < trigOuterVal &&
+			    trigOuterVal <= 100) {
+				g_trigInner = trigInnerVal;
+				g_trigOuter = trigOuterVal;
+			}
 
 			const uint8_t ledModeVal = cfgExtRead(5u);
 			if (ledModeVal <= LED_MODE_MAX)

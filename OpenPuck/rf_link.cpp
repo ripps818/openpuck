@@ -3697,11 +3697,11 @@ uint8_t rfConnTx(uint8_t ch, uint8_t s1, const uint8_t *payload, uint8_t plen,
 						g_in[g_curSlot].ry =
 							(int16_t)s16off(rep,
 									14);
-						g_in[g_curSlot].lt =
-							trigU8(u16off(rep, 4));
+						g_in[g_curSlot].lt = trigShape(
+							trigU8(u16off(rep, 4)));
 						// for the Switch digital-trigger threshold
-						g_in[g_curSlot].rt =
-							trigU8(u16off(rep, 6));
+						g_in[g_curSlot].rt = trigShape(
+							trigU8(u16off(rep, 6)));
 						// Timestamped report 0x47 inserts unTrackpadTimestamp before the pad coordinates.
 						if (rep[0] ==
 						    OPK_TRITON_REPORT_STATE_TIMESTAMP) {

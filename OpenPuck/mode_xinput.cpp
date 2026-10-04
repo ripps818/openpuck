@@ -376,9 +376,9 @@ static void rfXboxGamepad(uint8_t slot, const uint8_t *r)
 		btn |= codeToXB(g_back[2]);
 	if (b & TB_R5)
 		btn |= codeToXB(g_back[3]);
-	uint8_t lt = trigU8(u16off(r, 4)),
-		rt = trigU8(u16off(
-			r, 6)); // triggers u16 (half-scale) -> full-range u8
+	// triggers u16 (half-scale) -> full-range u8
+	uint8_t lt = trigShape(trigU8(u16off(r, 4))),
+		rt = trigShape(trigU8(u16off(r, 6)));
 	// Trigger remaps (codes 19=LT, 20=RT): XInput triggers are analog bytes, not buttons, so a back paddle /
 	// QAM mapped to a trigger pulls it full. QAM arrives as TB_L2/TB_R2 (folded into b via tritonFromCode);
 	// back paddles are matched by their configured code.

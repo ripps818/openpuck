@@ -446,6 +446,10 @@ Messages:
     bit2 D-pad haptic shortcuts, bit3 confirmation pulses, bit4 QAM + Select, bit5 enabled), `241`-`243`
     rumble options 1-3, `244`-`249` trackpad then grip strength steps as percent/2, `250` active rumble
     option, `251`/`252` active trackpad/grip strength step. Field `39` also accepts `8` (HD Emulation).
+    Triggers (blob version >= 24): `102` deadzone % and `103` full-press % for the emulated modes. Travel at or
+    below the deadzone reads 0, travel at or past the full-press point reads 255, linear between; 0/100 is
+    raw. An edit that would put the deadzone at or above the full-press point is refused. Status blob
+    `p[206]`/`p[207]` (payload bytes 204/205).
   - `0x03 <mode>`: switch mode and reboot
   - `0x07`: re-init haptics (clear a stuck buzz)
   - `0x08`: send controller power-off

@@ -230,6 +230,20 @@ extern uint16_t g_audioHapticGain;
 // the haptic channels themselves, streamed to the trackpads as 4 kHz PCM (0x88)
 #define AUDIO_STYLE_WAVE 3
 extern uint8_t g_audioHapticStyle;
+// Analog trigger response for the emulated modes (Steam mode relays raw input): travel at or below
+// g_trigInner % reads 0, travel at or past g_trigOuter % reads full, linear between. 0/100 = raw. A lower
+// full-press point lets games that expect DualSense-style resistive triggers see a complete pull.
+extern uint8_t g_trigInner, g_trigOuter;
+static inline uint8_t trigShape(uint8_t v)
+{
+	uint16_t lo = (uint16_t)g_trigInner * 255u / 100u,
+		 hi = (uint16_t)g_trigOuter * 255u / 100u;
+	if (v <= lo)
+		return 0;
+	if (v >= hi)
+		return 255;
+	return (uint8_t)((uint16_t)(v - lo) * 255u / (hi - lo));
+}
 // LED brightness for the active emulated type (0 = no override, 1-100 = brightness %)
 extern uint8_t g_ledBright;
 // Live mirror of g_padStickCfg[g_etype]: {left pad, right pad} -> stick (PS_*).

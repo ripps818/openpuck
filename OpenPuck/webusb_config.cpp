@@ -110,7 +110,8 @@ static bool boardCommand(uint8_t op)
 //                [local: p[197] audioHapticGain (field 30, percent/2; 0 = auto); p[198] audioHaptics (field 31);
 //                 p[199..204] LED config (fields 32,33,90,91,93,94); p[205] audioHapticStyle (field 88,
 //                 AUDIO_STYLE_* in config.h)]
-#define WB_PAYLEN 204
+//                [v24: p[206] trigger deadzone % (field 102); p[207] trigger full-press % (field 103)]
+#define WB_PAYLEN 206
 // The blob send is drop-on-full (never blocks loop), so the vendor TX FIFO MUST be able to hold a whole blob
 // -- otherwise tud_vendor_write_available() never reaches the frame size and EVERY frame is dropped (blank
 // panel / stale mappings). The Makefile sets -DCFG_TUD_VENDOR_TX_BUFSIZE=256; guard it here so a build without
@@ -140,7 +141,8 @@ static void webusbSendBlob()
 
 	// clang-format off
 	// protocol version
-	// (23 = +0xAE Switch Pro profiles / HD rumble / shortcut frame (op 0x27), fields 190..252, op 0x28 save;
+	// (24 = +trigger deadzone / full-press point (fields 102/103, blob p[206..207]);
+	// 23 = +0xAE Switch Pro profiles / HD rumble / shortcut frame (op 0x27), fields 190..252, op 0x28 save;
 	// 22 = +DualSense audio haptics style (field 88, blob p[198]);
 	// 21 = +rumble style (field 39, blob p[195]) and the REVIVED rumble-strength field 22 at blob p[53], 
 	// now carrying percent/2; 
@@ -157,7 +159,7 @@ static void webusbSendBlob()
 	// cfg; 8 = +per-slot link status; 7 = +raw accel; 
 	// 6 = +swPro120/gyroScale)
 	// clang-format on
-	p[2] = 23;
+	p[2] = 24;
 	p[3] = g_usbMode;
 	p[4] = (uint8_t)g_mDiv;
 	p[5] = (uint8_t)g_mFric;
@@ -354,6 +356,8 @@ static void webusbSendBlob()
 	p[203] = g_ledModeB;
 	p[204] = g_ledActiveLevelB;
 	p[205] = g_audioHapticStyle;
+	p[206] = g_trigInner;
+	p[207] = g_trigOuter;
 	// CRITICAL: usb_web.write() SPINS (`while (remain && _connected) yield();`) until the IN FIFO drains or the
 	// panel disconnects. If the panel holds the WebUSB interface open but stops reading its IN endpoint -- a
 	// backgrounded tab, or the host briefly not servicing transferIn under load -- the FIFO never empties and
@@ -1452,6 +1456,17 @@ void webusbPoll()
 						v > AUDIO_STYLE_WAVE ?
 							AUDIO_STYLE_TONE :
 							v;
+					break;
+
+				// Trigger deadzone / full-press point, percent (protocol v24). The pair stays ordered:
+				// an edit that would cross the other value is refused.
+				case 102:
+					if (v < g_trigOuter)
+						g_trigInner = v;
+					break;
+				case 103:
+					if (v > g_trigInner && v <= 100)
+						g_trigOuter = v;
 					break;
 
 				// DualSense audio-driven haptic gain (percent / 2, 10-500%; 0 = auto)

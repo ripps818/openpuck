@@ -332,6 +332,13 @@
       <p id="swGyroOld" class="note hide">This puck's firmware predates the gyro-mapping setting — update it to configure it.</p>
     </div>
 
+    <div class="card hide" id="trigCard">
+      <h2>Triggers</h2>
+      <div class="row"><label>Deadzone</label><select id="trigInner"></select></div>
+      <div class="row"><label>Full press at</label><select id="trigOuter"></select></div>
+      <p class="note">Emulated modes only; Steam mode passes the triggers to Steam Input untouched. Travel up to the deadzone reads as released, and travel at or past "Full press at" reads as a complete pull. Lower "Full press at" if a game made for DualSense resistive triggers doesn't register a full pull (firing while aiming, for example).</p>
+    </div>
+
     <div class="card">
       <h2>Rumble</h2>
       <!-- Host-rumble shaping (firmware >= v21). Applies to the translated modes (Xbox / Switch / PlayStation),
@@ -943,6 +950,11 @@ for(const id of ["rumbleStyle","rumbleState1","rumbleState2","rumbleState3"]){ c
 { const sel=document.getElementById("rumbleScale");
   for(const v of RUMBLE_SCALES){
     const o=document.createElement("option"); o.value=v; o.textContent=v+"%"+(v===200?" (default)":""); sel.appendChild(o); }
+}
+
+// Trigger deadzone / full-press point, percent (fields 102/103, protocol v24).
+for(const [id,lo,hi,def] of [["trigInner",0,50,0],["trigOuter",50,100,100]]){ const sel=document.getElementById(id);
+  for(let v=lo;v<=hi;v+=2){ const o=document.createElement("option"); o.value=v; o.textContent=v+"%"+(v===def?" (default)":""); sel.appendChild(o); }
 }
 
 // ---- RF recovery / journal status ----
@@ -1837,6 +1849,14 @@ function applyBlob(p){
       if(document.activeElement!==sty) sty.value=rumbleStyle;
       // a strength set from the console can land between the presets -- show the nearest one
       if(document.activeElement!==scl) scl.value=RUMBLE_SCALES.reduce((a,b)=>Math.abs(b-rumbleScale)<Math.abs(a-rumbleScale)?b:a);
+    } }
+  { const trigCap=(p[0]>=24 && p.length>205), ti=$("#trigInner"), to=$("#trigOuter");
+    $("#trigCard").classList.toggle("hide", !trigCap);
+    if(trigCap){
+      // a value set elsewhere can be odd -- show the nearest option
+      const near=(sel,v)=>[...sel.options].map(o=>+o.value).reduce((a,b)=>Math.abs(b-v)<Math.abs(a-v)?b:a);
+      if(document.activeElement!==ti) ti.value=near(ti,p[204]);
+      if(document.activeElement!==to) to.value=near(to,p[205]);
     } }
   { const ledCap = (p.length >= 201);
     $("#ledBlock").classList.toggle("hide", !ledCap);
@@ -3110,6 +3130,8 @@ for(let i=0;i<3;i++)$('#rumbleState'+(i+1)).addEventListener('change',()=>setFie
 $("#shortcutSave").onclick=async()=>{if(dev && lastSw){await send([0x28]);log("shortcut settings save requested");}};
 $("#qamSelect").addEventListener("change",()=>setField(239,+$("#qamSelect").value));
 $("#rumbleScale").addEventListener("change", ()=>setField(22, (+$("#rumbleScale").value)/2));
+$("#trigInner").addEventListener("change", ()=>setField(102, +$("#trigInner").value));
+$("#trigOuter").addEventListener("change", ()=>setField(103, +$("#trigOuter").value));
 $("#swGyroMap").addEventListener("change", ()=>setField(38, +$("#swGyroMap").value));
 $("#ledMode").addEventListener("change", ()=>{
   const v = +$("#ledMode").value;
