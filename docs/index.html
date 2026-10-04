@@ -166,6 +166,7 @@
         <div class="stat"><div class="k">Status protocol</div><div class="v" id="stVersionProto">—</div></div>
         <div class="stat"><div class="k">Panel update</div><div class="v" id="stVersionUpdate">—</div></div>
       </div>
+      <p class="note hide" id="swStorageWarning"></p>
       <p class="note">This section reflects the connected puck. Reconnect after flashing or changing modes to verify what is currently running.</p>
     </div>
 
@@ -192,27 +193,32 @@
       </div>
     </div>
 
-    <div class="card" id="swProfilesCard">
-      <h2>Switch Pro back-button profiles</h2>
-      <p class="note" id="swProfilesHelp">Connect the profiles firmware to configure seven saved profiles.</p>
-      <div id="swProfilesControls" class="hide">
-        <div class="row"><label>Use profiles</label><select id="swProfilesEnabled"><option value="0">Off — use normal Switch mappings</option><option value="1">On</option></select></div>
-        <div class="row"><label>Profile to edit</label><select id="swProfileEdit"></select></div>
-        <p class="note" id="swProfileActive"></p>
-        <div id="swProfileBack"></div>
-        <button id="swProfileActivate">Use this profile</button>
-        <div id="swClickControls" class="hide"><div class="row"><label>Trackpad D-pad click feedback</label><select id="swClickFeedback"><option value="1">On</option><option value="0">Off</option></select></div>
-        <p class="note">A short pulse on the clicked pad, once per press, in either D-pad mapping mode. This controls D-pad click feedback independently of the native Trackpad haptics setting below.</p></div>
-        <p class="note hide" id="swStorageWarning"></p>
-        <p class="note">For trackpad D-pad controls, open the Switch settings below and choose D-pad on touch or D-pad on click for either trackpad. Both support diagonals; the center is neutral. These trackpad settings apply across profiles.</p>
-        <h3>Shortcuts while in Switch Pro mode</h3>
-        <p class="note">Hold the selected shortcut modifier plus the chosen button. In Switch profiles mode, unassigned shortcuts do nothing. In Controller modes, their configured mode action applies. Modifier + A always returns to Steam. Changes save automatically. “Use this profile” saves the selection for your next session.</p>
-        <div id="swProfileChords"></div>
+    <!-- Switch Pro-only controls: buildTypeCfgs() moves these into the Switch tab of "Button mapping". -->
+    <div id="swProParts" class="hide">
+      <div id="swClickControls" class="hide"><div class="row"><label>Trackpad D-pad click feedback</label><select id="swClickFeedback"><option value="1">On</option><option value="0">Off</option></select></div>
+        <p class="note">A short pulse on the clicked pad, once per press, in either trackpad D-pad mode. Independent of Trackpad haptics above.</p></div>
+      <div class="row hide" id="qamSelectRow"><label>Quick Access + Minus</label><select id="qamSelect"></select></div>
+      <!-- Gyro mapping (firmware >= v19). Older firmware always uses the corrected mapping and has no field
+           to set -> the whole block hides (see #swGyroMapBlock in applyBlob). -->
+      <div id="swGyroMapBlock">
+        <div class="row"><label>Gyro mapping</label><select id="swGyroMap"></select></div>
+        <p class="note">Corrected (default) trims the gyro so Switch Pro mode matches a genuine Pro Controller and Steam mode (roll ×0.8, pitch/yaw ×0.9). Legacy sends the raw axes untrimmed — the pre-fix behavior, if you preferred the faster feel or tuned your in-game sensitivity around it.</p>
+      </div>
+      <p id="swGyroOld" class="note hide">This puck's firmware predates the gyro-mapping setting — update it to configure it.</p>
+      <div id="hdPadBlock" class="hide">
+        <div class="row"><label>HD trackpad strength</label><select id="hdPadScale"></select></div>
+        <p class="note">In Switch Pro mode the game's HD rumble plays as tones at the game's frequencies: the low band on the grips, the high band on the trackpads. Grip rumble strength and HD trackpad strength scale them separately. Trackpad output is capped at −15 dB from 250–300 Hz, with gradual transitions outside that range.</p>
       </div>
     </div>
     <div class="card">
-      <h2>Back4 chords (face + D-pad)</h2>
-      <p class="note" style="margin-top:0">Hold the selected modifier (Quick Access or all four back paddles) plus a face button or D-pad direction to switch mode without the WebUI. <strong>A is always Steam</strong> — that is the way back out of any mode. B / X / Y and D-pad directions are configurable. The optional haptic shortcuts reserve Left / Up / Down (defaults: B=Lizard, X=Xbox, Y=Switch Pro).</p>
+      <h2>Mode shortcuts</h2>
+      <p class="note" style="margin-top:0">Hold the selected modifier (Quick Access or all four back paddles) plus a face button or D-pad direction to switch mode without the WebUI. <strong>A is always Steam</strong> — that is the way back out of any mode. B / X / Y and D-pad directions are configurable (defaults: B=Lizard, X=Xbox, Y=Switch Pro). Modifier + trackpad click toggles the touchpad.</p>
+      <div id="shortcutToggles" class="hide">
+        <div class="row"><label>Shortcuts enabled</label><button id="scEnabled"></button></div>
+        <div class="row"><label>Shortcut modifier</label><button id="scQam"></button></div>
+        <div class="row"><label>Confirmation pulse</label><button id="scFeedback"></button></div>
+        <div class="row"><label>Quick Access + Select action (Switch Pro)</label><button id="scCapture"></button></div>
+      </div>
       <div class="chord-cols">
         <div>
           <div class="colhead">Face buttons</div>
@@ -321,17 +327,6 @@
       <p class="note">Right-pad cursor in Steam-mode lizard (Steam closed) and in Xbox mode. Sensitivity is a divisor — lower = faster pointer. Glide = how long the cursor coasts after a flick.</p>
     </div>
 
-    <div class="card">
-      <h2>Switch Pro motion</h2>
-      <!-- Gyro mapping (firmware >= v19). Older firmware always uses the corrected mapping and has no field
-           to set -> the whole block hides (see #swGyroMapBlock in applyBlob). -->
-      <div id="swGyroMapBlock">
-        <div class="row"><label>Gyro mapping</label><select id="swGyroMap"></select></div>
-        <p class="note">Corrected (default) trims the gyro so Switch Pro mode matches a genuine Pro Controller and Steam mode (roll ×0.8, pitch/yaw ×0.9). Legacy sends the raw axes untrimmed — the pre-fix behavior, if you preferred the faster feel or tuned your in-game sensitivity around it.</p>
-      </div>
-      <p id="swGyroOld" class="note hide">This puck's firmware predates the gyro-mapping setting — update it to configure it.</p>
-    </div>
-
     <div class="card hide" id="trigCard">
       <h2>Triggers</h2>
       <div class="row"><label>Deadzone</label><select id="trigInner"></select></div>
@@ -344,34 +339,11 @@
       <!-- Host-rumble shaping (firmware >= v21). Applies to the translated modes (Xbox / Switch / PlayStation),
            where the puck decodes the host's rumble packet itself. Steam mode relays Steam's own haptics
            untouched, so these do nothing there. Older firmware hides the block. -->
-      <div class="row hide" id="qamSelectRow"><label>Quick Access + Minus / Select / Menu (Switch Pro)</label><select id="qamSelect"></select></div>
       <div id="rumbleBlock">
-        <div class="row"><label>Style</label><select id="rumbleStyle"></select></div>
         <div class="row"><label>Grip rumble strength</label><select id="rumbleScale"></select></div>
-        <div id="hdTuning" class="hide">
-          <div class="row"><label>HD trackpad strength</label><select id="hdPadScale"></select></div>
-          <p class="note">HD Emulation uses the finalized V2 Quiet trackpad rendering and Punchy grips. Trackpad output is capped at −15 dB from 250–300 Hz, with gradual transitions outside that range.</p>
-          <div id="finalShortcuts">
-            <h3>Controller shortcuts</h3>
-            <div class="row"><label>Shortcuts enabled</label><button id="scEnabled"></button></div>
-            <div class="row"><label>Shortcut modifier</label><button id="scQam"></button></div>
-            <div class="row"><label>Mode / profile shortcuts</label><button id="scProfiles"></button></div>
-            <div class="row"><label>D-pad haptic shortcuts</label><button id="scHaptics"></button></div>
-            <div class="row"><label>Shortcut confirmation pulses</label><button id="scFeedback"></button></div>
-            <div class="row"><label>Quick Access + Select action enabled</label><button id="scCapture"></button></div>
-            <div class="row"><label>Rumble option 1</label><select id="rumbleState1"></select></div>
-            <div class="row"><label>Rumble option 2</label><select id="rumbleState2"></select></div>
-            <div class="row"><label>Rumble option 3</label><select id="rumbleState3"></select></div>
-            <div id="strengthSteps"></div>
-            <p class="note" id="shortcutStrengths"></p>
-            <div class="row"><button id="shortcutSave">Save shortcut settings</button></div>
-            <p class="note" id="rumbleToggleHelp"></p>
-            <p class="note" id="rumbleStateActive"></p>
-          </div>
-        </div>
         <div class="row" style="margin:10px 0 0"><button id="rumbleTest">Test rumble</button>
-          <span class="note" style="flex:1">Buzzes every connected controller for half a second at the settings above, so you can compare styles without launching a game.</span></div>
-        <p class="note">Normal, Mono, Heavy, Light, Swapped motors, Punchy and Soft retain their original grip behavior. HD Emulation adds the finalized trackpad feedback in Switch Pro mode; other modes use normal grip rumble. Per-type Rumble switches disable game rumble. Set HD trackpad strength to 0 to disable HD pad output independently. Native trackpad feedback keeps its separate controls.</p>
+          <span class="note" style="flex:1">Buzzes every connected controller for half a second at the current mode's strength.</span></div>
+        <p class="note">Rumble follows the mode: HD rumble in Switch Pro mode, normal rumble everywhere else. Turn rumble on or off and set its strength per mode in Button mapping; HD trackpad strength is on the Switch tab.</p>
       </div>
       <p id="rumbleOld" class="note hide">This puck's firmware predates the rumble-shaping settings — update it to configure them.</p>
     </div>
@@ -564,7 +536,7 @@ let dev=null, epIn=0, epOut=0, ifNum=0, polling=false, capturing=false, backupBu
 // the panel shows the controller UI (manage paired pucks + flash) and skips every puck-only poll.
 let isDongle=false;
 let lastP=null; // most recent status-blob payload (config source for Export)
-let lastSw=null; // most recent 0xAE Switch Pro profiles / HD rumble / shortcut frame (blob v23+)
+let lastSw=null; // most recent 0xAE Switch Pro / HD rumble / shortcut frame (blob v23+)
 // Stability test: armed = active across reconnects; stabStart = ms of the current run; stabLastRun = last
 // completed run {secs} (ended by a reset). Kept in-page so it survives the device reset (not a page refresh).
 let stabArmed=false, stabStart=0, stabLastRun=null;
@@ -775,58 +747,19 @@ function mkSelect(def, includeNone){
   return sel;
 }
 for(const o of mkSelect(TYPE_DEFS[1],true).options){const c=o.cloneNode(true);if(+c.value===18)c.textContent="Take screenshot";$("#qamSelect").appendChild(c);}
-let swProfileState=null, swProfileCount=0;
-const swProfileOffset=p=>p<4?2+p*4:25+(p-4)*4;
-const swProfileField=(p,k)=>p<4?194+p*4+k:218+(p-4)*4+k;
-const swProfileBackEls=[], swProfileChordEls=[];
-function swProfileRender(){
-  if(!swProfileState) return;
-  const index=+$("#swProfileEdit").value;
-  swProfileBackEls.forEach((el,k)=>{el.value=swProfileState[swProfileOffset(index)+k];});
-}
-// s = 0xAE frame payload: [ver][SwProfiles 37][swDpadHaptics][storageState][hdPadScale/2][rumblePresets 3]
-// [rumbleSlot][swQamSelect][shortcutFlags][strengthSteps/2 2x3][strengthSlots 2]
-function swProfileApply(s){
+// s = 0xAE frame payload: [ver][37 unused][swDpadHaptics][storageState][hdPadScale/2][4 unused]
+// [swQamSelect][shortcutFlags][8 unused]
+function swStatusApply(s){
   const capable=!!s;
   $("#swClickControls").classList.toggle("hide",!capable);
-  $("#swProfilesControls").classList.toggle("hide",!capable);
   $("#swBonds").textContent=lastP && lastP.length>60?lastP[60]:"—";
   $("#swStorage").textContent=capable?(["Unavailable","Ready","Initialized","Save failed"][s[39]]||"Unknown"):"Not reported";
   const storageBad=capable && (s[39]===0 || s[39]===3);
   $("#swStorageWarning").classList.toggle("hide",!storageBad);
   $("#swStorageWarning").textContent=storageBad?"Saved storage needs attention. Export a backup of your current setup. Failed saves retain the previous saved files; automatic erasing is disabled for nonblank storage.":"";
-  $("#swProfilesHelp").textContent=capable ? "Independent sets of L4, R4, L5 and R5 mappings. Trackpads, gyro, rumble and other settings are shared." : "Requires firmware with Switch Pro profiles (status blob v23+).";
-  if(!capable){swProfileState=null;swProfileCount=0;return;}
-  swProfileCount=7;
-  $("#swClickFeedback").value=s[38];
-  swProfileState=Array.from(s.slice(1,38));
-  $("#swProfilesEnabled").value=swProfileState[0];
-  $("#swProfileActive").textContent="Active: Profile "+(swProfileState[1]+1)+(swProfileState[0]?"":" (profiles off)");
-  swProfileChordEls.forEach((el,i)=>{el.value=swProfileState[18+i];});
-  swProfileRender();
+  if(capable && document.activeElement!==$("#swClickFeedback")) $("#swClickFeedback").value=s[38];
 }
-for(let i=0;i<7;i++){
-  const o=document.createElement("option");o.value=i;o.textContent="Profile "+(i+1);$("#swProfileEdit").appendChild(o);
-}
-for(let i=0;i<4;i++){
-  const row=document.createElement("div");row.className="row";
-  const label=document.createElement("label");label.textContent=BACK_LABELS[i];row.appendChild(label);
-  const sel=mkSelect(TYPE_DEFS[1],true);row.appendChild(sel);$("#swProfileBack").appendChild(row);
-  sel.onchange=()=>setField(swProfileField(+$("#swProfileEdit").value,i),+sel.value);
-  swProfileBackEls.push(sel);
-}
-["B","X","Y","Left","Up","Right","Down"].forEach((key,i)=>{
-  const row=document.createElement("div");row.className="row";
-  const label=document.createElement("label");label.textContent="back4 + "+key;row.appendChild(label);
-  const sel=document.createElement("select");
-  for(let v=0;v<=7;v++){const o=document.createElement("option");o.value=v;o.textContent=v?"Profile "+v:"Keep normal mode shortcut";sel.appendChild(o);}
-  sel.onchange=()=>setField(210+i,+sel.value);
-  row.appendChild(sel);$("#swProfileChords").appendChild(row);swProfileChordEls.push(sel);
-});
-$("#swProfileEdit").onchange=swProfileRender;
 $("#swClickFeedback").onchange=()=>setField(230,+$("#swClickFeedback").value);
-$("#swProfilesEnabled").onchange=()=>setField(190,+$("#swProfilesEnabled").value);
-$("#swProfileActivate").onclick=()=>setField(191,+$("#swProfileEdit").value);
 
 let curTab=0, tabInited=false;
 function setTab(et){
@@ -836,6 +769,9 @@ function setTab(et){
     rec.tab.classList.toggle("active", i===et);
   });
 }
+// Strength is sent as percent/2 (field 22), so every value here must be even.
+const RUMBLE_SCALES=Array.from({length:246},(_,i)=>10+i*2);
+const HD_PAD_SCALES=Array.from({length:251},(_,i)=>i*2);
 (function buildTypeCfgs(){
   const host=document.getElementById("typeCfgs");
   const bar=document.createElement("div"); bar.style.cssText="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px";
@@ -860,11 +796,11 @@ function setTab(et){
       const aud=document.createElement("button"); aud.textContent="on"; tog.appendChild(aud);
       rec.audioHaptics=aud;
       aud.onclick=()=>{ const on=aud.classList.contains("active"); setField(31, on?0:1); };
-      // Haptics style (protocol v22): 0 rumble = the motor-style rumble, 1 tone = smooth per-actuator tones (default),
-      // 2 split = below ~80 Hz as rumble, the rest as tones, 3 wave = the haptic channels streamed as PCM.
+      // Haptics style (protocol v22): 0 rumble = the motor-style rumble, 1 tone = smooth per-actuator tones,
+      // 2 split = below ~80 Hz as rumble, the rest as tones, 3 wave = the haptic channels streamed as PCM (default).
       // Clicking cycles tone -> split -> wave -> rumble.
       const styLbl=document.createElement("label"); styLbl.textContent="Haptics style"; styLbl.style.cssText="flex:0 0 auto;margin:0 0 0 6px"; tog.appendChild(styLbl);
-      const sty=document.createElement("button"); sty.textContent="tone"; sty.dataset.v="1"; tog.appendChild(sty);
+      const sty=document.createElement("button"); sty.textContent="wave"; sty.dataset.v="3"; tog.appendChild(sty);
       rec.audioStyle=sty;
       sty.onclick=()=>{ setField(88, ((+sty.dataset.v)+1)%4); };
     }
@@ -897,6 +833,13 @@ function setTab(et){
       sl.addEventListener("change",()=>setField(40+et*9+7, +sl.value));
       sec.appendChild(row);
       rec.led=sl; rec.ledV=vspan; }
+    // Grip rumble strength, per type (protocol v25). The rumble style follows the mode.
+    { const row=document.createElement("div"); row.className="row hide";
+      const lab=document.createElement("label"); lab.textContent="Grip rumble strength"; row.appendChild(lab);
+      const sel=document.createElement("select"); row.appendChild(sel); sec.appendChild(row);
+      for(const v of RUMBLE_SCALES){ const o=document.createElement("option"); o.value=v; o.textContent=v+"%"+(v===200?" (default)":""); sel.appendChild(o); }
+      sel.addEventListener("change",()=>setField(108+et, (+sel.value)/2));
+      rec.rumbleScl=sel; }
     // Audio Haptics gain (DS5 only)
     if(def.key==="DS5"){
       const row=document.createElement("div"); row.className="row";
@@ -920,6 +863,11 @@ function setTab(et){
       sel.addEventListener("change",()=>setField(PAD_STICK_FIELD0+et*2+pad, +sel.value));
       rec.padStick.push(sel);
     }
+    // Switch Pro-only settings sit on the Switch tab, after the trackpad D-pad options they relate to
+    if(def.key==="SWITCH"){
+      const h=document.createElement("div"); h.className="colhead"; h.style.marginTop="12px"; h.textContent="Switch Pro mode only"; sec.appendChild(h);
+      for(const id of ["swClickControls","qamSelectRow","swGyroMapBlock","swGyroOld","hdPadBlock"]) sec.appendChild(document.getElementById(id));
+    }
     host.appendChild(sec); typeEls.push(rec);
   });
   setTab(0);
@@ -936,15 +884,6 @@ for(const sel of document.querySelectorAll("select.chordD")){
 }
 { const sel=document.getElementById("swGyroMap");
   for(const [lbl,v] of [["Corrected (default)",0],["Legacy (untrimmed)",1]]){
-    const o=document.createElement("option"); o.value=v; o.textContent=lbl; sel.appendChild(o); }
-}
-// Rumble style names track RUMBLE_STYLE_* in haptics.h; the value IS the wire value for field 39.
-const RUMBLE_STYLES=[["Normal (default)",0],["Mono (both motors)",1],["Heavy (low only)",2],["Light (high only)",3],["Swapped motors",4],["Punchy (squared)",5],["Soft (boost weak)",6],["HD Emulation",8]];
-// Strength is sent as percent/2 (field 22), so every value here must be even.
-const RUMBLE_SCALES=Array.from({length:246},(_,i)=>10+i*2);
-const HD_PAD_SCALES=Array.from({length:251},(_,i)=>i*2);
-for(const id of ["rumbleStyle","rumbleState1","rumbleState2","rumbleState3"]){ const sel=document.getElementById(id);
-  for(const [lbl,v] of RUMBLE_STYLES){
     const o=document.createElement("option"); o.value=v; o.textContent=lbl; sel.appendChild(o); }
 }
 { const sel=document.getElementById("rumbleScale");
@@ -1533,7 +1472,7 @@ async function readFrame(marker, minLen, readLen, timeoutMs=1500){
   }
 }
 async function readBlob(){ return readFrame(0xA5, 12); }
-// v23+: the Switch Pro profiles / HD rumble / shortcut settings ride a separate 0xAE frame (op 0x27) because
+// v23+: the Switch Pro / HD rumble / shortcut settings ride a separate 0xAE frame (op 0x27) because
 // the status blob is already at the 255-byte frame limit. Call after applyBlob so lastP is current.
 async function readSw(){
   if(!lastP || lastP[0]<23){ applySw(null); return; }
@@ -1543,27 +1482,17 @@ async function readSw(){
 }
 function applySw(s){
   lastSw=s;
-  swProfileApply(s);
-  $("#hdTuning").classList.toggle("hide",!s);
+  swStatusApply(s);
+  $("#shortcutToggles").classList.toggle("hide",!s);
+  $("#hdPadBlock").classList.toggle("hide",!s);
   $("#qamSelectRow").classList.toggle("hide",!s);
   if(!s) return;
-  const rumbleScale=lastP[51]*2;
   if(document.activeElement!==$("#qamSelect")) $("#qamSelect").value=s[45];
   if(document.activeElement!==$("#hdPadScale")) $("#hdPadScale").value=s[40]*2;
-  const flags=s[46],haptics=!!(flags&4),profiles=!!(flags&2),enabled=!!(flags&32);
-  for(const [id,bit] of SC_BITS){const el=$("#"+id);el.textContent=id==="scQam"?((flags&bit)?"Quick Access":"All four back buttons"):id==="scProfiles"?((flags&bit)?"Switch profiles":"Controller modes"):((flags&bit)?"on":"off");el.classList.toggle("active",!!(flags&bit));}
-  for(let i=0;i<3;i++) if(document.activeElement!==$("#rumbleState"+(i+1))) $("#rumbleState"+(i+1)).value=s[41+i];
-  for(let w=0;w<2;w++)for(let i=0;i<3;i++) if(document.activeElement!==$("#strength"+w+i)) $("#strength"+w+i).value=s[47+w*3+i]*2;
-  $("#shortcutStrengths").textContent="Trackpads: "+s[40]*2+"% · Grips: "+rumbleScale+"%";
-  $("#rumbleStateActive").textContent=s[44]<3?"Current: Rumble option "+(s[44]+1):"Next Left shortcut selects option 1";
-  $("#rumbleToggleHelp").textContent="Hold "+((flags&1)?"Quick Access":"all four back buttons")+". Left cycles rumble options; Up cycles trackpad strength; Down cycles grip strength. Slots confirm with 1–3 pulses on both trackpads, 250 ms each with 150 ms gaps.";
+  const flags=s[46],enabled=!!(flags&32);
+  for(const [id,bit] of SC_BITS){const el=$("#"+id);el.textContent=id==="scQam"?((flags&bit)?"Quick Access":"All four back buttons"):((flags&bit)?"on":"off");el.classList.toggle("active",!!(flags&bit));}
   for(const rec of typeEls)rec.qam.parentElement.classList.toggle("hide",enabled && !!(flags&1));
-  for(const el of document.querySelectorAll(".chord,.chordD,#swProfileChords select")){const lab=el.parentElement.querySelector("label");if(lab)lab.textContent=lab.textContent.replace(/^(back4|Quick Access)/,(flags&1)?"Quick Access":"back4");}
-  swProfileChordEls.forEach((el,i)=>el.parentElement.classList.toggle("hide",!profiles || (haptics && [3,4,6].includes(i))));
-  for(const el of document.querySelectorAll(".chord"))el.parentElement.classList.toggle("hide",profiles);
-  for(const el of document.querySelectorAll(".chordD"))el.parentElement.classList.toggle("hide",profiles || (haptics && [0,1,3].includes(+el.dataset.i)));
-  $("#strengthSteps").classList.toggle("hide",!haptics);
-  for(let i=1;i<=3;i++)$("#rumbleState"+i).parentElement.classList.toggle("hide",!haptics);
+  for(const el of document.querySelectorAll(".chord,.chordD")){const lab=el.parentElement.querySelector("label");if(lab)lab.textContent=lab.textContent.replace(/^(back4|Quick Access)/,(flags&1)?"Quick Access":"back4");}
 }
 function applyBlob(p){
   for(const rec of typeEls) for(const sel of rec.padStick) for(const o of sel.options) if(+o.value>=3) o.disabled=p[0]<23;
@@ -1601,7 +1530,7 @@ function applyBlob(p){
   const swGyroLegacy=gyroMapCap?p[184]:0;
   // Rumble shaping (protocol v21): firmware p[53]/p[195] = payload p[51]/p[193]. Strength is percent/2.
   const rumbleCap=(p[0]>=21 && p.length>193);
-  const rumbleScale=rumbleCap?p[51]*2:200, rumbleStyle=rumbleCap?p[193]:0;
+  const rumbleScale=rumbleCap?p[51]*2:200;
   // Reconciled firmware advertises RF recovery in the append-only v22 byte (firmware p[196] -> JS p[194]).
   // Keep the old p[179] check so the same panel can still talk to the hardware-validated pre-reconcile RF build.
   rfCapable=(p.length>194 && p[194]===0x52) || (p.length>179 && p[179]===0x52);
@@ -1842,14 +1771,22 @@ function applyBlob(p){
     $("#swGyroMapBlock").classList.toggle("hide", !gyroMapCap);
     $("#swGyroOld").classList.toggle("hide", gyroMapCap);
     if(gyroMapCap && document.activeElement!==sel) sel.value=swGyroLegacy; }
-  { const sty=$("#rumbleStyle"), scl=$("#rumbleScale");
+  { const scl=$("#rumbleScale");
     $("#rumbleBlock").classList.toggle("hide", !rumbleCap);
     $("#rumbleOld").classList.toggle("hide", rumbleCap);
     if(rumbleCap){
-      if(document.activeElement!==sty) sty.value=rumbleStyle;
       // a strength set from the console can land between the presets -- show the nearest one
       if(document.activeElement!==scl) scl.value=RUMBLE_SCALES.reduce((a,b)=>Math.abs(b-rumbleScale)<Math.abs(a-rumbleScale)?b:a);
-    } }
+    }
+    // v25: grip strength is per type (Button mapping tabs); the global row then hides
+    const perType=(p[0]>=25 && p.length>213);
+    scl.parentElement.classList.toggle("hide", perType);
+    typeEls.forEach((rec,et)=>{
+      rec.rumbleScl.parentElement.classList.toggle("hide", !perType);
+      if(!perType) return;
+      const pct=p[210+et]*2;
+      if(document.activeElement!==rec.rumbleScl) rec.rumbleScl.value=RUMBLE_SCALES.reduce((a,b)=>Math.abs(b-pct)<Math.abs(a-pct)?b:a);
+    }); }
   { const trigCap=(p[0]>=24 && p.length>205), ti=$("#trigInner"), to=$("#trigOuter");
     $("#trigCard").classList.toggle("hide", !trigCap);
     if(trigCap){
@@ -1990,6 +1927,7 @@ function buildBackup(p, bp){
     const t={back:[p[q],p[q+1],p[q+2],p[q+3]], qam:p[q+4], abSwap:p[q+5], pad:p[q+6], led:p[q+7], rumble:p[q+8]};
     // pad->stick mapping only exists from protocol v20; omit on older pucks so a restore can't replay defaults
     if(p[0]>=21 && p.length>192) t.padStick=[p[185+et*2],p[186+et*2]];
+    if(p[0]>=25 && p.length>213) t.rumbleScale=p[210+et]*2;
     types.push(t); }
   const cfg={ mode:p[1], mDiv:p[2], mFric:p[3], persistMode:p[22], chord:[p[23],p[24],p[25]], types };
   // D-pad chords only exist from protocol v18, the Switch gyro mapping from v19; omit the keys entirely on
@@ -2003,12 +1941,10 @@ function buildBackup(p, bp){
     if(p.length>=202) cfg.ledModeB=p[201];
     if(p.length>=203) cfg.ledPolarityB=p[202];
   }
-  if(p[0]>=21 && p.length>=194){ cfg.rumbleStyle=p[193]; cfg.rumbleScale=p[51]*2; }
+  if(p[0]>=21 && p.length>=194) cfg.rumbleScale=p[51]*2;
   if(lastSw){
-    cfg.swProfiles=Array.from(lastSw.slice(1,38)); cfg.swDpadHaptics=lastSw[38]; cfg.hdPadScale=lastSw[40]*2;
-    cfg.rumblePresets=Array.from(lastSw.slice(41,44)); if(lastSw[44]<3) cfg.rumbleSlot=lastSw[44];
+    cfg.swDpadHaptics=lastSw[38]; cfg.hdPadScale=lastSw[40]*2;
     cfg.swQamSelect=lastSw[45]; cfg.shortcutFlags=lastSw[46];
-    cfg.strengthSteps=Array.from(lastSw.slice(47,53),v=>v*2); cfg.strengthSlots=Array.from(lastSw.slice(53,55));
   }
   // version 2: include the lizard map so it survives a backup/restore cycle.
   // Guard on !lizardBusy to avoid a race with the one-shot lazy load (lizardExchange sets
@@ -2049,27 +1985,21 @@ async function importBackup(file){
   catch(e){ log("import: not valid JSON"); return; }
   if(obj.magic!=="openpuck-backup" || !obj.bonds || !obj.config){ log("import: unrecognized backup file"); return; }
   const hc=obj.config;
-  const swKeys=["swProfiles","swDpadHaptics","hdPadScale","swQamSelect","shortcutFlags","rumblePresets","strengthSteps","rumbleSlot","strengthSlots"];
+  // swProfiles (removed feature) in older backups is ignored
+  // rumbleStyle / rumblePresets / strengthSteps / rumbleSlot / strengthSlots (removed settings) in older
+  // backups are ignored
+  const swKeys=["swDpadHaptics","hdPadScale","swQamSelect","shortcutFlags"];
   if((swKeys.some(k=>hc[k]!==undefined) || (Array.isArray(hc.types) && hc.types.some(t=>Array.isArray(t.padStick) && t.padStick.some(v=>v>=3)))) && !lastSw){
-    log("import: Switch Pro profiles / trackpad D-pad / HD rumble settings require firmware with blob v23+");return;
+    log("import: Switch Pro trackpad D-pad / HD rumble / shortcut settings require firmware with blob v23+");return;
   }
   const isInt=(v,lo,hi)=>Number.isInteger(v) && v>=lo && v<=hi;
-  const rumbleStyleOk=v=>isInt(v,0,6) || v===8;
-  if(hc.rumbleStyle!==undefined && (!rumbleStyleOk(hc.rumbleStyle) || !lastP || lastP[0]<21)){ log("import: invalid or unsupported rumble style");return; }
   if(hc.rumbleScale!==undefined && (!isInt(hc.rumbleScale,10,500) || !lastP || lastP[0]<21)){ log("import: invalid or unsupported rumble strength");return; }
+  if(Array.isArray(hc.types) && hc.types.some(t=>t && t.rumbleScale!==undefined && (!isInt(t.rumbleScale,10,500) || t.rumbleScale%2))){ log("import: invalid per-type rumble strength");return; }
   if((hc.swDpadHaptics!==undefined && !isInt(hc.swDpadHaptics,0,1)) ||
      (hc.hdPadScale!==undefined && (!isInt(hc.hdPadScale,0,500) || hc.hdPadScale%2)) ||
      (hc.swQamSelect!==undefined && !isInt(hc.swQamSelect,0,20)) ||
-     (hc.shortcutFlags!==undefined && !isInt(hc.shortcutFlags,0,63)) ||
-     (hc.rumblePresets!==undefined && (!Array.isArray(hc.rumblePresets) || hc.rumblePresets.length!==3 || !hc.rumblePresets.every(rumbleStyleOk))) ||
-     (hc.strengthSteps!==undefined && (!Array.isArray(hc.strengthSteps) || hc.strengthSteps.length!==6 || hc.strengthSteps.some((v,i)=>!isInt(v,i<3?0:10,500) || v%2))) ||
-     (hc.rumbleSlot!==undefined && !isInt(hc.rumbleSlot,0,2)) ||
-     (hc.strengthSlots!==undefined && (!Array.isArray(hc.strengthSlots) || hc.strengthSlots.length!==2 || !hc.strengthSlots.every(v=>isInt(v,0,255))))){
+     (hc.shortcutFlags!==undefined && !isInt(hc.shortcutFlags,0,63))){
     log("import: invalid Switch Pro / HD rumble / shortcut settings");return;
-  }
-  const q=hc.swProfiles;
-  if(q!==undefined && (!Array.isArray(q) || (q.length!==25 && q.length!==37) || !q.every(Number.isInteger) || q[0]<0 || q[0]>1 || q[1]<0 || q[1]>(q.length===37?6:3) || q.slice(2,18).some(v=>v<0 || v>20) || q.slice(18,25).some(v=>v<0 || v>(q.length===37?7:4)) || q.slice(25).some(v=>v<0 || v>20))){
-    log("import: invalid Switch Pro profiles");return;
   }
   const bondedN=obj.bonds.filter(b=>b.used).length;
   if(!confirm("Restore this backup onto the CONNECTED puck (serial "+(dev.serialNumber||"?")+")?\n\nMake sure this is the TARGET puck, not the one you exported from — the panel only talks to the puck you last connected.\n\nThis OVERWRITES its "+bondedN+" controller pairing(s) and ALL settings, then reboots it.\n\nResult: any controller paired to the original puck will connect to this one with no re-pairing.")) return;
@@ -2087,7 +2017,7 @@ async function importBackup(file){
   const ledN=(c.ledMode!==undefined?1:0)+(c.ledPinA!==undefined?1:0)+(c.ledPinB!==undefined?1:0)+(c.ledPolarity!==undefined?1:0);
   const baseN=6 + (Array.isArray(c.chordD)?4:0) + (c.swGyroLegacy!==undefined?1:0) + (c.emulateSteamMachine!==undefined?1:0) + ledN;
   const padStickN=Array.isArray(c.types)?c.types.slice(0,typeN).filter(t=>Array.isArray(t.padStick)).length*2:0;
-  const total=baseN + typeN*9 + padStickN + lizardN + 4 + 1 + (c.swProfiles?c.swProfiles.length:0) + (c.swDpadHaptics!==undefined?1:0) + (c.rumbleStyle!==undefined?1:0) + (c.rumbleScale!==undefined?1:0) + (c.hdPadScale!==undefined?1:0) + (c.swQamSelect!==undefined?1:0) + (c.shortcutFlags!==undefined?1:0) + (c.rumblePresets?3:0) + (c.strengthSteps?6:0) + (c.rumbleSlot!==undefined?1:0) + (c.strengthSlots?c.strengthSlots.filter(v=>v<3).length:0);
+  const total=baseN + typeN*9 + padStickN + lizardN + 4 + 1 + (c.swDpadHaptics!==undefined?1:0) + (c.rumbleScale!==undefined?1:0) + (c.hdPadScale!==undefined?1:0) + (c.swQamSelect!==undefined?1:0) + (c.shortcutFlags!==undefined?1:0);
   let step=0, stage="";
   const tick=()=>modalStage(stage, Math.min(99,Math.floor(step*100/total)));
   try{
@@ -2123,6 +2053,8 @@ async function importBackup(file){
     if(c.ledPolarity!==undefined) await sf(91, c.ledPolarity);
     if(c.ledModeB!==undefined) await sf(93, c.ledModeB);
     if(c.ledPolarityB!==undefined) await sf(94, c.ledPolarityB);
+    // per-type rumble (protocol v25) when both the backup and this puck have it
+    const typeRumble=lastP && lastP[0]>=25, typeRumbleDone=typeRumble && typeN>0 && c.types.some(t=>t && t.rumbleScale!==undefined);
     // c.types is absent in some very old backups created before per-type paddle/haptic config
     // was added to the panel export; guard so a missing field never crashes the import mid-flight.
     if(typeN){
@@ -2131,25 +2063,15 @@ async function importBackup(file){
         await sf(40+et*9+4, t.qam); await sf(40+et*9+5, t.abSwap?1:0);
         await sf(40+et*9+6, t.pad?1:0); await sf(40+et*9+7, t.led);
         await sf(40+et*9+8, t.rumble!==undefined?t.rumble:1);
-        if(Array.isArray(t.padStick)){ await sf(PAD_STICK_FIELD0+et*2, t.padStick[0]); await sf(PAD_STICK_FIELD0+et*2+1, t.padStick[1]); } }
+        if(Array.isArray(t.padStick)){ await sf(PAD_STICK_FIELD0+et*2, t.padStick[0]); await sf(PAD_STICK_FIELD0+et*2+1, t.padStick[1]); }
+        if(typeRumble && t.rumbleScale!==undefined) await sf(108+et, t.rumbleScale/2); }
       log("settings replayed ("+(baseN+typeN*9)+" fields)");
     } else { log("settings replayed ("+baseN+" fields — no per-type config in this backup)"); }
-    if(Array.isArray(c.swProfiles) && (c.swProfiles.length===25 || c.swProfiles.length===37)){
-      const q=c.swProfiles;
-      for(let i=0;i<16;i++) await sf(194+i,q[2+i]);
-      for(let i=0;i<7;i++) await sf(210+i,q[18+i]);
-      if(q.length===37) for(let i=0;i<12;i++) await sf(218+i,q[25+i]);
-      await sf(191,q[1]); await sf(190,q[0]);
-    }
     if(c.swDpadHaptics!==undefined) await sf(230,c.swDpadHaptics);
-    if(c.rumbleStyle!==undefined) await sf(39,c.rumbleStyle);
-    if(c.rumbleScale!==undefined) await sf(22,Math.round(c.rumbleScale/2));
+    // per-type strengths (v25) already restored the active type's; the legacy global one would overwrite it
+    if(!typeRumbleDone && c.rumbleScale!==undefined) await sf(22,Math.round(c.rumbleScale/2));
     if(c.hdPadScale!==undefined) await sf(231,c.hdPadScale/2);
     if(c.swQamSelect!==undefined)await sf(239,c.swQamSelect);
-    if(c.rumblePresets)for(let i=0;i<3;i++)await sf(241+i,c.rumblePresets[i]);
-    if(c.strengthSteps)for(let i=0;i<6;i++)await sf(244+i,c.strengthSteps[i]/2);
-    if(c.rumbleSlot!==undefined)await sf(250,c.rumbleSlot);
-    if(c.strengthSlots)for(let w=0;w<2;w++)if(c.strengthSlots[w]<3)await sf(251+w,c.strengthSlots[w]);
     if(c.shortcutFlags!==undefined)await sf(240,c.shortcutFlags);
     // restore the lizard map if the backup includes it (version 2+) and the puck speaks v16+.
     // pre-lizard-map backups simply lack c.lizardMap; skip silently so they still import cleanly.
@@ -3113,21 +3035,10 @@ for(const id of ["mDiv","mFric"]){
   $("#"+id).addEventListener("change", ()=>setField(field, +$("#"+id).value));
 }
 // per-type back/QAM/A-B-swap/haptics handlers are wired in buildTypeCfgs()
-$("#rumbleTest").onclick=async()=>{ if(dev){ await send([0x16]); log("test rumble sent (style "+$("#rumbleStyle").value+", "+$("#rumbleScale").value+"%)"); } };
-const SC_BITS=[['scQam',1],['scProfiles',2],['scHaptics',4],['scFeedback',8],['scCapture',16],['scEnabled',32]];
+$("#rumbleTest").onclick=async()=>{ if(dev){ await send([0x16]); log("test rumble sent"); } };
+const SC_BITS=[['scQam',1],['scFeedback',8],['scCapture',16],['scEnabled',32]];
 for(const [id,bit] of SC_BITS)$('#'+id).onclick=()=>{if(lastSw)setField(240,lastSw[46]^bit);};
-for(let w=0;w<2;w++)for(let i=0;i<3;i++){
-  const row=document.createElement('div');row.className='row';
-  const label=document.createElement('label');label.textContent=(w===0?'Trackpad':'Grip')+' strength '+(i+1)+' (%)';row.appendChild(label);
-  const input=document.createElement('input');input.type='number';input.min=w===0?0:10;input.max=500;input.step=2;input.id='strength'+w+i;
-  input.onchange=()=>{const v=+input.value;if(!Number.isInteger(v)||v<+input.min||v>500||v%2){log('Strength steps must be even percentages in the displayed range.');return;}setField(244+w*3+i,v/2);};
-  row.appendChild(input);$('#strengthSteps').appendChild(row);
-}
-
-$("#rumbleStyle").addEventListener("change", ()=>setField(39, +$("#rumbleStyle").value));
 $("#hdPadScale").addEventListener("change",()=>setField(231,+$("#hdPadScale").value/2));
-for(let i=0;i<3;i++)$('#rumbleState'+(i+1)).addEventListener('change',()=>setField(241+i,+$('#rumbleState'+(i+1)).value));
-$("#shortcutSave").onclick=async()=>{if(dev && lastSw){await send([0x28]);log("shortcut settings save requested");}};
 $("#qamSelect").addEventListener("change",()=>setField(239,+$("#qamSelect").value));
 $("#rumbleScale").addEventListener("change", ()=>setField(22, (+$("#rumbleScale").value)/2));
 $("#trigInner").addEventListener("change", ()=>setField(102, +$("#trigInner").value));

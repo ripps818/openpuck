@@ -434,20 +434,22 @@ Messages:
 - Host to device:
   - `0x01`: get status blob
   - `0x02 <field> <value>`: set one field. Notable fields: `22` host-rumble strength as **percent/2**
-    (10–500%, revived in blob version 21), `39` host-rumble style (`RUMBLE_STYLE_*` in `haptics.h`:
-    0 normal, 1 mono, 2 heavy, 3 light, 4 swapped, 5 punchy, 6 soft), `38` Switch Pro gyro mapping,
+    (10–500%, revived in blob version 21; from version 25 the active type's), `39` was the host-rumble style
+    and is ignored: the style follows the mode (HD in Switch Pro mode, normal elsewhere; status blob `p[195]`
+    reports it), `38` Switch Pro gyro mapping,
     `32` primary LED behavior mode (0 connection status, 1 heartbeat, 2 wake only, 3 off/stealth, 4 on),
     `33` primary LED pin A, `90` secondary LED pin B, `91` primary LED polarity (1 active high, 0 active low),
     `92` LED test flash (temporary 2-second pulse), `93` secondary LED behavior mode (0..4),
     `94` secondary LED polarity (1 active high, 0 active low).
-    Switch Pro profiles / HD rumble / shortcuts (blob version ≥ 23): `190` profiles on/off, `191` active
-    profile (0-6), `194`-`209` profiles 1-4 back mappings (4 per profile, L4/R4/L5/R5), `210`-`216` profile
-    shortcut for B/X/Y/Left/Up/Right/Down (0 = keep the mode shortcut, 1-7 = profile), `218`-`229`
-    profiles 5-7 back mappings, `230` trackpad D-pad click feedback, `231` HD trackpad strength as
-    percent/2, `239` Quick Access + Select target, `240` shortcut flags (bit0 QAM modifier, bit1 profiles,
-    bit2 D-pad haptic shortcuts, bit3 confirmation pulses, bit4 QAM + Select, bit5 enabled), `241`-`243`
-    rumble options 1-3, `244`-`249` trackpad then grip strength steps as percent/2, `250` active rumble
-    option, `251`/`252` active trackpad/grip strength step. Field `39` also accepts `8` (HD Emulation).
+    Switch Pro / HD rumble / shortcuts (blob version ≥ 23): `190`-`229` were the removed Switch Pro
+    back-button profiles and are ignored (still answered with a status blob), `230` trackpad D-pad click
+    feedback, `231` HD trackpad strength as percent/2, `239` Quick Access + Select target, `240` shortcut
+    flags (bit0 QAM modifier, bits 1-2 unused (were profiles / D-pad haptic shortcuts; cleared), bit3
+    confirmation pulses, bit4 QAM + Select, bit5 enabled). `241`-`252` were the removed D-pad haptic
+    shortcut presets / strength steps / slots and are ignored.
+    Per-type grip strength (blob version >= 25): `108`-`111` as percent/2 for emulated types 0-3 (Xbox,
+    Switch, DS4, DS5); `104`-`107` (a per-type rumble style during development) are ignored. Status blob
+    `p[212..215]` (payload bytes 210..213) report all four; `p[208..211]` are zero.
     Triggers (blob version >= 24): `102` deadzone % and `103` full-press % for the emulated modes. Travel at or
     below the deadzone reads 0, travel at or past the full-press point reads 255, linear between; 0/100 is
     raw. An edit that would put the deadzone at or above the full-press point is refused. Status blob
@@ -459,7 +461,7 @@ Messages:
     auto-stopped by the firmware. **Requires status-blob version ≥ 21**; older firmware drops it silently
     (the parser only accepts `0x01`–`0x15` and `0x20`–`0x25`).
   - `0x09`: export all bond slots (reply: `0xA7` frame) — see §10.1
-  - `0x27`: get the Switch Pro profiles / HD rumble / shortcut settings (reply: `0xAE` frame).
+  - `0x27`: get the Switch Pro / HD rumble / shortcut settings (reply: `0xAE` frame).
     **Requires status-blob version ≥ 23.**
   - `0x28`: save the live shortcut settings (rumble option / strength slots changed from the controller)
   - `0x0A 0x45 0x52 0x53`: factory erase (`"ERS"` magic), then reboot
@@ -486,10 +488,10 @@ Messages:
   - `0xA9 ...`: live wedge report
   - `0xAA <count> <count×16-byte bindings>`: lizard binding map
   - `0xAB 5 <status> <nextOff u32 LE>`: firmware-update ack
-  - `0xAE 55 <payload>`: Switch Pro profiles / HD rumble / shortcut settings: `[ver=1][SwProfiles 37]`
-    `[swDpadHaptics][storageState][hdPadScale/2][rumblePresets 3][rumbleSlot][swQamSelect][shortcutFlags]`
-    `[strengthSteps/2 2x3][strengthSlots 2]`. `SwProfiles` = `[enabled][active][back 4x4][chord 7]`
-    `[extraBack 3x4]`; storageState 0 unavailable, 1 mounted, 2 initialized blank flash, 3 save failed.
+  - `0xAE 55 <payload>`: Switch Pro / HD rumble / shortcut settings: `[ver=1][37 zero bytes]`
+    `[swDpadHaptics][storageState][hdPadScale/2][4 zero bytes][swQamSelect][shortcutFlags][8 zero bytes]`.
+    The zero bytes held removed settings (Switch Pro profiles, rumble presets and slot, strength steps and
+    slots) and keep the layout stable; storageState 0 unavailable, 1 mounted, 2 initialized blank flash, 3 save failed.
 
 Lizard binding wire format (16 bytes), matching `LizardBinding` in `lizard_map.h`:
 

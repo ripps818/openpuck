@@ -173,6 +173,11 @@ struct TypeCfg {
 	uint8_t rumble;
 };
 extern TypeCfg g_type[ET_COUNT];
+// Per-type grip rumble strength (percent). g_rumbleScale is the active type's live copy (applyActiveType); an
+// edit to it is kept with rumbleStoreActive(). The rumble style is not a setting: applyActiveType picks HD
+// Emulation in Switch Pro mode and Normal everywhere else.
+extern uint16_t g_typeRumbleScale[ET_COUNT];
+void rumbleStoreActive();
 
 // Trackpad -> analog stick mapping, per emulated type: {left pad, right pad}, values PS_OFF/PS_LEFT/PS_RIGHT.
 // While the mapped pad is touched its coordinates drive that stick; releasing it re-centers the stick (the
@@ -192,25 +197,11 @@ extern uint8_t
 // applyActiveType() at boot and after any edit to the active type.
 extern uint8_t g_abSwap; // 1 = swap A/B and X/Y (Nintendo face-button layout)
 extern uint8_t g_back[4];
-#define SW_PROFILE_COUNT 7
-struct SwProfiles {
-	uint8_t enabled, active;
-	uint8_t back[4][4];
-	uint8_t chord[7];
-	uint8_t extraBack[3][4];
-};
-static_assert(sizeof(SwProfiles) == 37, "WebUSB profile layout");
-extern SwProfiles g_swProfiles;
 extern uint8_t g_swDpadHaptics;
-uint8_t *swProfileBack(uint8_t profile);
-bool swProfileChord(uint8_t slot, uint32_t buttons);
-bool rumbleChord(uint8_t slot, uint32_t buttons);
 
 extern uint8_t g_qamMap;
 extern uint8_t g_swQamSelect;
-extern uint8_t g_shortcutFlags, g_rumblePresets[3], g_rumbleSlot;
-extern uint16_t g_strengthSteps[2][3];
-extern uint8_t g_strengthSlots[2];
+extern uint8_t g_shortcutFlags;
 void shortcutModeRequest(uint8_t mode, uint8_t slot);
 void shortcutModeTask();
 void captureFeedbackChord(uint8_t slot, uint32_t buttons);

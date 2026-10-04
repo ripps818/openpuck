@@ -189,6 +189,9 @@ static inline uint8_t hsidePads(bool left, bool right)
 // frames stop. hapticPcmStart sets the format (it persists, so it is re-sent periodically, not torn down).
 #define PCM_SAMPLES 31u
 #define PCM_RATE_HZ 4000u
+// HD rumble grip renderer under A/B test: 0 = 0x83 tones (low band per grip), 1 = both bands as 4 kHz PCM on the
+// grips (0x88; ~25 ms later onset, the real waveform). Hidden WebUSB field 112, persisted.
+extern uint8_t g_hdPcm;
 void hapticPcmStart(uint8_t slot);
 bool hapticPcmSend(uint8_t slot, const uint8_t *left, const uint8_t *right);
 // G.711 u-law byte for x in [-1, 1] (clamped).

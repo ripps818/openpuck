@@ -54,8 +54,8 @@
 #define CHORD_BACK4 (TB_R4 | TB_L4 | TB_R5 | TB_L5)
 
 #define SHORTCUT_QAM 1u
-#define SHORTCUT_PROFILES 2u
-#define SHORTCUT_HAPTICS 4u
+// bit 1 (2u) was SHORTCUT_PROFILES, removed with the Switch Pro profiles
+// bit 2 (4u) was SHORTCUT_HAPTICS, the removed D-pad haptic shortcuts
 #define SHORTCUT_FEEDBACK 8u
 #define SHORTCUT_CAPTURE 16u
 #define SHORTCUT_ENABLED 32u

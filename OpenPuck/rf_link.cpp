@@ -3946,14 +3946,7 @@ uint8_t rfConnTx(uint8_t ch, uint8_t s1, const uint8_t *payload, uint8_t plen,
 					captureFeedbackChord(
 						g_curSlot,
 						g_in[g_curSlot].buttons);
-					bool rumbleHandled = rumbleChord(
-						g_curSlot,
-						g_in[g_curSlot].buttons);
-					bool profileHandled = swProfileChord(
-						g_curSlot,
-						g_in[g_curSlot].buttons);
-					// Modifier + trackpad click toggles the touchpad, independent of the profile/mode
-					// shortcut behavior.
+					// Modifier + trackpad click toggles the touchpad, independent of the mode shortcuts.
 					if (shortcutHeld(
 						    g_in[g_curSlot].buttons) &&
 					    (g_in[g_curSlot].buttons &
@@ -3975,11 +3968,7 @@ uint8_t rfConnTx(uint8_t ch, uint8_t s1, const uint8_t *payload, uint8_t plen,
 					} else {
 						chPadLatched[g_curSlot] = false;
 					}
-					if (!profileHandled && !rumbleHandled &&
-					    (!(g_shortcutFlags &
-					       SHORTCUT_PROFILES) ||
-					     (g_in[g_curSlot].buttons & TB_A)) &&
-					    shortcutHeld(
+					if (shortcutHeld(
 						    g_in[g_curSlot].buttons) &&
 					    !(g_in[g_curSlot].buttons &
 					      TB_MENU)) {
@@ -3995,25 +3984,16 @@ uint8_t rfConnTx(uint8_t ch, uint8_t s1, const uint8_t *payload, uint8_t plen,
 						else if (g_in[g_curSlot].buttons &
 							 TB_Y)
 							want = g_chordBtn[2];
-						else if (!(g_shortcutFlags &
-							   SHORTCUT_HAPTICS) &&
-							 (g_in[g_curSlot]
-								  .buttons &
-							  TB_DLF))
+						else if (g_in[g_curSlot].buttons &
+							 TB_DLF)
 							want = g_chordDpad
 								[CHD_LEFT];
-						else if (!(g_shortcutFlags &
-							   SHORTCUT_HAPTICS) &&
-							 (g_in[g_curSlot]
-								  .buttons &
-							  TB_DUP))
+						else if (g_in[g_curSlot].buttons &
+							 TB_DUP)
 							want = g_chordDpad
 								[CHD_UP];
-						else if (!(g_shortcutFlags &
-							   SHORTCUT_HAPTICS) &&
-							 (g_in[g_curSlot]
-								  .buttons &
-							  TB_DDN))
+						else if (g_in[g_curSlot].buttons &
+							 TB_DDN)
 							want = g_chordDpad
 								[CHD_DOWN];
 						else if (g_in[g_curSlot].buttons &

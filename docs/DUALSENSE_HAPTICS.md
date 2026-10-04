@@ -11,8 +11,8 @@ Status at the time of writing:
 | Stellar Blade (Sony PC port, libScePad), GE-Proton11-7, Steam Input off | Input + audio haptics work, both actuators. **Soft running footsteps are often not felt in play**, although the controller renders every one when the firmware's commands for them are replayed (§5); cause unknown |
 | Hi-Fi Rush, GE-Proton11-7 | Audio haptics work in rumble and split styles; split feels best |
 | Split style (`AUDIO_STYLE_SPLIT`) | Works (Hi-Fi Rush, Stellar Blade). Rumble and a tone on the same actuator play together |
-| Wave style (`AUDIO_STYLE_WAVE`) | Works (Stellar Blade: smoother than tone, a little soft). The haptic channels streamed as 4 kHz PCM to the grip actuators |
-| Tone style (`AUDIO_STYLE_TONE`, the current default) | Works, but deep effects play as higher tones, and it misses the deep feel split gives |
+| Wave style (`AUDIO_STYLE_WAVE`, the default) | Works (Stellar Blade: smoother than tone, a little soft). The haptic channels streamed as 4 kHz PCM to the grip actuators |
+| Tone style (`AUDIO_STYLE_TONE`, the default before wave) | Works, but deep effects play as higher tones, and it misses the deep feel split gives |
 | FFXIV (XIVLauncher) | **Broken in DualSense mode**: no input, silent haptics (§9). Workaround: buttons through XInput, no haptics |
 | Windows | Untested |
 | PS5 console | Not supported: the console authenticates controllers and the puck can't answer |
@@ -231,7 +231,7 @@ In [mode_ps5_audio.cpp](../OpenPuck/mode_ps5_audio.cpp) (`processAudioSamples`, 
    about 5% of full scale) at 10–17% rumble or −15 to −20 dB tone, which isn't felt; the root puts them at 35–45%.
 5. **Output style** (`g_audioHapticStyle`):
    - **Rumble:** the drive as the `0x80` rumble speed. Gate 400 (about 1.2% of full scale).
-   - **Tone** (default): per actuator, a `0x83` tone with gain = 20·log10(drive), −60 to 0 dB. The frequency
+   - **Tone:** per actuator, a `0x83` tone with gain = 20·log10(drive), −60 to 0 dB. The frequency
      is zero crossings (±64 hysteresis) per frame that carried signal (beyond ±64), over the last three ticks that
      had a crossing; until one has, a new tone keeps the band it last played. Counting per tick instead read a step
      that starts late in a tick, and the silence after it, as 40 Hz: Stellar Blade's running steps then measured a
@@ -243,7 +243,7 @@ In [mode_ps5_audio.cpp](../OpenPuck/mode_ps5_audio.cpp) (`processAudioSamples`, 
    - **Split:** each haptic channel goes through an 80 Hz 2nd-order Butterworth low-pass. The part below drives that
      side's `0x80` rumble speed (gate 400), and the rest (signal minus low-pass) drives the tone as above, including
      its zero crossings (gate 100).
-   - **Wave:** the haptic channels themselves, through a 1.6 kHz 2nd-order Butterworth low-pass, decimated to 4 kHz,
+   - **Wave** (default): the haptic channels themselves, through a 1.6 kHz 2nd-order Butterworth low-pass, decimated to 4 kHz,
      scaled by gain / reference (linear, no square root), u-law encoded and sent as `0x88` stereo PCM frames of 31
      samples (129 frames/s), left channel to the left **grip** actuator (`0x88` is a grip stream). Streams while either channel's envelope is above
      gate 100 and for 300 ms after; `0x86 {2, 2, 9}` sets the format at each start and every second. The controller

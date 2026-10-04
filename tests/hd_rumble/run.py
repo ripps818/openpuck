@@ -41,32 +41,51 @@ std::vector<Msg> messages;
 bool relayEnqueue(uint8_t rid,const uint8_t *p,uint8_t n,bool hap,uint8_t slot){
  assert(hap && slot<4);messages.push_back({rid,slot,{p,p+n}});return true;
 }
+#define PCM_SAMPLES 31u
+#define PCM_RATE_HZ 4000u
+uint32_t micros(){return now*1000u;}
+void hapticPcmStart(uint8_t slot){messages.push_back({0x86,slot,{2,2,9}});}
+bool hapticPcmSend(uint8_t slot,const uint8_t *l,const uint8_t *r){std::vector<uint8_t> f(1,31);f.insert(f.end(),l,l+31);f.insert(f.end(),r,r+31);messages.push_back({0x88,slot,f});return true;}
+uint8_t hapticUlaw(float x){return x>0.001f?1:(x<-0.001f?2:0);}
 void hapticCancelPendingOn(int slot){
- for(auto &m:messages)if(m.slot==slot && (m.rid==0x83 || (m.rid==0x81 && (m.p[5]||m.p[6])) || (m.rid==0x80 && m.p[0])))m.rid=0;
+ for(auto &m:messages)if(m.slot==slot && ((m.rid==0x83 && int8_t(m.p[1])!=-128) || (m.rid==0x81 && (m.p[5]||m.p[6])) || (m.rid==0x80 && m.p[0])))m.rid=0;
 }
 uint8_t jcBondOf(uint8_t slot){return (slot+3)%4;}
 uint16_t word(const Msg&m,int off){assert(off+1<int(m.p.size()));return m.p[off]|(m.p[off+1]<<8);}
-void reset(){messages.clear();for(int i=0;i<4;i++){g_hdRumble[i]={};g_shortcutFeedback[i]={};g_rumble80On[i]=false;g_rumble80Ms[i]=0;g_legacyLow[i]=g_legacyHigh[i]=g_audioLow[i]=g_audioHigh[i]=g_lastSentLow[i]=g_lastSentHigh[i]=0;blocked[i]=false;}now=100;g_rumbleStyle=8;g_usbMode=4;g_rumble=1;g_rumbleScale=100;g_hdPadScale=100;USBDevice.sleep=false;}
+void reset(){messages.clear();g_hdPcm=0;for(int i=0;i<4;i++){g_hdPcmState[i]={};g_hdRumble[i]={};g_shortcutFeedback[i]={};g_rumble80On[i]=false;g_rumble80Ms[i]=0;g_legacyLow[i]=g_legacyHigh[i]=g_audioLow[i]=g_audioHigh[i]=g_lastSentLow[i]=g_lastSentHigh[i]=0;blocked[i]=false;}now=100;g_rumbleStyle=8;g_usbMode=4;g_rumble=1;g_rumbleScale=100;g_hdPadScale=100;USBDevice.sleep=false;}
 '''
 # reset needs the production type first.
 reset = head[head.index('void reset()'):]
 head = head[:head.index('void reset()')]
 test = '''int main(){
+ // HD: each side's low band is a grip tone, its high band a trackpad tone (0x83, 120 ms, never 0x80).
+ auto side=[&](size_t i){return messages[i].p[0];};auto gain=[&](size_t i){return int(int8_t(messages[i].p[1]));};
  reset();hapticSwitchPitch(0,0,20000,30000,0,160,440,110,320);assert(messages.empty());hapticHdTask();
- assert(messages.size()==3 && messages[0].rid==0x80 && messages[1].rid==0x83 && messages[2].rid==0x83);
- assert(word(messages[1],2)==440 && word(messages[2],2)==110 && word(messages[1],4)==20);
- // fork: an unchanged grip level is not re-sent (hapticUpdateRumble dedupes and throttles 0x80 to 20 ms)
- hapticHdTask();assert(messages.size()==3);now+=15;hapticHdTask();assert(messages.size()==3);now++;hapticHdTask();assert(messages.size()==5 && messages[3].rid==0x83);
- now++;hapticSwitchPitch(0,0,0,30000,0,160,440,110,320);hapticHdTask();assert(messages.size()==6 && messages.back().rid==0x82 && messages.back().p[0]==HSIDE_LPAD);
- hapticSwitchHd(0,0,0,0,0);hapticHdTask();assert(!g_hdRumble[0].active && word(messages.back(),1)==0);
+ assert(messages.size()==2 && messages[0].rid==0x83 && messages[1].rid==0x83);
+ assert(side(0)==HSIDE_LPAD && word(messages[0],2)==440 && word(messages[0],4)==120);
+ assert(side(1)==HSIDE_RGRIP && word(messages[1],2)==110 && gain(1)==hdToneGain(30000)+6);
+ // unchanged tones refresh every 50 ms, not every call
+ hapticHdTask();now+=49;hapticHdTask();assert(messages.size()==2);now++;hapticHdTask();assert(messages.size()==4 && side(2)==HSIDE_LPAD && side(3)==HSIDE_RGRIP);
+ // a band going quiet cuts its actuator at once with -128 dB
+ now++;hapticSwitchPitch(0,0,0,30000,0,160,440,110,320);hapticHdTask();assert(messages.size()==5 && side(4)==HSIDE_LPAD && gain(4)==-128);
+ // a retune waits for the 32 ms step spacing; a hit (+6 dB) goes at once
+ now+=20;hapticSwitchPitch(0,0,0,30000,0,160,440,140,320);hapticHdTask();assert(messages.size()==5);
+ now+=12;hapticHdTask();assert(messages.size()==6 && word(messages[5],2)==140);
+ now+=1;hapticSwitchPitch(0,0,0,65535,0,160,440,140,320);hapticHdTask();assert(messages.size()==7 && gain(6)>gain(5));
+ // full silence stops: -128 cuts on both grips and both pads, twice
+ hapticSwitchHd(0,0,0,0,0);hapticHdTask();assert(!g_hdRumble[0].active && messages.size()==11);
+ for(size_t i=7;i<11;i++)assert(messages[i].rid==0x83 && gain(i)==-128);
+ assert(side(7)==HSIDE_GRIPS && side(8)==HSIDE_PADS);
+ for(auto &m:messages)assert(m.rid!=0x80);
  reset();g_hdPadScale=300;g_rumbleScale=200;hapticSwitchPitch(0,0,65535,0,65535,160,275,160,275);hapticHdTask();
- assert(int8_t(messages[1].p[1])==-15 && word(messages[1],2)==275 && word(messages[0],3)==65535);
- reset();hapticSwitchHd(2,65535,65535,65535,65535);g_rumbleScale=500;hapticHdTask();assert(messages[0].slot==2 && word(messages[0],1)==65535);
+ assert(messages.size()==2 && gain(0)==-15 && word(messages[0],2)==275 && side(0)==HSIDE_LPAD && side(1)==HSIDE_RPAD);
+ reset();hapticSwitchHd(2,65535,65535,65535,65535);g_rumbleScale=500;hapticHdTask();assert(messages.size()==4 && messages[0].slot==2);
+ assert(side(0)==HSIDE_LGRIP && side(1)==HSIDE_LPAD && side(2)==HSIDE_RGRIP && side(3)==HSIDE_RPAD && word(messages[0],2)==160 && word(messages[1],2)==320);
  now+=601;hapticHdTask();assert(!g_hdRumble[2].active);
  reset();blocked[0]=true;hapticSwitchHd(0,60000,60000,60000,60000);hapticHdTask();assert(messages.empty());
  reset();g_rumble=0;hapticSwitchHd(0,60000,60000,60000,60000);hapticHdTask();assert(messages.empty());
  reset();hapticSwitchHd(0,60000,0,0,60000);hapticHdTask();USBDevice.sleep=true;hapticHdTask();assert(!g_hdRumble[0].active);
- reset();hapticSteamRumble(32000,16000,1);hapticHdTask();assert(messages.size()==3);
+ reset();hapticSteamRumble(32000,16000,1);hapticHdTask();assert(messages.size()==4);
  g_rumbleStyle=0;hapticSteamRumble(1234,5678,1);assert(!g_hdRumble[1].active);
  assert(messages.back().rid==0x80 && word(messages.back(),3)==1234 && word(messages.back(),6)==5678);
  auto n=messages.size();hapticHdTask();assert(messages.size()==n);
@@ -77,26 +96,36 @@ test = '''int main(){
   for(int amp : {1000,10000,65535}) {
    reset();g_hdPadScale=300;g_rumbleScale=200;
    hapticSwitchPitch(0,0,amp,0,amp,160,hz,160,hz);hapticHdTask();
-   assert(messages.size()==3);int cap=hdQuietCeiling(hz);assert(cap>=-15 && cap<=-3);
+   assert(messages.size()==2);int cap=hdQuietCeiling(hz);assert(cap>=-15 && cap<=-3);
    if(hz>=250 && hz<=300)assert(cap==-15);
    int requested=hdToneGain(hdScale(amp))+6;
-   for(int i=1;i<=2;i++){assert(int8_t(messages[i].p[1])==(requested>cap?cap:requested));assert(word(messages[i],2)==hz && word(messages[i],4)==20);}
+   for(int i=0;i<2;i++){assert(gain(i)==(requested>cap?cap:requested));assert(word(messages[i],2)==hz && word(messages[i],4)==120);}
   }
  }
  assert(hdQuietCeiling(240)==-9 && hdQuietCeiling(310)==-9 && hdQuietCeiling(160)==-3 && hdQuietCeiling(275)==-15);
  for(int amp=1;amp<65536;amp++)assert(hdToneGain(amp)>=-60 && hdToneGain(amp)<=-9);
- reset();g_hdPadScale=300;g_rumbleScale=200;hapticSwitchPitch(0,0,10000,0,10000,160,440,160,440);hapticHdTask();auto padGain=messages[1].p[1];auto grip=messages[0].p;
- now+=16;g_rumbleScale=100;hapticHdTask();assert(messages[4].p[1]==padGain && messages[3].p!=grip);
- now+=16;g_hdPadScale=50;hapticHdTask();assert(int8_t(messages[7].p[1])<int8_t(padGain));
- // fork: the unchanged grip level is not re-sent; trackpad strength 0 must only stop the pads
- now+=16;g_hdPadScale=0;{auto before=messages.size();hapticHdTask();assert(messages.size()>before);for(auto i=before;i<messages.size();i++)assert(messages[i].rid!=0x83);}
+ // grip strength (percent) scales the grip tones, trackpad strength the pad tones; 0 silences
+ reset();hapticSwitchPitch(0,40000,10000,0,0,160,440,160,440);hapticHdTask();assert(messages.size()==2 && side(0)==HSIDE_LGRIP && gain(0)==hdToneGain(40000)+6);
+ auto padGain=gain(1);
+ now+=50;g_rumbleScale=50;hapticHdTask();assert(messages.size()==4 && gain(2)==hdToneGain(20000)+6 && gain(3)==padGain);
+ now+=50;g_hdPadScale=50;hapticHdTask();assert(gain(5)<padGain);
+ now+=50;g_hdPadScale=0;{auto before=messages.size();hapticHdTask();assert(messages.size()==before+2 && side(before)==HSIDE_LGRIP && side(before+1)==HSIDE_LPAD && gain(before+1)==-128);}
+ // PCM grip renderer (A/B): grips stream both bands as 0x88 frames, pads keep their tones
+ reset();g_hdPcm=1;hapticSwitchPitch(0,30000,20000,0,0,160,320,160,320);hapticHdTask();
+ assert(messages.size()==2 && messages[0].rid==0x83 && messages[0].p[0]==HSIDE_LPAD && messages[1].rid==0x86);
+ now+=8;hapticHdTask();{size_t f=0;for(auto &m:messages){assert(!(m.rid==0x83 && m.p[0]>=HSIDE_LGRIP && int8_t(m.p[1])!=-128));if(m.rid==0x88){++f;assert(m.p.size()==63);}}assert(f==1);}
+ {auto &m=messages.back();assert(m.rid==0x88);bool left=false,right=false;for(int i=1;i<32;i++)left|=m.p[i]!=0;for(int i=32;i<63;i++)right|=m.p[i]!=0;assert(left && !right);}
+ // a silent gap keeps the stream alive; past the hang it stops with 0x86 op 1
+ hapticSwitchHd(0,0,0,0,0);now+=100;hapticHdTask();assert(g_hdPcmState[0].on && messages.back().rid==0x88);
+ now+=500;hapticHdTask();assert(!g_hdPcmState[0].on);
+ {bool off=false;for(auto &m:messages)off|=m.rid==0x86 && m.p[0]==1;assert(off);}
  reset();hdrBuildLevels();hdrReset(0);uint8_t b[4]={};uint16_t lo,hi;uint8_t packet[9]={};
  assert(hdrDecode(0,0,b,&lo,&hi)==0 && lo==0 && hi==0);
  uint32_t w=(1u<<30)|(1u<<25)|(3u<<20);for(int i=0;i<4;i++)b[i]=(w>>(8*i))&255;
  assert(hdrDecode(0,0,b,&lo,&hi)==65535 && lo==65535 && hi>32000 && hi<33000);
  for(int i=0;i<4;i++){b[i]=0;}assert(hdrDecode(0,0,b,&lo,&hi)==65535);
  reset();hdrReset(0);w=(1u<<30)|(1u<<25)|(1u<<20);for(int i=0;i<4;i++){packet[i+1]=(w>>(8*i))&255;packet[i+5]=packet[i+1];}
- jcRumble(0,packet,9);hapticHdTask();assert(messages[0].slot==3 && messages[1].rid==0x83);
+ jcRumble(0,packet,9);hapticHdTask();assert(messages[0].slot==3 && messages[0].rid==0x83);
  g_rumbleStyle=0;jcRumble(0,packet,9);assert(!g_hdRumble[3].active && word(messages.back(),3)==65535 && word(messages.back(),6)==65535);
  // Absolute/relative frequency decoding and host-pitch rendering.
  reset();hdrReset(0);g_rumbleStyle=8;
@@ -113,11 +142,11 @@ test = '''int main(){
  setword((1u<<30)|(80u<<23)|(24u<<18)|(24u<<13)|(24u<<8)|(24u<<3)|7u);
  hdrDecode(0,0,b,&lo,&hi);assert(g_hdrState[0][0].hf==16);
  hapticSwitchPitch(0,0,20000,30000,0,160,440,110,320);hapticHdTask();
- assert(messages.size()==3 && word(messages[1],2)==440 && word(messages[2],2)==110);
- assert(word(messages[1],4)==20 && g_rumbleStyle==8);
- now+=15;hapticHdTask();assert(messages.size()==3);
- now++;hapticSwitchPitch(0,0,20000,30000,0,160,550,140,320);hapticHdTask();
- assert(messages.size()==5 && word(messages[3],2)==550 && word(messages[4],2)==140); // fork: unchanged grip not re-sent
+ assert(messages.size()==2 && word(messages[0],2)==440 && word(messages[1],2)==110);
+ assert(word(messages[0],4)==120 && g_rumbleStyle==8);
+ now+=15;hapticHdTask();assert(messages.size()==2);
+ now+=17;hapticSwitchPitch(0,0,20000,30000,0,160,550,140,320);hapticHdTask();
+ assert(messages.size()==4 && word(messages[2],2)==550 && word(messages[3],2)==140);
 
  reset();hdrReset(0);uint32_t burst=(2u<<30)|(1u<<25)|(1u<<20);
  for(int i=0;i<4;i++){packet[1+i]=(burst>>(8*i))&255;packet[5+i]=packet[1+i];}
@@ -135,7 +164,8 @@ test = '''int main(){
  for(auto &m:messages)assert(m.rid!=0x80);
  reset();hapticShortcutFeedback(0,2);messages.clear();
  hapticSwitchHd(0,50000,50000,50000,50000);hapticHdTask();hapticShortcutFeedbackTask();
- assert(messages.size()==3 && messages[0].rid==0x80 && word(messages[1],4)==250);
+ // feedback owns the pads: HD keeps only its grip tones meanwhile
+ assert(messages.size()==4 && messages[0].p[0]==HSIDE_LGRIP && messages[1].p[0]==HSIDE_RGRIP && word(messages[2],4)==250);
  hapticSwitchHd(0,0,0,0,0);hapticHdTask();assert(hapticShortcutFeedbackActive(0));
  assert(messages[1].rid==0x83);
  blocked[0]=true;hapticShortcutFeedbackTask();assert(!hapticShortcutFeedbackActive(0));
