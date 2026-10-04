@@ -1340,10 +1340,6 @@ void webusbPoll()
 				case 106:
 				case 107:
 					break;
-				// HD rumble grip renderer A/B (0 tones, 1 PCM). Hidden: not in the panel.
-				case 112:
-					g_hdPcm = v ? 1 : 0;
-					break;
 				case 108:
 				case 109:
 				case 110:

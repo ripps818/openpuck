@@ -539,10 +539,9 @@ bool hapticAudioTone(uint8_t side, int8_t gainDb, uint16_t freqHz,
 }
 // The USB callback only publishes the latest bands. Rendering in loop avoids
 // queueing every host packet and keeps waveform generation off the input ISR.
-// HD Emulation plays each HD band as its own 0x83 tone: a side's low band on that side's grip (where a Pro
-// Controller has its actuators) and its high band on that side's trackpad. An actuator holds one tone at a time,
-// so this keeps both bands at their own frequencies with the tone path's ~16 ms onset. Index k matches bands[]:
-// 0 left grip, 1 left pad, 2 right grip, 3 right pad.
+// HD Emulation streams each side's two bands, summed, as PCM to that side's grip (where a Pro Controller has its
+// actuators), and plays each side's high band as an 0x83 tone on that side's trackpad. Index k matches bands[]:
+// 0/2 left/right low band, 1/3 left/right high band; tone[] uses the pad entries only.
 struct HdTone {
 	uint16_t hz;
 	int8_t gain;
@@ -657,11 +656,6 @@ static int hdQuietCeiling(uint16_t frequency)
 #define HD_HIT_DB 6
 #define HD_CUT_DB (-128)
 
-static uint8_t hdSide(uint8_t k)
-{
-	return (k & 1) ? HSIDE_LPAD + k / 2 : HSIDE_LGRIP + k / 2;
-}
-
 static void hdToneSend(uint8_t slot, uint8_t side, int8_t gain, uint16_t hz,
 		       uint16_t ms)
 {
@@ -677,24 +671,20 @@ static void hdToneSend(uint8_t slot, uint8_t side, int8_t gain, uint16_t hz,
 	relayEnqueue(0x83, p, sizeof p, true, slot);
 }
 
-// Wanted tone for actuator k, or false when it should be quiet. Grips scale by the grip rumble strength (percent,
-// as for motor rumble); pads by the HD trackpad strength, under the 250-300 Hz quiet ceiling.
-static bool hdToneWant(uint8_t k, uint16_t amplitude, uint16_t hz, int8_t *gain)
+// Wanted pad tone, or false when the pad should be quiet: HD trackpad strength, under the 250-300 Hz quiet ceiling.
+static bool hdToneWant(uint16_t amplitude, uint16_t hz, int8_t *gain)
 {
-	uint32_t a = (k & 1) ? hdScale(amplitude) :
-			       (uint32_t)amplitude * g_rumbleScale / 100u;
+	uint16_t a = hdScale(amplitude);
 	if (!a)
 		return false;
-	int g = hdToneGain(a > 65535u ? 65535u : (uint16_t)a) + 6;
-	if ((k & 1) && g > hdQuietCeiling(hz))
+	int g = hdToneGain(a) + 6;
+	if (g > hdQuietCeiling(hz))
 		g = hdQuietCeiling(hz);
 	*gain = (int8_t)g;
 	return true;
 }
 
-uint8_t g_hdPcm = 0;
-
-// PCM grip renderer: each grip plays its side's low + high band summed, phase-continuous, at PCM_RATE_HZ on a
+// Grip renderer: each grip plays its side's low + high band summed, phase-continuous, at PCM_RATE_HZ on a
 // micros() sample clock. The stream stays up through silent gaps of HD_PCM_HANG_MS so a new effect doesn't pay
 // the controller's ~40 ms pre-buffer again; 0x86 re-states the format every second (it survives, but a
 // power-cycled controller comes back without it).
@@ -705,7 +695,7 @@ struct HdPcmState {
 	float phase[4];
 	uint32_t clockUs;
 	unsigned long fmtMs, activeMs;
-	uint8_t fill;
+	uint8_t fill, frames;
 	bool on;
 	uint8_t l[PCM_SAMPLES], r[PCM_SAMPLES];
 };
@@ -765,9 +755,11 @@ static void hdPcmRun(uint8_t slot, const uint16_t bands[4],
 			}
 			(side ? p.r : p.l)[p.fill] = hapticUlaw(v * gain);
 		}
-		if (++p.fill == PCM_SAMPLES) {
-			hapticPcmSend(slot, p.l, p.r);
+		if (++p.fill == hapticPcmFrameLen(p.frames)) {
+			hapticPcmSend(slot, p.l, p.r, p.fill);
 			p.fill = 0;
+			if (p.frames < 3)
+				p.frames++;
 		}
 	}
 }
@@ -837,11 +829,8 @@ static void hdStop(uint8_t slot)
 	if (!feedback)
 		hapticCancelPendingOn(slot);
 	// Two cut copies reduce the chance that RF loss stretches the tail; feedback owns the pads meanwhile.
-	for (uint8_t n = 0; n < 2; n++) {
-		hdToneSend(slot, HSIDE_GRIPS, HD_CUT_DB, 160, 30);
-		if (!feedback)
-			hdToneSend(slot, HSIDE_PADS, HD_CUT_DB, 160, 30);
-	}
+	for (uint8_t n = 0; !feedback && n < 2; n++)
+		hdToneSend(slot, HSIDE_PADS, HD_CUT_DB, 160, 30);
 	g_hdRumble[slot].active = false;
 	for (uint8_t k = 0; k < 4; k++)
 		g_hdRumble[slot].tone[k].on = false;
@@ -863,8 +852,8 @@ static void hapticHdTask()
 			  snapshot.bands[2] || snapshot.bands[3];
 		if (on)
 			g_hdPcmState[slot].activeMs = now;
-		// PCM: a silent gap keeps the stream (and its pre-buffer) alive for HD_PCM_HANG_MS
-		bool hang = g_hdPcm && g_hdPcmState[slot].on &&
+		// a silent gap keeps the grip stream (and its pre-buffer) alive for HD_PCM_HANG_MS
+		bool hang = g_hdPcmState[slot].on &&
 			    now - g_hdPcmState[slot].activeMs < HD_PCM_HANG_MS;
 		if (!enabled || (!on && !hang) ||
 		    now - snapshot.received > 600u || haptic82Blocked(slot)) {
@@ -874,26 +863,17 @@ static void hapticHdTask()
 		}
 		g_hdRumble[slot].active = true;
 		bool feedback = hapticShortcutFeedbackActive(slot);
-		for (uint8_t k = 0; k < 4; k++) {
+		// pads play each side's high band as tones; shortcut confirmation pulses own them while they play
+		for (uint8_t k = 1; !feedback && k < 4; k += 2) {
 			HdTone &t = g_hdRumble[slot].tone[k];
-			// shortcut confirmation pulses own the pads while they play
-			if ((k & 1) && feedback)
-				continue;
-			// PCM mode renders the grips as a stream (below)
-			if (!(k & 1) && g_hdPcm) {
-				if (t.on)
-					hdToneSend(slot, hdSide(k), HD_CUT_DB,
-						   t.hz, 30);
-				t.on = false;
-				continue;
-			}
+			uint8_t side = HSIDE_LPAD + k / 2;
 			uint16_t hz = snapshot.frequencies[k];
 			hz = hz < 40 ? 40 : (hz > 1280 ? 1280 : hz);
 			int8_t gain;
-			if (!hdToneWant(k, snapshot.bands[k], hz, &gain)) {
+			if (!hdToneWant(snapshot.bands[k], hz, &gain)) {
 				if (t.on)
-					hdToneSend(slot, hdSide(k), HD_CUT_DB,
-						   t.hz, 30);
+					hdToneSend(slot, side, HD_CUT_DB, t.hz,
+						   30);
 				t.on = false;
 				continue;
 			}
@@ -905,14 +885,10 @@ static void hapticHdTask()
 			    !(change && since >= HD_STEP_MS) &&
 			    since < HD_REFRESH_MS)
 				continue;
-			hdToneSend(slot, hdSide(k), gain, hz, HD_TONE_MS);
+			hdToneSend(slot, side, gain, hz, HD_TONE_MS);
 			t = { hz, gain, true, now };
 		}
-		if (g_hdPcm)
-			hdPcmRun(slot, snapshot.bands, snapshot.frequencies,
-				 now);
-		else
-			hdPcmStop(slot);
+		hdPcmRun(slot, snapshot.bands, snapshot.frequencies, now);
 	}
 }
 
@@ -962,12 +938,13 @@ void hapticPcmStart(uint8_t slot)
 	relayEnqueue(0x86, p, sizeof p, true, slot);
 }
 
-bool hapticPcmSend(uint8_t slot, const uint8_t *left, const uint8_t *right)
+bool hapticPcmSend(uint8_t slot, const uint8_t *left, const uint8_t *right,
+		   uint8_t n)
 {
 	if (slot >= NSLOT || haptic82Blocked(slot) || !hapticLinkUp(slot))
 		return false;
 	uint8_t p[1 + 2 * PCM_SAMPLES];
-	p[0] = PCM_SAMPLES;
+	p[0] = n;
 	memcpy(p + 1, left, PCM_SAMPLES);
 	memcpy(p + 1 + PCM_SAMPLES, right, PCM_SAMPLES);
 	return relayEnqueue(0x88, p, sizeof p, true, slot);

@@ -247,7 +247,7 @@ In [mode_ps5_audio.cpp](../OpenPuck/mode_ps5_audio.cpp) (`processAudioSamples`, 
      scaled by gain / reference (linear, no square root), u-law encoded and sent as `0x88` stereo PCM frames of 31
      samples (129 frames/s), left channel to the left **grip** actuator (`0x88` is a grip stream). Streams while either channel's envelope is above
      gate 100 and for 300 ms after; `0x86 {2, 2, 9}` sets the format at each start and every second. The controller
-     pre-buffers ~40 ms, so it starts ~27 ms later than a tone. No `0x80` rumble from the audio. See PROTOCOL.md
+     pre-buffers (24 ms with the short third frame, PROTOCOL.md), so it starts about 20 ms later than a tone. No `0x80` rumble from the audio. See PROTOCOL.md
      section 9.1 for the measured PCM behaviour.
 
 The game's ordinary rumble (output report `0x02`) always goes through `0x80`, in every style. `hapticUpdateRumble`

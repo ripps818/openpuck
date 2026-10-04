@@ -247,12 +247,12 @@ static void processAudioSamples(const uint8_t *data, uint32_t len)
 	bool split = g_audioHapticStyle == AUDIO_STYLE_SPLIT;
 	// wave style: decimation phase, fill of the frame being built, and that frame
 	static Biquad s_aaL = {}, s_aaR = {};
-	static uint8_t s_dec = 0, s_fill = 0;
+	static uint8_t s_dec = 0, s_fill = 0, s_frames = 0;
 	static uint8_t s_pcmL[PCM_SAMPLES], s_pcmR[PCM_SAMPLES];
 	uint8_t waveMask = s_waveMask;
 	float waveScale = s_waveScale;
 	if (!waveMask)
-		s_fill = 0;
+		s_fill = s_frames = 0;
 
 	uint32_t num_frames = len / 8;
 	uint64_t sq_l = 0, sq_r = 0;
@@ -278,12 +278,14 @@ static void processAudioSamples(const uint8_t *data, uint32_t len)
 		s_dec = 0;
 		s_pcmL[s_fill] = hapticUlaw(al * waveScale);
 		s_pcmR[s_fill] = hapticUlaw(ar * waveScale);
-		if (++s_fill < PCM_SAMPLES)
+		if (++s_fill < hapticPcmFrameLen(s_frames))
 			continue;
-		s_fill = 0;
 		for (uint8_t b = 0; b < NSLOT; b++)
 			if (waveMask & (1u << b))
-				hapticPcmSend(b, s_pcmL, s_pcmR);
+				hapticPcmSend(b, s_pcmL, s_pcmR, s_fill);
+		s_fill = 0;
+		if (s_frames < 3)
+			s_frames++;
 	}
 
 	uint32_t pm = __get_PRIMASK();
