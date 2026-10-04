@@ -371,7 +371,11 @@ static void rfLinkQualityResetWindow(int slot);
 #define RF_CHANNEL_HANDOFF_ROLLBACK_ACQUIRE_MS 650u
 #define RF_CHANNEL_HANDOFF_HOST_GRACE_MS 4000u
 #define RF_E4_RESPONSE_WAIT_US 2500u
-#define RF_E4_TIMING_CONTROL 0x50u
+// E4 payload is the controller's RX channel list (up to 4 bytes, unused = 0xFF): it listens on [0] and
+// cycles through the rest when the puck goes quiet. Protocol-v1 pucks send [new][2][80], so the
+// discovery channel and ch80 are the fallbacks.
+#define RF_E4_FALLBACK_CH_A 2u
+#define RF_E4_FALLBACK_CH_B 80u
 
 enum RfChannelHandoffState : uint8_t {
 	RF_CH_IDLE = 0,
@@ -1287,7 +1291,7 @@ static uint32_t rfChannelJournalCrc32(const void *data, size_t len)
 		crc ^= *p++;
 		for (uint8_t i = 0; i < 8u; i++)
 			crc = (crc >> 1) ^
-			      (0xEDB88320u & (uint32_t)-(int32_t)(crc & 1u));
+			      (0xEDB88320u & (uint32_t) - (int32_t)(crc & 1u));
 	}
 	return ~crc;
 }
@@ -2859,8 +2863,8 @@ static uint8_t rfE4FastResponseTxn(uint8_t fromCh, uint8_t toCh, uint8_t mask)
 	rftx[1] = txS1;
 	rftx[2] = 0xE4;
 	rftx[3] = toCh;
-	rftx[4] = 0x02;
-	rftx[5] = RF_E4_TIMING_CONTROL;
+	rftx[4] = RF_E4_FALLBACK_CH_A;
+	rftx[5] = RF_E4_FALLBACK_CH_B;
 
 	rfConfig(fromCh);
 	rfSetAddr(g_sessBase[slot], g_sessPrefix[slot]);
@@ -3517,12 +3521,14 @@ uint8_t rfConnTx(uint8_t ch, uint8_t s1, const uint8_t *payload, uint8_t plen,
 						break;
 					// Only a FULL input report that fits entirely in rfrx: a short or late/garbled TLV must not let
 					// the decode read past the RF buffer (corrupts rftx/RAM -> eventual crash).
-					// Main input report id: 0x45 (legacy, 45B body) OR 0x42 (SC2 beta update ~2026-07, 53B body).
-					// VERIFIED from live captures of both: the 0x42 body [0..45] is byte-for-byte the SAME layout as
-					// 0x45 (buttons/triggers/sticks/pads/IMU at identical offsets) -- it just adds 8 trailing bytes
-					// ([46..47]=0x7FFF const, [48..53]=0) and sets two extra always-on status bits (28/29) that no
-					// mode reads. So both decode through this ONE path unchanged; rep[0] carries the id downstream
-					// (Steam forwards it verbatim under the right id/length in onReport45).
+					// Main input report id: 0x45 (legacy, 45B body) OR 0x42 (53B body). The 0x42 body [0..45] is
+					// byte-for-byte the SAME layout as 0x45 (buttons/triggers/sticks/pads/IMU at identical
+					// offsets); it appends the IMU orientation quaternion at [46..53] as w,x,y,z s16 Q15 (unit
+					// norm, 0x7FFF = 1.0). Older captures showed identity (w=0x7FFF, x=y=z=0); controller
+					// firmware 0x6ABC4999's rewritten IMU pipeline fills it, and it freezes with the rest of
+					// the IMU block while the IMU stream is off. Bits 28/29 are the grip-touch bits. So both decode
+					// through this ONE path unchanged; rep[0] carries the id downstream (Steam forwards it
+					// verbatim under the right id/length in onReport45).
 					if (ttype == 6 &&
 					    (((tlen >= 28) &&
 					      (rfrx[idx + 2] == 0x45 ||

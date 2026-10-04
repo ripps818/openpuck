@@ -66,7 +66,7 @@
   <span>shown: <b id="nshown">0</b></span>
 </div>
 <div class="stats" style="border-top:none;padding-top:0">
-  <label class="note"><input type="checkbox" id="fHideRoutine"> hide input/polls (49-byte F1 + bare E3)</label>
+  <label class="note"><input type="checkbox" id="fHideRoutine"> hide input/polls (49/57-byte F1 + bare E3)</label>
   <label class="note">dir <select id="fDir" style="background:#0d1117;color:var(--fg);border:1px solid var(--line);border-radius:5px;padding:3px;font:inherit"><option value="">all</option><option value="P→C">P→C</option><option value="C→P">C→P</option></select></label>
   <label class="note">op <input type="text" id="fOp" placeholder="f1" style="width:48px;background:#0d1117;color:var(--fg);border:1px solid var(--line);border-radius:5px;padding:3px;font:inherit"></label>
   <label class="note">len <select id="fLen" style="background:#0d1117;color:var(--fg);border:1px solid var(--line);border-radius:5px;padding:3px;font:inherit"><option value="">any</option><option value="ne49">≠ 49 (non-input)</option><option value="gt49">&gt; 49</option><option value="gt1">&gt; 1</option></select></label>
@@ -187,7 +187,7 @@ requestAnimationFrame(renderTick);
 const rows=$("#rows");
 function passesFilter(e){
   if($("#fHideRoutine").checked){                    // drop the 99% spam: input replies + bare polls
-    if(e.dir==="C→P" && e.op==="f1" && e.len===49) return false;
+    if(e.dir==="C→P" && e.op==="f1" && (e.len===49 || e.len===57)) return false; // report 0x45 / 0x42
     if(e.dir==="P→C" && e.op==="e3" && e.len<=1) return false;
   }
   const d=$("#fDir").value; if(d && e.dir!==d) return false;
