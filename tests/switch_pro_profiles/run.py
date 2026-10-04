@@ -3,6 +3,7 @@ import subprocess, tempfile
 root=Path(__file__).resolve().parents[2]
 s=(root/'OpenPuck/config.cpp').read_text()
 a=s.index('uint8_t *swProfileBack(');b=s.index('\nvoid applyActiveType()',a)
+hh=(root/'OpenPuck/haptics.h').read_text();hside=hh[hh.index('#define HSIDE_LPAD'):hh.index('// PCM haptic stream')]
 head='''#include <stdint.h>
 #include <cassert>
 #include <initializer_list>
@@ -89,10 +90,10 @@ body='''int main(){
  in.rpx=-32768;in.rpy=-32768;assert(padDpadButtons(in)==(TB_DLF|TB_DDN));
  g_padStick[0]=3;in.buttons|=TB_LPADT;in.lpx=20000;in.lpy=0;in.rpy=0;assert(!padDpadButtons(in));
  g_padStick[0]=3;g_padStick[1]=4;
- swDpadClickFeedback(3,TB_LPADT|TB_LPADC);assert(pulses==1 && emittedSide==1 && emittedBond==3);
+ swDpadClickFeedback(3,TB_LPADT|TB_LPADC);assert(pulses==1 && emittedSide==HSIDE_LPAD && emittedBond==3);
  swDpadClickFeedback(3,TB_LPADT|TB_LPADC);assert(pulses==1);
- swDpadClickFeedback(3,0);swDpadClickFeedback(3,TB_RPADT|TB_RPADC);assert(pulses==2 && emittedSide==2);
- swDpadClickFeedback(3,0);swDpadClickFeedback(3,TB_LPADT|TB_LPADC|TB_RPADT|TB_RPADC);assert(pulses==3 && emittedSide==3);
+ swDpadClickFeedback(3,0);swDpadClickFeedback(3,TB_RPADT|TB_RPADC);assert(pulses==2 && emittedSide==HSIDE_RPAD);
+ swDpadClickFeedback(3,0);swDpadClickFeedback(3,TB_LPADT|TB_LPADC|TB_RPADT|TB_RPADC);assert(pulses==3 && emittedSide==HSIDE_PADS);
  swDpadClickFeedback(3,0);g_swDpadHaptics=0;swDpadClickFeedback(3,TB_LPADT|TB_LPADC);assert(pulses==3);
  g_swDpadHaptics=1;swDpadClickFeedback(3,TB_LPADT|TB_LPADC);assert(pulses==3);
  swDpadClickFeedback(3,0);blocked=true;swDpadClickFeedback(3,TB_LPADT|TB_LPADC);assert(pulses==3);
@@ -107,7 +108,7 @@ body='''int main(){
  for(int p=4;p<7;p++) assert(memcmp(swProfileBack(p),defaults,4)==0);
 }'''
 with tempfile.TemporaryDirectory() as td:
- p=Path(td)/'test.cpp';p.write_text(head+s[a:b]+s[ma:mb]+u[ua:ub]+m[ha:hb]+body)
+ p=Path(td)/'test.cpp';p.write_text(head+hside+s[a:b]+s[ma:mb]+u[ua:ub]+m[ha:hb]+body)
  subprocess.run(['g++','-std=c++11','-Wall','-Wextra','-Werror','-fsanitize=address,undefined','-I'+str(root/'OpenPuck'),str(p),'-o',td+'/test'],check=True)
  subprocess.run([td+'/test'],check=True,env={'ASAN_OPTIONS':'detect_leaks=0'})
 print('Switch Pro profile shortcut tests passed')

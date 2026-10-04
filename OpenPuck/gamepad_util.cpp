@@ -7,8 +7,9 @@
 static bool g_psPadClickDown[NSLOT] = {};
 static unsigned long g_psPadClickReplyMs[NSLOT] = {};
 
-void psPadClickEdge(uint8_t slot, bool pressed)
+void psPadClickEdge(uint8_t slot, uint32_t clicks)
 {
+	bool pressed = clicks != 0;
 	if (slot >= NSLOT)
 		return;
 	const unsigned long replyMs = g_connReplyMs[slot];
@@ -25,7 +26,10 @@ void psPadClickEdge(uint8_t slot, bool pressed)
 	g_psPadClickDown[slot] = pressed;
 	if (!rising || !g_padHaptics || haptic82Blocked(slot))
 		return;
-	static const uint8_t click[3] = { 0x01, 0x01, 0xF7 };
+	// buzz the pad(s) actually clicked
+	const uint8_t click[3] = {
+		hsidePads(clicks & TB_LPADC, clicks & TB_RPADC), 0x01, 0xF7
+	};
 	relayEnqueue(0x82, click, sizeof click, true, slot);
 }
 

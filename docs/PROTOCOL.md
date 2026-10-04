@@ -376,19 +376,21 @@ from the feature-`0x01` **command** space even though the numbers overlap. Groun
 | `0x83` | `HAPTIC_LFO_TONE` `[side][gain_db][freq u16][dur u16][lfo_freq u16][lfo_depth]` | 9 | `GET_ATTRIBUTES_VALUES` |
 | `0x84` | `HAPTIC_LOG_SWEEP` `[side][gain_db][dur u16][start u16][end u16]` | 8 | `GET_ATTRIBUTE_LABEL` |
 | `0x85` | `HAPTIC_SCRIPT` `[side][script_id][gain_db]` | 3 | `SET_DEFAULT_DIGITAL_MAPPINGS` |
-| `0x86` | PCM mode `[op 1 off / 2 on][channel][format]` (format 0-3 16-bit, 4-7 8-bit, 8-11 u-law, each 8/4/2/1 kHz) | 3 | `FACTORY_RESET` |
-| `0x87` | sample stream `[target][samples]` to one actuator set (trackpads / grips) | 63 | `SET_SETTINGS_VALUES` |
-| `0x88` | stereo PCM stream `[n<=31][31 samples L][31 samples R]` in the `0x86` format | 63 | `CLEAR_SETTINGS_VALUES` |
+| `0x86` | PCM mode `[op][channel][format]`: op 2 enables with format (0-3 16-bit, 4-7 8-bit, 8-11 u-law, each 8/4/2/1 kHz), op 1 sends the stream a stop message; channel 1 right grip, 2 both grips, 3 left touchpad, 4 right touchpad, 5 both touchpads | 3 | `FACTORY_RESET` |
+| `0x87` | mono sample stream `[target][samples]`: target 0 left grip, 2 or `0x80` both grips, 3 left touchpad, 4 right grip, 5 both touchpads (1 and the right touchpad alone are not addressable) | 63 | `SET_SETTINGS_VALUES` |
+| `0x88` | stereo **grip** stream `[n<=31][31 samples left grip][31 samples right grip]` in the `0x86` format | 63 | `CLEAR_SETTINGS_VALUES` |
 | `0x89` | length-prefixed `0x87`: `[len][0x87 payload]` | 63 | `GET_SETTINGS_VALUES` |
 
 PCM streaming, measured with the controller's IMU over USB (2026-10-03):
 - `0x86` sets the sample format, and the format persists. Op 1 does not stop playback, and channel 5 measured the
   same as channel 2. OpenPuck sends `{2, 2, 9}` (4 kHz u-law) before each stream and periodically while streaming.
-- L and R drive the two actuators separately. Played audio is audible from the trackpads.
-- The controller has four LRAs: one under each trackpad and a higher-output one in each grip. `0x83` sides 0/1
-  are the trackpad actuators, and `0x88` L/R appear to be as well. Whether `0x80` rumble and `0x86` channel 5
-  reach the grip LRAs is unconfirmed: grip output is hard to tell apart by hand, and the IMU can't separate the
-  actuators with the controller at rest.
+- The controller has four LRAs in two groups: one under each trackpad, and a higher-output one in each grip.
+  Routing, as the controller firmware (`6ABC4999`) handles each report:
+  - `0x80` rumble plays on **both grips**.
+  - `0x82` / `0x83` side (bit 7 ignored): 0 left touchpad, 1 right touchpad, 2 both touchpads, 3 left grip,
+    4 right grip, 5 both grips. `0x81` is the same except 0 = right touchpad and 1 = left touchpad.
+  - `0x88` PCM plays on the **grips** (first half left, second half right); `0x87` / `0x89` as in the table.
+  So OpenPuck's DualSense wave style streams to the grips, where a real DualSense has its actuators too.
 - The controller pre-buffers about 40 ms (onset ~43 ms against ~16 ms for a `0x83` tone). It rides out 124 ms bursts
   and 0-20 ms jitter without a dip, and falls silent by itself 60-85 ms later than a tone once frames stop
   (op 1 at the stop trims that to about 50 ms).

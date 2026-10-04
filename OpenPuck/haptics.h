@@ -170,8 +170,21 @@ bool hapticAudioRumble(uint16_t lowFreq, uint16_t highFreq, uint8_t slot = 0);
 // a stream that stops refreshing it ends on its own; gainDb -128 cuts a playing tone within ~25-50 ms.
 bool hapticAudioTone(uint8_t side, int8_t gainDb, uint16_t freqHz,
 		     uint16_t durMs, uint8_t slot = 0);
+// Actuator select byte of OUTPUT 0x82 / 0x83 (as the controller firmware routes it): trackpads 0 left, 1 right,
+// 2 both; grips 3 left, 4 right, 5 both. 0x81 swaps 0 and 1. 0x80 rumble always plays on both grips.
+#define HSIDE_LPAD 0
+#define HSIDE_RPAD 1
+#define HSIDE_PADS 2
+#define HSIDE_LGRIP 3
+#define HSIDE_RGRIP 4
+#define HSIDE_GRIPS 5
+static inline uint8_t hsidePads(bool left, bool right)
+{
+	return (left && right) ? HSIDE_PADS : right ? HSIDE_RPAD : HSIDE_LPAD;
+}
+
 // PCM haptic stream (OUTPUT 0x86 mode, 0x88 stereo frame; measured on the controller's IMU). Each frame
-// carries PCM_SAMPLES u-law samples per side at PCM_RATE_HZ; stereo L/R drive the two actuators. The
+// carries PCM_SAMPLES u-law samples per side at PCM_RATE_HZ; L/R drive the left/right grip actuators. The
 // controller buffers ~40 ms before playing, rides out 120 ms of jitter, and falls silent on its own when
 // frames stop. hapticPcmStart sets the format (it persists, so it is re-sent periodically, not torn down).
 #define PCM_SAMPLES 31u

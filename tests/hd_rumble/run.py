@@ -4,6 +4,7 @@ root = Path(__file__).resolve().parents[2]
 s = (root/'OpenPuck/haptics.cpp').read_text()
 h = (root/'OpenPuck/haptics.h').read_text()
 constants = '\n'.join(h[h.index('#define RUMBLE_STYLE_NORMAL'):h.index('extern uint16_t g_rumbleScale')].splitlines())
+constants += '\n' + h[h.index('#define HSIDE_LPAD'):h.index('// PCM haptic stream')]
 helpers = s[s.index('static uint32_t isqrt32('):s.index('// Queue a pending test-haptic')]
 m = (root/'OpenPuck/mode_switch_pro.cpp').read_text()
 decoder = m[m.index('enum { HDR_AMP_MIN'):m.index('static int jcStick12(')]
@@ -56,7 +57,7 @@ test = '''int main(){
  assert(word(messages[1],2)==440 && word(messages[2],2)==110 && word(messages[1],4)==20);
  // fork: an unchanged grip level is not re-sent (hapticUpdateRumble dedupes and throttles 0x80 to 20 ms)
  hapticHdTask();assert(messages.size()==3);now+=15;hapticHdTask();assert(messages.size()==3);now++;hapticHdTask();assert(messages.size()==5 && messages[3].rid==0x83);
- now++;hapticSwitchPitch(0,0,0,30000,0,160,440,110,320);hapticHdTask();assert(messages.size()==6 && messages.back().rid==0x82 && messages.back().p[0]==1);
+ now++;hapticSwitchPitch(0,0,0,30000,0,160,440,110,320);hapticHdTask();assert(messages.size()==6 && messages.back().rid==0x82 && messages.back().p[0]==HSIDE_LPAD);
  hapticSwitchHd(0,0,0,0,0);hapticHdTask();assert(!g_hdRumble[0].active && word(messages.back(),1)==0);
  reset();g_hdPadScale=300;g_rumbleScale=200;hapticSwitchPitch(0,0,65535,0,65535,160,275,160,275);hapticHdTask();
  assert(int8_t(messages[1].p[1])==-15 && word(messages[1],2)==275 && word(messages[0],3)==65535);
@@ -125,7 +126,7 @@ test = '''int main(){
  reset();hapticShortcutFeedback(0,3);messages.clear();hapticShortcutFeedbackTask();
  assert(messages.size()==2);
  for(auto &m:messages)assert(m.rid==0x83 && word(m,4)==250 && int8_t(m.p[1])==-18 && word(m,2)==160);
- assert(messages[0].p[0]==1 && messages[1].p[0]==2);
+ assert(messages[0].p[0]==HSIDE_LPAD && messages[1].p[0]==HSIDE_RPAD);
  now+=249;hapticShortcutFeedbackTask();assert(messages.size()==2);
  now++;hapticShortcutFeedbackTask();assert(messages.size()==3 && messages.back().rid==0x82);
  now+=150;hapticShortcutFeedbackTask();assert(messages.size()==5);

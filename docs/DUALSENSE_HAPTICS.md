@@ -11,7 +11,7 @@ Status at the time of writing:
 | Stellar Blade (Sony PC port, libScePad), GE-Proton11-7, Steam Input off | Input + audio haptics work, both actuators. **Soft running footsteps are often not felt in play**, although the controller renders every one when the firmware's commands for them are replayed (§5); cause unknown |
 | Hi-Fi Rush, GE-Proton11-7 | Audio haptics work in rumble and split styles; split feels best |
 | Split style (`AUDIO_STYLE_SPLIT`) | Works (Hi-Fi Rush, Stellar Blade). Rumble and a tone on the same actuator play together |
-| Wave style (`AUDIO_STYLE_WAVE`) | New, untested in games: the haptic channels themselves streamed as 4 kHz PCM |
+| Wave style (`AUDIO_STYLE_WAVE`) | Works (Stellar Blade: smoother than tone, a little soft). The haptic channels streamed as 4 kHz PCM to the grip actuators |
 | Tone style (`AUDIO_STYLE_TONE`, the current default) | Works, but deep effects play as higher tones, and it misses the deep feel split gives |
 | FFXIV (XIVLauncher) | **Broken in DualSense mode**: no input, silent haptics (§9). Workaround: buttons through XInput, no haptics |
 | Windows | Untested |
@@ -152,7 +152,8 @@ Output reports `0x80`–`0x86` reach the controller unchanged (see [PROTOCOL.md]
 Findings, measured with the controller's IMU (§6) or by feel where noted:
 
 - **Sides (tone):** `0` = left actuator, `1` = right; each is stronger under its own trackpad. `2` felt centered (both),
-  and `3` produced nothing (both by feel). Left and right commands are **independent**: a command for one side
+  and `3` produced nothing (both by feel). The controller firmware shows why: 2 is both touchpads, and 3-5 are the
+  left, right and both **grip** actuators, which are hard to feel by hand (PROTOCOL.md section 9.1). Left and right commands are **independent**: a command for one side
   doesn't interrupt the other.
 - **`0x80` rumble** imitates a spinning motor at every setting. Types 3, 4 and 5 felt identical. `speed` behaves like
   strength; `gain` had little effect. It measures as a fluctuating vibration (IMU 2,400–4,300 at speed `0xA000`,
@@ -244,7 +245,7 @@ In [mode_ps5_audio.cpp](../OpenPuck/mode_ps5_audio.cpp) (`processAudioSamples`, 
      its zero crossings (gate 100).
    - **Wave:** the haptic channels themselves, through a 1.6 kHz 2nd-order Butterworth low-pass, decimated to 4 kHz,
      scaled by gain / reference (linear, no square root), u-law encoded and sent as `0x88` stereo PCM frames of 31
-     samples (129 frames/s), left channel to the left actuator. Streams while either channel's envelope is above
+     samples (129 frames/s), left channel to the left **grip** actuator (`0x88` is a grip stream). Streams while either channel's envelope is above
      gate 100 and for 300 ms after; `0x86 {2, 2, 9}` sets the format at each start and every second. The controller
      pre-buffers ~40 ms, so it starts ~27 ms later than a tone. No `0x80` rumble from the audio. See PROTOCOL.md
      section 9.1 for the measured PCM behaviour.

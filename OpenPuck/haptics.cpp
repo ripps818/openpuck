@@ -679,7 +679,7 @@ void hapticShortcutFeedback(uint8_t slot, uint8_t pulses)
 	    haptic82Blocked(slot) || !g_hapticRelay || USBDevice.suspended())
 		return;
 	hapticCancelPendingOn(slot);
-	hdPadOff(slot, 3);
+	hdPadOff(slot, HSIDE_PADS);
 	g_hdRumble[slot].padActive[0] = g_hdRumble[slot].padActive[1] = false;
 	g_shortcutFeedback[slot] = { millis(), pulses, 0xFF, false };
 }
@@ -694,7 +694,7 @@ static void hapticShortcutFeedbackTask()
 		if (!hapticLinkUp(slot) || haptic82Blocked(slot) ||
 		    !g_hapticRelay || USBDevice.suspended() ||
 		    elapsed >= (unsigned long)f.count * 400u - 150u) {
-			hdPadOff(slot, 3);
+			hdPadOff(slot, HSIDE_PADS);
 			f.count = 0;
 			g_hdRumble[slot].sent = 0;
 			continue;
@@ -702,12 +702,13 @@ static void hapticShortcutFeedbackTask()
 		uint8_t pulse = elapsed / 400u;
 		if (elapsed % 400u >= 250u) {
 			if (!f.stopped)
-				hdPadOff(slot, 3);
+				hdPadOff(slot, HSIDE_PADS);
 			f.stopped = true;
 		} else if (pulse != f.pulse) {
 			f.pulse = pulse;
 			f.stopped = false;
-			for (uint8_t pad = 1; pad <= 2; pad++) {
+			for (uint8_t pad = HSIDE_LPAD; pad <= HSIDE_RPAD;
+			     pad++) {
 				uint8_t tone[9] = {
 					pad, (uint8_t)-18, 160, 0, 250, 0, 0, 0,
 					0
@@ -725,7 +726,7 @@ static void hdStop(uint8_t slot)
 		hapticCancelPendingOn(slot);
 	// Two OFF copies reduce the chance that RF loss stretches the tail.
 	for (uint8_t n = 0; n < 2 && !hapticShortcutFeedbackActive(slot); n++) {
-		hdPadOff(slot, 3);
+		hdPadOff(slot, HSIDE_PADS);
 	}
 	// Keep zero reports queued across RF loss; reconnect only scrubs ON frames.
 	uint8_t zero[9] = {};
@@ -764,7 +765,7 @@ static void hapticHdTask()
 			    snapshot.padActive[pad] &&
 			    (!g_hdPadScale || (!snapshot.bands[pad * 2] &&
 					       !snapshot.bands[pad * 2 + 1]))) {
-				hdPadOff(slot, pad + 1);
+				hdPadOff(slot, HSIDE_LPAD + pad);
 				g_hdRumble[slot].padActive[pad] = false;
 				snapshot.padActive[pad] = false;
 			}
@@ -788,12 +789,12 @@ static void hapticHdTask()
 			continue;
 		for (uint8_t pad = 0; pad < 2; pad++) {
 			bool padOn = hdPadTone(
-				slot, pad + 1, snapshot.bands[pad * 2],
+				slot, HSIDE_LPAD + pad, snapshot.bands[pad * 2],
 				snapshot.bands[pad * 2 + 1],
 				snapshot.frequencies[pad * 2],
 				snapshot.frequencies[pad * 2 + 1]);
 			if (!padOn && snapshot.padActive[pad])
-				hdPadOff(slot, pad + 1);
+				hdPadOff(slot, HSIDE_LPAD + pad);
 			g_hdRumble[slot].padActive[pad] = padOn;
 		}
 	}
@@ -836,7 +837,7 @@ void hapticStabTask()
 	}
 }
 
-// 0x86 {op 2 = enable, channel 2 = trackpads, format 9 = 4 kHz u-law}.
+// 0x86 {op 2 = enable, channel 2 = both grips, format 9 = 4 kHz u-law}.
 void hapticPcmStart(uint8_t slot)
 {
 	if (slot >= NSLOT || haptic82Blocked(slot) || !hapticLinkUp(slot))
@@ -1214,8 +1215,12 @@ void hapticTask()
 							    0x00, 0x00 };
 		static const uint8_t DATA_LIZARD_ON[3] = { SETTING_LIZARD_MODE,
 							   0x01, 0x00 };
-		static const uint8_t DATA_IMU_ON[3] = { SETTING_IMU_MODE, 0x07,
-							0x00 };
+		// IMU on, and triggers back to calibrated: controller settings live in RAM until power-off, so a
+		// raw trigger mode a host set earlier would otherwise carry into the emulated modes.
+		static const uint8_t DATA_IMU_ON[6] = {
+			SETTING_IMU_MODE,     0x07, 0x00,
+			SETTING_TRIGGER_MODE, 0x00, 0x00
+		};
 
 		// In puck mode Steam owns haptics; skip id9 steering.
 		if (!modeIsPuck(g_usbMode)) {
