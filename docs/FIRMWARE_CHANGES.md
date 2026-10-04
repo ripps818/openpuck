@@ -102,6 +102,16 @@ timeout ≈ 50 ms). OpenPuck's `hapticUpdateRumble()` sends `intensity = max(low
 **Not changed here:** switching to `intensity = 0` matches Valve's own host code, but it also changes
 feel on stable firmware, so it needs an A/B on hardware first.
 
+**Hardware result (2026-10-04, OpenPuck from this branch + controller `6ABC4999`):**
+
+- Pairing, reconnect, input and gyro in Steam all worked.
+- The panel's rumble test at the default host-rumble strength (`RUMBLE_SCALE_PCT`, 200%) felt too
+  strong; 100% felt right.
+- Likely cause: `speed` now sets the amplitude, so doubling it saturates sooner. The 200% default was
+  tuned against older firmware, where a stronger request was attenuated harder.
+- The default stays at 200% while this firmware is beta-only, since stable controllers still have the
+  old mapping. Revisit it with the `intensity = 0` A/B once `6ABC4999` reaches stable.
+
 ### USB `bcdDevice` `0x0307` → `0x0404` (both devices)
 
 Zephyr's default `bcdDevice` is the kernel version, so this marks the move from Zephyr 3.7 to 4.4
