@@ -695,7 +695,8 @@ struct HdPcmState {
 	float phase[4];
 	uint32_t clockUs;
 	unsigned long fmtMs, activeMs;
-	uint8_t fill, frames;
+	uint8_t fill;
+	uint16_t queued;
 	bool on;
 	uint8_t l[PCM_SAMPLES], r[PCM_SAMPLES];
 };
@@ -755,11 +756,11 @@ static void hdPcmRun(uint8_t slot, const uint16_t bands[4],
 			}
 			(side ? p.r : p.l)[p.fill] = hapticUlaw(v * gain);
 		}
-		if (++p.fill == hapticPcmFrameLen(p.frames)) {
+		if (++p.fill == hapticPcmFrameLen(p.queued, PCM_RATE_HZ)) {
 			hapticPcmSend(slot, p.l, p.r, p.fill);
+			if (p.queued < 1000u)
+				p.queued += p.fill;
 			p.fill = 0;
-			if (p.frames < 3)
-				p.frames++;
 		}
 	}
 }
@@ -929,12 +930,20 @@ void hapticStabTask()
 	}
 }
 
-// 0x86 {op 2 = enable, channel 2 = both grips, format 9 = 4 kHz u-law}.
-void hapticPcmStart(uint8_t slot)
+// 0x86 {op 2 = enable, channel 2 = both grips, format}.
+void hapticPcmStart(uint8_t slot, uint8_t format)
 {
 	if (slot >= NSLOT || haptic82Blocked(slot) || !hapticLinkUp(slot))
 		return;
-	static const uint8_t p[3] = { 2, 2, 9 };
+	const uint8_t p[3] = { 2, 2, format };
+	relayEnqueue(0x86, p, sizeof p, true, slot);
+}
+
+void hapticPcmStop(uint8_t slot)
+{
+	if (slot >= NSLOT || haptic82Blocked(slot) || !hapticLinkUp(slot))
+		return;
+	static const uint8_t p[3] = { 1, 2, 0 };
 	relayEnqueue(0x86, p, sizeof p, true, slot);
 }
 

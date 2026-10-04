@@ -25,7 +25,8 @@ headphone jack.
 
 In DualSense mode (`MODE_PS5`, and the clean `MODE_PS5_GAME`) the puck presents the same audio function
 ([mode_ps5_audio.cpp](../OpenPuck/mode_ps5_audio.cpp)). It reads channels 3 and 4, turns them into Steam Controller 2
-haptic commands, and relays those over RF like any other haptic (§5).
+haptic commands, and relays those over RF like any other haptic (§5). With the controller speaker enabled
+(off by default), channels 1 and 2 play on the grips as well (§7).
 
 ## 2. USB presentation: what must match a real DualSense
 
@@ -249,6 +250,18 @@ In [mode_ps5_audio.cpp](../OpenPuck/mode_ps5_audio.cpp) (`processAudioSamples`, 
      gate 100 and for 300 ms after; `0x86 {2, 2, 9}` sets the format at each start and every second. The controller
      pre-buffers (24 ms with the short third frame, PROTOCOL.md), so it starts about 20 ms later than a tone. No `0x80` rumble from the audio. See PROTOCOL.md
      section 9.1 for the measured PCM behaviour.
+
+**Controller speaker** (off by default): channels 1 and 2, which a real DualSense plays on its speaker, mixed to mono
+and added to the grip stream, so the grips work as a small speaker. While it's enabled the grip stream runs at 8 kHz
+(`0x86 {2, 2, 8}`, the grips' native rate, 258 frames/s) instead of 4 kHz. The trackpad actuators run at 4 kHz and
+only rumbled with speech, so the speaker doesn't use them. The mono mix goes through a 3.2 kHz low-pass at 48 kHz
+(anti-alias), is decimated to 8 kHz, then a 300 Hz high-pass so it plays as sound rather than rumble; each filter is
+two cascaded 2nd-order Butterworth sections. In a listening test (2026-10-04) the 300 Hz cut beat no cut (rumble),
+500 Hz and 800 Hz (thin). The speaker is muted below gate 100, fading over ~12 ms, and keeps the stream up like
+the haptics do. Full scale plays at 100% volume. Changing the rate stops the stream (`0x86` op 1) first, since the
+controller refuses a new format while one plays. In other styles than wave the grip stream carries only the
+speaker. Field 114 sets the volume (percent/2, 0 = off, up to 200%), blob `p[208]` reports it (protocol v26), and it is saved in
+config extension byte 15.
 
 The game's ordinary rumble (output report `0x02`) always goes through `0x80`, in every style. `hapticUpdateRumble`
 adds it to the audio rumble (rumble and split styles) and sends one frame.

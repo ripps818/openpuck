@@ -854,6 +854,18 @@ const HD_PAD_SCALES=Array.from({length:251},(_,i)=>i*2);
       sec.appendChild(row);
       rec.audioGain=sl; rec.audioGainV=vspan;
     }
+    // Controller speaker (DS5, protocol v26): the DualSense speaker channels played on the grips
+    if(def.key==="DS5"){
+      const row=document.createElement("div"); row.className="row hide";
+      const lab=document.createElement("label"); lab.textContent="Controller speaker"; row.appendChild(lab);
+      const sel=document.createElement("select"); row.appendChild(sel);
+      for(const v of [0,25,50,75,100,150,200]){ const o=document.createElement("option"); o.value=v; o.textContent=v?v+"%":"Off (default)"; sel.appendChild(o); }
+      sel.addEventListener("change",()=>setField(114,(+sel.value)/2));
+      const note=document.createElement("p"); note.className="note";
+      note.textContent="Plays what a game sends to the DualSense speaker (the first two channels of its audio device) through the grips, up to about 4 kHz, like a small speaker. Bass is cut so it sounds rather than rumbles. While it's on, the grip stream runs at 8 kHz (twice the radio traffic).";
+      const wrap=document.createElement("div"); wrap.className="hide"; wrap.append(row,note); row.classList.remove("hide"); sec.appendChild(wrap);
+      rec.speaker=sel; rec.speakerWrap=wrap;
+    }
     // trackpad -> joystick mapping (one select per pad)
     for(let pad=0; pad<2; pad++){
       const row=document.createElement("div"); row.className="row";
@@ -1761,6 +1773,11 @@ function applyBlob(p){
         rec.audioStyle.dataset.v=v;
         rec.audioStyle.textContent=["rumble","tone","split","wave"][v];
         rec.audioStyle.classList.toggle("active",v!==0);
+      }
+      if(rec.speaker){
+        const cap=p[0]>=26 && p.length>206;
+        rec.speakerWrap.classList.toggle("hide",!cap);
+        if(cap && document.activeElement!==rec.speaker) rec.speaker.value=p[206]*2;
       }
       if(rec.audioGain && p.length>195){
         const gain = p[195]*2;

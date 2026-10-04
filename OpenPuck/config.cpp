@@ -59,6 +59,7 @@ uint8_t g_rumble = 1;
 uint8_t g_audioHaptics = 1;
 uint16_t g_audioHapticGain = 0;
 uint8_t g_audioHapticStyle = AUDIO_STYLE_WAVE;
+uint16_t g_audioSpeaker = 0;
 uint8_t g_trigInner = 0, g_trigOuter = 100;
 uint8_t g_ledBright = 0;
 
@@ -199,6 +200,7 @@ void saveCfg()
 	cfgExtWrite(13u, g_trigOuter);
 	// 14 reserved (was the HD grip renderer A/B switch)
 	cfgExtWrite(14u, 0xFFu);
+	cfgExtWrite(15u, (uint8_t)(g_audioSpeaker / 2));
 	cfgExtWrite(5u, g_ledMode);
 	cfgExtWrite(6u, g_ledPinA);
 	cfgExtWrite(7u, g_ledPinB);
@@ -355,6 +357,9 @@ void loadCfg()
 			const uint8_t audioStyleVal = cfgExtRead(11u);
 			if (audioStyleVal <= AUDIO_STYLE_WAVE)
 				g_audioHapticStyle = audioStyleVal;
+			const uint8_t speakerVal = cfgExtRead(15u);
+			if (speakerVal <= 100)
+				g_audioSpeaker = (uint16_t)speakerVal * 2;
 			const uint8_t trigInnerVal = cfgExtRead(12u),
 				      trigOuterVal = cfgExtRead(13u);
 			if (trigInnerVal < trigOuterVal &&

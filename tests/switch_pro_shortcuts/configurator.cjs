@@ -39,6 +39,12 @@ assert.equal(scl(0).value,'200');assert.equal(scl(1).value,'150');
 scl(2).value='300';scl(2).dispatchEvent(new w.Event('change'));assert.deepEqual(w.writes.pop(),[110,150]);
 const b25=w.eval('buildBackup('+JSON.stringify(p25)+','+JSON.stringify([1].concat(Array(97).fill(0)))+')');
 assert.equal(b25.config.types[0].rumbleScale,200);assert(!('rumbleStyle' in b25.config.types[0]) && !('rumbleStyle' in b25.config));
+// v26: the DualSense tab's controller speaker volume (blob p[208] = JS p[206], percent/2; field 114), hidden before v26.
+const spk=secs.map(sec=>[...sec.querySelectorAll('.row')].find(r=>r.querySelector('label') && r.querySelector('label').textContent==='Controller speaker')).filter(Boolean);
+assert.equal(spk.length,1);assert(spk[0].parentElement.classList.contains('hide'));
+const p26=p25.slice();p26[0]=26;p26[206]=50;w.eval('applyBlob(new Uint8Array('+JSON.stringify(p26)+'))');
+assert(!spk[0].parentElement.classList.contains('hide'));const spkSel=spk[0].querySelector('select');assert.equal(spkSel.value,'100');
+spkSel.value='0';spkSel.dispatchEvent(new w.Event('change'));assert.deepEqual(w.writes.pop(),[114,0]);
 apply();
 // Original per-type mapping and mode controls remain present.
 assert(w.document.querySelectorAll('.modebtn').length>=11);assert($('#lizardList'));

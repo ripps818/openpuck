@@ -174,6 +174,8 @@ static uint16_t s_winZcR = 0;
 static uint16_t s_winActL = 0;
 static uint16_t s_winActR = 0;
 static uint32_t s_winFrames = 0;
+// sum of squared samples of the speaker mono mix since the last tick (its gate)
+static uint64_t s_winSqSpk = 0;
 
 // Split style crossover: 2nd-order Butterworth low-pass at SPLIT_HZ = 80 (RBJ cookbook, fs 48 kHz, Q 0.7071).
 // Stellar Blade's dash has 38% of its energy below 80 Hz, yet its zero crossings read 125-300 Hz, so tone
@@ -216,9 +218,43 @@ static inline float waveLow(Biquad *f, float x)
 	return y;
 }
 
-// Wave style: bond slots currently streaming (bit per slot) and the sample scale, set by ps5AudioTask.
+// Controller speaker: the front channel pair, which a real DualSense plays on its speaker, mixed to mono into
+// the grip stream at 8 kHz (the grips' native rate; the trackpad actuators only rumble with audio). Anti-aliased
+// at 3.2 kHz and low-cut at 300 Hz so it plays as sound, not rumble: in a listening test 300 Hz beat no cut
+// (rumble) and 500 / 800 Hz (thin). Each filter is two cascaded 2nd-order Butterworth sections (RBJ cookbook,
+// Q 0.7071), -6 dB at the corner.
+struct BiquadCoef {
+	float b0, b1, b2, a1, a2;
+};
+// low-pass 3.2 kHz at 48 kHz
+static const BiquadCoef SPK_AA = { 3.357180937e-02f, 6.714361874e-02f,
+				   3.357180937e-02f, -1.418982652f,
+				   0.553269890f };
+// high-pass 300 Hz at 8 kHz
+static const BiquadCoef SPK_LOWCUT = { 8.464592541e-01f, -1.692918508e+00f,
+				       8.464592541e-01f, -1.669203143f,
+				       0.716633874f };
+#define SPEAKER_RATE_HZ 8000u
+// Below this level (~-50 dBFS, as the tone gate) the speaker is muted, so hiss doesn't play as buzz.
+#define SPEAKER_GATE TONE_GATE
+
+static inline float biquad(Biquad *f, const BiquadCoef &c, float x)
+{
+	float y = c.b0 * x + c.b1 * f->x1 + c.b2 * f->x2 - c.a1 * f->y1 -
+		  c.a2 * f->y2;
+	f->x2 = f->x1;
+	f->x1 = x;
+	f->y2 = f->y1;
+	f->y1 = y;
+	return y;
+}
+
+// Grip stream (wave haptics and/or the speaker), set by ps5AudioTask: bond slots streaming (bit per slot), the
+// haptic and speaker sample scales, and 48 kHz frames per stream sample (12 at 4 kHz, 6 at 8 kHz).
 static volatile uint8_t s_waveMask = 0;
 static volatile float s_waveScale = 0;
+static volatile float s_spkScale = 0;
+static volatile uint8_t s_streamDec = 48000u / PCM_RATE_HZ;
 
 // Frequency is crossings per frame with signal, not per tick: a step starting late in a tick, or silence
 // after one, otherwise reads far too low. Stellar Blade's running steps then played at 40 Hz, where the
@@ -245,23 +281,37 @@ static void processAudioSamples(const uint8_t *data, uint32_t len)
 	static int8_t s_signL = 1, s_signR = 1;
 	static Biquad s_lpL = {}, s_lpR = {};
 	bool split = g_audioHapticStyle == AUDIO_STYLE_SPLIT;
-	// wave style: decimation phase, fill of the frame being built, and that frame
+	// grip stream: decimation phase, fill of the frame being built, samples sent, and that frame
 	static Biquad s_aaL = {}, s_aaR = {};
-	static uint8_t s_dec = 0, s_fill = 0, s_frames = 0;
+	static uint8_t s_dec = 0, s_fill = 0;
+	static uint16_t s_queued = 0;
 	static uint8_t s_pcmL[PCM_SAMPLES], s_pcmR[PCM_SAMPLES];
+	// speaker: anti-alias and low-cut sections, and its gain eased toward s_spkScale (~12 ms) so the gate fades
+	static Biquad s_spkAa[2] = {}, s_spkCut[2] = {};
+	static float s_spkGain = 0;
 	uint8_t waveMask = s_waveMask;
-	float waveScale = s_waveScale;
-	if (!waveMask)
-		s_fill = s_frames = 0;
+	float waveScale = s_waveScale, spkScale = s_spkScale;
+	uint8_t dec = s_streamDec;
+	uint16_t rate = (uint16_t)(48000u / dec);
+	// the speaker filters are tuned for 8 kHz; at 4 kHz (speaker off) it stays silent
+	bool spk = rate == SPEAKER_RATE_HZ;
+	if (!waveMask) {
+		s_fill = 0;
+		s_queued = 0;
+		s_spkGain = 0;
+	}
 
 	uint32_t num_frames = len / 8;
 	uint64_t sq_l = 0, sq_r = 0;
 	float lo_l = 0, lo_r = 0, hi_l = 0, hi_r = 0;
 	uint16_t zc_l = 0, zc_r = 0, act_l = 0, act_r = 0;
+	float sq_spk = 0;
 	for (uint32_t i = 0; i < num_frames; i++) {
 		const int16_t *s = (const int16_t *)(data + i * 8);
 		sq_l += (int32_t)s[2] * s[2];
 		sq_r += (int32_t)s[3] * s[3];
+		float mono = 0.5f * ((float)s[0] + (float)s[1]);
+		sq_spk += mono * mono;
 		float ll = splitLow(&s_lpL, s[2]), lr = splitLow(&s_lpR, s[3]);
 		float hl = s[2] - ll, hr = s[3] - lr;
 		lo_l += ll * ll;
@@ -273,19 +323,28 @@ static void processAudioSamples(const uint8_t *data, uint32_t len)
 		if (!waveMask)
 			continue;
 		float al = waveLow(&s_aaL, s[2]), ar = waveLow(&s_aaR, s[3]);
-		if (++s_dec < 48000u / PCM_RATE_HZ)
+		float sp = spk ? biquad(&s_spkAa[1], SPK_AA,
+					biquad(&s_spkAa[0], SPK_AA, mono)) :
+				 0.0f;
+		if (++s_dec < dec)
 			continue;
 		s_dec = 0;
-		s_pcmL[s_fill] = hapticUlaw(al * waveScale);
-		s_pcmR[s_fill] = hapticUlaw(ar * waveScale);
-		if (++s_fill < hapticPcmFrameLen(s_frames))
+		if (spk) {
+			sp = biquad(&s_spkCut[1], SPK_LOWCUT,
+				    biquad(&s_spkCut[0], SPK_LOWCUT, sp));
+			s_spkGain += (spkScale - s_spkGain) * 0.01f;
+			sp *= s_spkGain;
+		}
+		s_pcmL[s_fill] = hapticUlaw(al * waveScale + sp);
+		s_pcmR[s_fill] = hapticUlaw(ar * waveScale + sp);
+		if (++s_fill < hapticPcmFrameLen(s_queued, rate))
 			continue;
 		for (uint8_t b = 0; b < NSLOT; b++)
 			if (waveMask & (1u << b))
 				hapticPcmSend(b, s_pcmL, s_pcmR, s_fill);
+		if (s_queued < 1000u)
+			s_queued += s_fill;
 		s_fill = 0;
-		if (s_frames < 3)
-			s_frames++;
 	}
 
 	uint32_t pm = __get_PRIMASK();
@@ -300,6 +359,7 @@ static void processAudioSamples(const uint8_t *data, uint32_t len)
 	s_winZcR += zc_r;
 	s_winActL += act_l;
 	s_winActR += act_r;
+	s_winSqSpk += (uint64_t)sq_spk;
 	s_winFrames += num_frames;
 	__set_PRIMASK(pm);
 }
@@ -502,16 +562,30 @@ static void toneUpdate(ToneSide *t, uint8_t side, uint16_t env, uint16_t ref,
 	t->sentMs = now;
 }
 
-// Wave style: stream while either channel is above the gate and for WAVE_HANG_MS after, so a short pause does
-// not pay the controller's ~40 ms pre-buffer again. The format is re-sent every WAVE_FMT_MS: it persists on the
-// controller, but one that power-cycled mid-stream comes back without it.
+// Grip stream (wave haptics and/or the speaker): stream while either is above its gate and for WAVE_HANG_MS
+// after, so a short pause does not pay the controller's pre-buffer again. The format is re-sent every
+// WAVE_FMT_MS: it persists on the controller, but one that power-cycled mid-stream comes back without it. The
+// stream runs at 8 kHz while the speaker is enabled, else at 4 kHz (half the RF traffic); the controller refuses
+// a new format while a stream plays, so a rate change stops the stream and the next tick restarts it.
 #define WAVE_HANG_MS 300u
 #define WAVE_FMT_MS 1000u
 
-static void waveUpdate(bool active, uint16_t ref, uint16_t gain, uint32_t now)
+static void waveUpdate(bool active, bool speaker, float waveScale,
+		       float spkScale, uint32_t now)
 {
 	static bool s_on = false;
 	static uint32_t s_lastActive = 0, s_fmtMs[NSLOT] = {};
+	const uint8_t dec =
+		(uint8_t)(48000u / (speaker ? SPEAKER_RATE_HZ : PCM_RATE_HZ));
+	if (dec != s_streamDec) {
+		for (uint8_t b = 0; b < NSLOT; b++)
+			if (s_waveMask & (1u << b))
+				hapticPcmStop(b);
+		s_waveMask = 0;
+		s_on = false;
+		s_streamDec = dec;
+		return;
+	}
 	if (active) {
 		s_on = true;
 		s_lastActive = now;
@@ -529,12 +603,13 @@ static void waveUpdate(bool active, uint16_t ref, uint16_t gain, uint32_t now)
 			continue;
 		if (!(s_waveMask & (1u << b)) ||
 		    now - s_fmtMs[b] >= WAVE_FMT_MS) {
-			hapticPcmStart(b);
+			hapticPcmStart(b, speaker ? PCM_FMT_ULAW_8K :
+						    PCM_FMT_ULAW_4K);
 			s_fmtMs[b] = now;
 		}
 	}
-	// samples are int16 against an envelope reference in the same units: ref plays at full scale
-	s_waveScale = gain / (100.0f * ref);
+	s_waveScale = waveScale;
+	s_spkScale = spkScale;
 	s_waveMask = mask;
 }
 
@@ -542,6 +617,7 @@ void ps5AudioTask(void)
 {
 	static uint16_t s_envL = 0, s_envR = 0;
 	static uint16_t s_envLoL = 0, s_envLoR = 0, s_envHiL = 0, s_envHiR = 0;
+	static uint16_t s_envSpk = 0;
 	static uint16_t s_lastL = 0, s_lastR = 0;
 	static uint32_t s_lastTickMs = 0;
 	static ToneSide s_toneL = {}, s_toneR = {};
@@ -558,11 +634,13 @@ void ps5AudioTask(void)
 	uint64_t sqHiL = s_winSqHiL, sqHiR = s_winSqHiR;
 	uint16_t zcL = s_winZcL, zcR = s_winZcR;
 	uint16_t actL = s_winActL, actR = s_winActR;
+	uint64_t sqSpk = s_winSqSpk;
 	uint32_t frames = s_winFrames;
 	s_winSqL = s_winSqR = 0;
 	s_winSqLoL = s_winSqLoR = s_winSqHiL = s_winSqHiR = 0;
 	s_winZcL = s_winZcR = 0;
 	s_winActL = s_winActR = 0;
+	s_winSqSpk = 0;
 	s_winFrames = 0;
 	__set_PRIMASK(pm);
 
@@ -594,7 +672,14 @@ void ps5AudioTask(void)
 	uint16_t toneR = tone ? envR : split ? hiR : 0;
 	uint16_t rumL = (tone || wave) ? 0 : split ? loL : envL;
 	uint16_t rumR = (tone || wave) ? 0 : split ? loR : envR;
-	waveUpdate(wave && (envL || envR), ref, gain, now);
+	// speaker: on while its mono mix is above the gate; samples are int16, so full scale plays at 100%
+	uint16_t spkEnv = hapticEnvelope(hapticLevel(sqSpk, frames), &s_envSpk,
+					 SPEAKER_GATE);
+	bool spkOn = g_audioSpeaker && spkEnv;
+	// wave samples are int16 against an envelope reference in the same units: ref plays at full scale
+	waveUpdate((wave && (envL || envR)) || spkOn, g_audioSpeaker != 0,
+		   (wave && g_audioHaptics) ? gain / (100.0f * ref) : 0.0f,
+		   spkOn ? g_audioSpeaker / (100.0f * 32768.0f) : 0.0f, now);
 
 	// A style that stops using an output stops whatever it left playing (a tone cuts once; a rumble stops below).
 	toneUpdate(&s_toneL, 0, toneL, ref, gain, zcL, actL, now);

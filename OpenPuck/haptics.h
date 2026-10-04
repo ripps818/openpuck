@@ -189,17 +189,28 @@ static inline uint8_t hsidePads(bool left, bool right)
 // frames stop. hapticPcmStart sets the format (it persists, so it is re-sent periodically, not torn down).
 #define PCM_SAMPLES 31u
 #define PCM_RATE_HZ 4000u
-void hapticPcmStart(uint8_t slot);
+// 0x86 formats: 8-bit u-law at 8 kHz (the grips' native rate) or 4 kHz
+#define PCM_FMT_ULAW_8K 8u
+#define PCM_FMT_ULAW_4K 9u
+void hapticPcmStart(uint8_t slot, uint8_t format = PCM_FMT_ULAW_4K);
+// 0x86 op 1: ends the grip stream, trimming what the controller still holds. A new format is refused while a
+// stream plays, so a rate change stops the stream first.
+void hapticPcmStop(uint8_t slot);
 // Sends the first n samples of each side (n <= PCM_SAMPLES).
 bool hapticPcmSend(uint8_t slot, const uint8_t *left, const uint8_t *right,
 		   uint8_t n);
-// Samples in frame `index` (0-based, saturating) of a new stream. The controller starts playing on the first
-// frame to arrive once it holds more than 16 ms (64 samples at 4 kHz), and that fill stays buffered for the rest
-// of the stream. Full frames cross at 93 samples and start at 124 (31 ms); a 3-sample third frame crosses at 65,
-// so playback starts at 96 (24 ms).
-static inline uint8_t hapticPcmFrameLen(uint8_t index)
+// Samples in the next frame of a new stream at `rate` Hz, `queued` samples into it (callers stop counting past
+// the threshold). The controller starts playing on the first frame to arrive once it holds more than 16 ms
+// (rate * 2 / 125: 64 samples at 4 kHz, 128 at 8 kHz), and that fill stays buffered for the rest of the stream.
+// One short frame lands the crossing on threshold + 1, so playback starts 31 samples later: at 4 kHz 31, 31, 3
+// start it at 96 (24 ms) instead of 124 with full frames; at 8 kHz four 31s and a 5 start it at 160 (20 ms).
+static inline uint8_t hapticPcmFrameLen(uint16_t queued, uint16_t rate)
 {
-	return index == 2 ? 3 : PCM_SAMPLES;
+	uint16_t threshold = (uint16_t)(rate * 2u / 125u);
+	if (queued > threshold)
+		return PCM_SAMPLES;
+	uint16_t need = (uint16_t)(threshold + 1u - queued);
+	return need < PCM_SAMPLES ? (uint8_t)need : PCM_SAMPLES;
 }
 // G.711 u-law byte for x in [-1, 1] (clamped).
 uint8_t hapticUlaw(float x);

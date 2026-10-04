@@ -143,7 +143,8 @@ static void webusbSendBlob()
 
 	// clang-format off
 	// protocol version
-	// (25 = +per-type grip strength (fields 108..111, blob p[212..215]); rumble style automatic;
+	// (26 = +DualSense controller speaker volume (field 114, blob p[208], percent/2, 0 = off);
+	// 25 = +per-type grip strength (fields 108..111, blob p[212..215]); rumble style automatic;
 	// 24 = +trigger deadzone / full-press point (fields 102/103, blob p[206..207]);
 	// 23 = +0xAE Switch Pro profiles / HD rumble / shortcut frame (op 0x27), fields 190..252, op 0x28 save;
 	// 22 = +DualSense audio haptics style (field 88, blob p[198]);
@@ -162,7 +163,7 @@ static void webusbSendBlob()
 	// cfg; 8 = +per-slot link status; 7 = +raw accel; 
 	// 6 = +swPro120/gyroScale)
 	// clang-format on
-	p[2] = 25;
+	p[2] = 26;
 	p[3] = g_usbMode;
 	p[4] = (uint8_t)g_mDiv;
 	p[5] = (uint8_t)g_mFric;
@@ -361,7 +362,9 @@ static void webusbSendBlob()
 	p[205] = g_audioHapticStyle;
 	p[206] = g_trigInner;
 	p[207] = g_trigOuter;
-	// p[208..211] (per-type rumble style) stay zero: the style follows the mode
+	// p[208]: controller speaker volume (v26). p[209..211] (per-type rumble style) stay zero: the style
+	// follows the mode
+	p[208] = (uint8_t)(g_audioSpeaker / 2);
 	for (uint8_t et = 0; et < ET_COUNT; et++)
 		p[212 + et] = (uint8_t)(g_typeRumbleScale[et] / 2);
 	// CRITICAL: usb_web.write() SPINS (`while (remain && _connected) yield();`) until the IN FIFO drains or the
@@ -1407,6 +1410,11 @@ void webusbPoll()
 						v > AUDIO_STYLE_WAVE ?
 							AUDIO_STYLE_WAVE :
 							v;
+					break;
+
+				// DualSense controller speaker volume, percent/2 (0 = off, up to 200%). Protocol v26.
+				case 114:
+					g_audioSpeaker = v > 100 ? 200 : v * 2;
 					break;
 
 				// Trigger deadzone / full-press point, percent (protocol v24). The pair stays ordered:
