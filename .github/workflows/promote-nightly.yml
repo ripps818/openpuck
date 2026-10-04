@@ -54,9 +54,20 @@ jobs:
               NOTES="$(git log --no-merges --format='- %s' -n 20 "$SHA")"
             fi
           fi
+          gh release view nightly --json name -q .name > nightly-title.txt
+          gh release view nightly --json body -q .body > nightly-notes.md
           gh release create "$VERSION" assets/* \
             --target "$SHA" \
             --latest \
             --title "OpenPuck $VERSION" \
             --notes "$NOTES"
+          # Releases list newest first, so recreate the nightly (same commit, title, notes and files) to keep it
+          # above the release just published.
+          gh release delete nightly --cleanup-tag --yes
+          gh release create nightly assets/* \
+            --target "$SHA" \
+            --prerelease \
+            --latest=false \
+            --title "$(cat nightly-title.txt)" \
+            --notes-file nightly-notes.md
           echo "Released $VERSION from nightly ($SHA)" >> "$GITHUB_STEP_SUMMARY"
