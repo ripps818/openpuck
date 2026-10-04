@@ -9,6 +9,8 @@ on:
 
 jobs:
   clang-format:
+    # upstream only
+    if: github.repository == 'safijari/openpuck'
     runs-on: ubuntu-latest
 
     steps:

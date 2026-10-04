@@ -18,6 +18,8 @@ permissions:
 
 jobs:
   compile:
+    # upstream only: the fork builds with ripps-build.yml
+    if: github.repository == 'safijari/openpuck'
     runs-on: ubuntu-latest
 
     steps:

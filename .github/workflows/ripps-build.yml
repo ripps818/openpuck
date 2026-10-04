@@ -1,0 +1,102 @@
+name: Fork build
+
+# ripps818/openpuck only: every push to main builds the firmware with a "ripps-<hash>" version and publishes
+# it as a GitHub release tagged with that version. The upstream release flow (release.yml) does not run here.
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: ripps-build-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    if: github.repository == 'ripps818/openpuck'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up Arduino CLI
+        uses: arduino/setup-arduino-cli@v2
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.x'
+
+      - name: Install adafruit-nrfutil
+        run: pip install adafruit-nrfutil
+
+      - name: Install Adafruit nRF52 core
+        run: |
+          arduino-cli config init --overwrite
+          arduino-cli config set board_manager.additional_urls https://adafruit.github.io/arduino-board-index/package_adafruit_index.json
+          arduino-cli core update-index
+          arduino-cli core install adafruit:nrf52
+
+      - name: Resolve version
+        id: version
+        # The panel's "Firmware build" field shows the first 12 characters: "ripps-" plus 6 hash digits.
+        run: |
+          set -eu
+          VERSION="ripps-$(git rev-parse --short=8 "$GITHUB_SHA")"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Generate version header
+        env:
+          OPK_BUILD_VERSION: ${{ steps.version.outputs.version }}
+        run: ./gen_version.sh
+
+      - name: Compile OpenPuck
+        run: |
+          mkdir -p build/openpuck build/cache/openpuck
+          make build BUILD_PATH=build/cache/openpuck OUTPUT_DIR=build/openpuck
+          ./gen_uf2.sh build/openpuck/OpenPuck.ino.hex build/openpuck/OpenPuck.ino.uf2
+
+      - name: Compile recovery build
+        run: |
+          mkdir -p build/openpuck-recovery build/cache/openpuck-recovery
+          make build-recovery BUILD_PATH=build/cache/openpuck-recovery OUTPUT_DIR=build/openpuck-recovery
+          ./gen_uf2.sh build/openpuck-recovery/OpenPuck.ino.hex build/openpuck-recovery/OpenPuck.ino.uf2
+
+      - name: Collect artifacts
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -eu
+          mkdir -p release_assets
+          for ext in uf2 hex; do
+            cp "build/openpuck/OpenPuck.ino.$ext" "release_assets/OpenPuck-${VERSION}-standard.$ext"
+            cp "build/openpuck-recovery/OpenPuck.ino.$ext" "release_assets/OpenPuck-${VERSION}-factory-reset.$ext"
+          done
+          ls -la release_assets
+
+      - name: Publish release
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eu
+          SUBJECT="$(git log -1 --format=%s "$GITHUB_SHA")"
+          if gh release view "$VERSION" >/dev/null 2>&1; then
+            gh release upload "$VERSION" release_assets/* --clobber
+          else
+            gh release create "$VERSION" release_assets/* \
+              --target "$GITHUB_SHA" \
+              --title "OpenPuck $VERSION" \
+              --notes "Fork build of ${GITHUB_SHA}: ${SUBJECT}
+
+          - \`OpenPuck-${VERSION}-standard.uf2\`: drag onto the UF2BOOT drive
+          - \`OpenPuck-${VERSION}-factory-reset.uf2\`: wipes all settings and the controller pairing on first boot
+          - \`.hex\` files for direct flashing"
+          fi

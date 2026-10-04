@@ -254,6 +254,13 @@ reboot copies staged→app from RAM (~5 s dark) and comes back up on the new fir
 > it creates the release itself from a bare tag push. Notes written in the GitHub UI, a custom release
 > title, and the pre-release checkbox therefore survive the artifact build that follows publishing.
 
+> **Fork builds (ripps818/openpuck):** `.github/workflows/ripps-build.yml` builds every push to `main` with
+> the version `ripps-<8-digit commit hash>` and publishes a GitHub release under that tag, with the standard
+> and factory-reset `.uf2` / `.hex`. The panel's **Firmware build** field shows the first 12 characters
+> (`ripps-` plus 6 hash digits). The panel's release list reads the upstream repo, so flash fork builds with
+> the local-file card. The upstream workflows (`build.yml`, `format.yml`, `release.yml`) run only in
+> `safijari/openpuck`; in the fork their jobs show as skipped. Run `make check` locally for formatting.
+
 Failure safety: **nothing is armed until the staged image verifies in flash**, so a disconnect, error, or
 power cut during the transfer leaves the current firmware untouched. The apply step erases the app's vector
 page first and rewrites it last (first word dead-last), so even a power cut mid-apply leaves the board
