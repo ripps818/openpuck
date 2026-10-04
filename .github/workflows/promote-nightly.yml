@@ -1,0 +1,62 @@
+name: Promote nightly
+
+# ripps818/openpuck only, run by hand: turns the current nightly into a permanent release tagged with its
+# firmware version (ripps-<hash>), reusing the nightly's files as built. The panel lists both.
+on:
+  workflow_dispatch:
+    inputs:
+      notes:
+        description: Release notes (blank = the commits since the previous release)
+        required: false
+        default: ''
+
+# its own group: sharing the nightly's would let a new push cancel a promotion mid-way
+concurrency:
+  group: promote-nightly
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  promote:
+    if: github.repository == 'ripps818/openpuck'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Create the release from the nightly
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NOTES: ${{ inputs.notes }}
+        run: |
+          set -eu
+          git fetch --force --tags origin
+          SHA="$(git rev-parse 'nightly^{commit}')"
+          VERSION="ripps-$(git rev-parse --short=8 "$SHA")"
+          if gh release view "$VERSION" >/dev/null 2>&1; then
+            echo "::error::$VERSION is already released"
+            exit 1
+          fi
+          mkdir -p assets
+          gh release download nightly --dir assets
+          ls -la assets
+          if [ -z "$NOTES" ]; then
+            PREV="$(git tag --list 'ripps-*' --sort=-creatordate | head -n1)"
+            if [ -n "$PREV" ]; then
+              NOTES="Changes since ${PREV}:
+          $(git log --no-merges --format='- %s' "${PREV}..${SHA}")"
+            else
+              NOTES="$(git log --no-merges --format='- %s' -n 20 "$SHA")"
+            fi
+          fi
+          gh release create "$VERSION" assets/* \
+            --target "$SHA" \
+            --latest \
+            --title "OpenPuck $VERSION" \
+            --notes "$NOTES"
+          echo "Released $VERSION from nightly ($SHA)" >> "$GITHUB_STEP_SUMMARY"

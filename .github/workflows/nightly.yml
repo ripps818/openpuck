@@ -1,0 +1,145 @@
+name: Nightly
+
+# ripps818/openpuck only: every push to main builds the firmware with a "ripps-<hash>" version and replaces the
+# single pre-release tagged "nightly" with it. promote-nightly.yml turns the current nightly into a permanent
+# release. The upstream release flow (release.yml) does not run here.
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+# a newer push supersedes a nightly still building
+concurrency:
+  group: nightly
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    if: github.repository == 'ripps818/openpuck'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up Arduino CLI
+        uses: arduino/setup-arduino-cli@v2
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.x'
+
+      - name: Install adafruit-nrfutil
+        run: pip install adafruit-nrfutil
+
+      - name: Install Adafruit nRF52 core
+        run: |
+          arduino-cli config init --overwrite
+          arduino-cli config set board_manager.additional_urls https://adafruit.github.io/arduino-board-index/package_adafruit_index.json
+          arduino-cli core update-index
+          arduino-cli core install adafruit:nrf52
+
+      - name: Resolve version
+        id: version
+        # The panel's "Firmware build" field shows the first 12 characters: "ripps-" plus 6 hash digits.
+        run: |
+          set -eu
+          VERSION="ripps-$(git rev-parse --short=8 "$GITHUB_SHA")"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Generate version header
+        env:
+          OPK_BUILD_VERSION: ${{ steps.version.outputs.version }}
+        run: ./gen_version.sh
+
+      - name: Compile OpenPuck
+        run: |
+          mkdir -p build/openpuck build/cache/openpuck
+          make build BUILD_PATH=build/cache/openpuck OUTPUT_DIR=build/openpuck
+          ./gen_uf2.sh build/openpuck/OpenPuck.ino.hex build/openpuck/OpenPuck.ino.uf2
+
+      - name: Compile recovery build
+        run: |
+          mkdir -p build/openpuck-recovery build/cache/openpuck-recovery
+          make build-recovery BUILD_PATH=build/cache/openpuck-recovery OUTPUT_DIR=build/openpuck-recovery
+          ./gen_uf2.sh build/openpuck-recovery/OpenPuck.ino.hex build/openpuck-recovery/OpenPuck.ino.uf2
+
+      - name: Collect artifacts
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -eu
+          mkdir -p release_assets
+          for ext in uf2 hex; do
+            cp "build/openpuck/OpenPuck.ino.$ext" "release_assets/OpenPuck-${VERSION}-standard.$ext"
+            cp "build/openpuck-recovery/OpenPuck.ino.$ext" "release_assets/OpenPuck-${VERSION}-factory-reset.$ext"
+          done
+          ls -la release_assets
+
+      - name: Replace the nightly release
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eu
+          SUBJECT="$(git log -1 --format=%s "$GITHUB_SHA")"
+          gh release delete nightly --cleanup-tag --yes 2>/dev/null || true
+          gh release create nightly release_assets/* \
+            --target "$GITHUB_SHA" \
+            --prerelease \
+            --title "OpenPuck nightly ($VERSION)" \
+            --notes "Nightly build of ${GITHUB_SHA}: ${SUBJECT}
+
+          Firmware version: \`${VERSION}\`. Replaced by every push to main; run the **Promote nightly** workflow to keep this build as a release.
+
+          - \`OpenPuck-${VERSION}-standard.uf2\`: drag onto the UF2BOOT drive
+          - \`OpenPuck-${VERSION}-factory-reset.uf2\`: wipes all settings and the controller pairing on first boot
+          - \`.hex\` files for direct flashing"
+
+      - name: Mirror UF2s to the firmware branch
+        # The panel's release list downloads .uf2s from raw.githubusercontent.com/<repo>/firmware/<asset>:
+        # GitHub's release-asset CDN sends no CORS headers, so a page can't fetch release assets directly.
+        # The branch keeps the files of the newest 15 releases (the panel lists 15), nightly included, as one
+        # force-pushed commit, so it doesn't grow with every push.
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eu
+          WORK="$(mktemp -d)"
+          OLD="$WORK/old"; NEW="$WORK/new"
+          REPO="https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          mkdir -p "$OLD" "$NEW"
+          if git ls-remote --exit-code "$REPO" refs/heads/firmware >/dev/null 2>&1; then
+            git clone --depth 1 --branch firmware "$REPO" "$OLD/repo"
+            cp "$OLD"/repo/OpenPuck-*.uf2 "$NEW"/ 2>/dev/null || true
+          fi
+          cp release_assets/OpenPuck-"${VERSION}"-*.uf2 "$NEW"/
+          KEEP="$(gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=15" --jq '.[].assets[].name')"
+          for f in "$NEW"/OpenPuck-*.uf2; do
+            echo "$KEEP" | grep -qxF "$(basename "$f")" || rm -f "$f"
+          done
+          printf '%s\n' '# firmware mirror' '' \
+            'OpenPuck .uf2 files from the newest releases, for the config panel to download in-page.' \
+            'Rewritten by .github/workflows/nightly.yml on every build; do not edit by hand.' > "$NEW/README.md"
+          ( cd "$NEW" && python3 - <<'PY'
+          import glob, json
+          m = {f: {"panelUpdate": b"OPK-FWUP-v1" in open(f, "rb").read()} for f in sorted(glob.glob("OpenPuck-*.uf2"))}
+          json.dump(m, open("manifest.json", "w"), indent=1, sort_keys=True)
+          PY
+          )
+          git -C "$NEW" init -q
+          git -C "$NEW" checkout -q --orphan firmware
+          git -C "$NEW" add -A
+          git -C "$NEW" -c user.name="github-actions[bot]" -c user.email="github-actions[bot]@users.noreply.github.com" \
+            commit -q -m "mirror OpenPuck ${VERSION} and the newest builds for the panel"
+          git -C "$NEW" push -f "$REPO" firmware
+          ls -la "$NEW"

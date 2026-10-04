@@ -231,7 +231,7 @@ Replace the port (`/dev/ttyACM0` / `COM5`) with the actual board port.
 ### Flashing from the WebUSB panel (no tools, no drag-and-drop)
 
 A board already running OpenPuck (status protocol v15+) can be updated entirely from the
-[WebUSB configurator](https://safijari.github.io/openpuck/)'s **Firmware update** tab: drag-and-drop a
+[WebUSB configurator](https://ripps818.github.io/openpuck/)'s **Firmware update** tab: drag-and-drop a
 `.uf2` (or click to browse), or pick a version from the built-in **releases list** — each release offers the
 standard build or, via its checkbox, the `-factory-reset` build (wipes settings + pairing once on first
 boot). Each entry shows the release's GitHub notes under a collapsible **release notes** toggle and, when
@@ -254,11 +254,15 @@ reboot copies staged→app from RAM (~5 s dark) and comes back up on the new fir
 > it creates the release itself from a bare tag push. Notes written in the GitHub UI, a custom release
 > title, and the pre-release checkbox therefore survive the artifact build that follows publishing.
 
-> **Fork builds (ripps818/openpuck):** `.github/workflows/ripps-build.yml` builds every push to `main` with
-> the version `ripps-<8-digit commit hash>` and publishes a GitHub release under that tag, with the standard
-> and factory-reset `.uf2` / `.hex`. The panel's **Firmware build** field shows the first 12 characters
-> (`ripps-` plus 6 hash digits). The panel's release list reads the upstream repo, so flash fork builds with
-> the local-file card. The upstream workflows (`build.yml`, `format.yml`, `release.yml`) run only in
+> **Fork builds (ripps818/openpuck):** `.github/workflows/nightly.yml` builds every push to `main` with the
+> version `ripps-<8-digit commit hash>` and replaces the single `nightly` pre-release with it (standard and
+> factory-reset `.uf2` / `.hex`). To keep a nightly, run **Promote nightly** (`promote-nightly.yml`) from the
+> Actions tab: it publishes the nightly's files unchanged as a release tagged with their version, with the
+> commits since the previous release as notes unless you type your own. The panel's **Firmware build** field shows the first 12 characters
+> (`ripps-` plus 6 hash digits). The nightly workflow also mirrors the `.uf2`s of the newest 15 releases (nightly included) onto the `firmware`
+> branch (one force-pushed commit), so the panel's release list can flash them in-page. The panel reads releases
+> from the repo whose GitHub Pages site serves it (`<owner>.github.io/<repo>/`), and from this fork when served
+> from anywhere else; this fork's panel is at https://ripps818.github.io/openpuck/ (Pages: `main`, `/docs`). The upstream workflows (`build.yml`, `format.yml`, `release.yml`) run only in
 > `safijari/openpuck`; in the fork their jobs show as skipped. Run `make check` locally for formatting.
 
 Failure safety: **nothing is armed until the staged image verifies in flash**, so a disconnect, error, or

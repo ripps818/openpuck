@@ -15,7 +15,7 @@ permissions:
 
 jobs:
   bump-version-tag:
-    # upstream only: forks build their own versions (ripps-build.yml in ripps818/openpuck)
+    # upstream only: forks build their own versions (nightly.yml / promote-nightly.yml in ripps818/openpuck)
     if: github.repository == 'safijari/openpuck' && github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
 
