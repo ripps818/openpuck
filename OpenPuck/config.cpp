@@ -463,7 +463,7 @@ void loadCfg()
 			if (audioHapticsVal <= 1)
 				g_audioHaptics = audioHapticsVal;
 			const uint8_t audioStyleVal = cfgExtRead(11u);
-			if (audioStyleVal <= AUDIO_STYLE_SPLIT)
+			if (audioStyleVal <= AUDIO_STYLE_WAVE)
 				g_audioHapticStyle = audioStyleVal;
 
 			const uint8_t ledModeVal = cfgExtRead(5u);

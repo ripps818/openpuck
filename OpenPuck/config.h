@@ -227,6 +227,8 @@ extern uint16_t g_audioHapticGain;
 #define AUDIO_STYLE_TONE 1
 // below ~80 Hz as rumble, the rest as tones
 #define AUDIO_STYLE_SPLIT 2
+// the haptic channels themselves, streamed to the trackpads as 4 kHz PCM (0x88)
+#define AUDIO_STYLE_WAVE 3
 extern uint8_t g_audioHapticStyle;
 // LED brightness for the active emulated type (0 = no override, 1-100 = brightness %)
 extern uint8_t g_ledBright;

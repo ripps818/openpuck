@@ -854,11 +854,12 @@ function setTab(et){
       rec.audioHaptics=aud;
       aud.onclick=()=>{ const on=aud.classList.contains("active"); setField(31, on?0:1); };
       // Haptics style (protocol v22): 0 rumble = the motor-style rumble, 1 tone = smooth per-actuator tones (default),
-      // 2 split = below ~80 Hz as rumble, the rest as tones. Clicking cycles tone -> split -> rumble.
+      // 2 split = below ~80 Hz as rumble, the rest as tones, 3 wave = the haptic channels streamed as PCM.
+      // Clicking cycles tone -> split -> wave -> rumble.
       const styLbl=document.createElement("label"); styLbl.textContent="Haptics style"; styLbl.style.cssText="flex:0 0 auto;margin:0 0 0 6px"; tog.appendChild(styLbl);
       const sty=document.createElement("button"); sty.textContent="tone"; sty.dataset.v="1"; tog.appendChild(sty);
       rec.audioStyle=sty;
-      sty.onclick=()=>{ setField(88, ((+sty.dataset.v)+1)%3); };
+      sty.onclick=()=>{ setField(88, ((+sty.dataset.v)+1)%4); };
     }
     sec.appendChild(tog);
     rec.abSwap=ab; rec.pad=pad; rec.rumble=rumble;
@@ -1796,9 +1797,9 @@ function applyBlob(p){
         rec.audioHaptics.classList.toggle("active",audOn);
       }
       if(rec.audioStyle){
-        const v = (p.length>203 && p[203]<=2)?p[203]:1;
+        const v = (p.length>203 && p[203]<=3)?p[203]:1;
         rec.audioStyle.dataset.v=v;
-        rec.audioStyle.textContent=["rumble","tone","split"][v];
+        rec.audioStyle.textContent=["rumble","tone","split","wave"][v];
         rec.audioStyle.classList.toggle("active",v!==0);
       }
       if(rec.audioGain && p.length>195){

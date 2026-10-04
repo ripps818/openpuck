@@ -123,6 +123,7 @@ static inline uint8_t rqNext(uint8_t i)
 // watchdog recovers (an invisible "watchdog (hang)" -- the live stall monitor can't see it because the SOF
 // IRQ is dead). The cap turns that into a logged, recovered event instead of a hang. Surfaced on the panel.
 volatile uint16_t g_ringFault = 0;
+volatile uint16_t g_relayDrops = 0;
 
 bool relayPending()
 {
@@ -154,8 +155,10 @@ bool relayEnqueue(uint8_t rid, const uint8_t *payload, uint8_t plen,
 		if (slot == 0xFF && !g_slot[s].used)
 			continue;
 		uint8_t h = g_rqHead[s], nx = rqNext(h);
-		if (nx == g_rqTail[s])
+		if (nx == g_rqTail[s]) {
 			g_rqTail[s] = rqNext(g_rqTail[s]);
+			g_relayDrops++;
+		}
 		g_rq[s][h].rid = rid;
 		g_rq[s][h].len = plen;
 		g_rq[s][h].expectReply = expectReply;
@@ -833,6 +836,41 @@ void hapticStabTask()
 	}
 }
 
+// 0x86 {op 2 = enable, channel 2 = trackpads, format 9 = 4 kHz u-law}.
+void hapticPcmStart(uint8_t slot)
+{
+	if (slot >= NSLOT || haptic82Blocked(slot) || !hapticLinkUp(slot))
+		return;
+	static const uint8_t p[3] = { 2, 2, 9 };
+	relayEnqueue(0x86, p, sizeof p, true, slot);
+}
+
+bool hapticPcmSend(uint8_t slot, const uint8_t *left, const uint8_t *right)
+{
+	if (slot >= NSLOT || haptic82Blocked(slot) || !hapticLinkUp(slot))
+		return false;
+	uint8_t p[1 + 2 * PCM_SAMPLES];
+	p[0] = PCM_SAMPLES;
+	memcpy(p + 1, left, PCM_SAMPLES);
+	memcpy(p + 1 + PCM_SAMPLES, right, PCM_SAMPLES);
+	return relayEnqueue(0x88, p, sizeof p, true, slot);
+}
+
+uint8_t hapticUlaw(float x)
+{
+	if (x > 1.0f)
+		x = 1.0f;
+	else if (x < -1.0f)
+		x = -1.0f;
+	int s = (int)(x * 32635.0f);
+	uint8_t sign = s < 0 ? 0x80 : 0;
+	s = (s < 0 ? -s : s) + 0x84;
+	uint8_t exp = 7;
+	while (exp && !(s & (1 << (exp + 7))))
+		exp--;
+	return (uint8_t)~(sign | (exp << 4) | ((s >> (exp + 3)) & 0x0F));
+}
+
 void rfConnQueueHapticRelay()
 {
 	if (relayPending())
@@ -952,9 +990,12 @@ bool rfConnFlushRelay(uint8_t ch, uint8_t s1)
 			// full F1 decode (seq-dedup guards double-forward), so a drag streaming haptics now collects
 			// ~2x the samples, closing the gap to the real puck. A present reply returns early (~90us);
 			// only a genuine no-reply pays the bounded 400us window, so airtime stays in budget.
-			rfConnTx(
-				ch, s1, p, plen,
-				400); // one relay per poll cycle -- reply harvested as input
+			uint8_t rx = rfConnTx(ch, s1, p, plen,
+					      400); // reply harvested as input
+			// PCM mode/sample streams (0x86-0x89) underrun audibly when a frame is lost. Resend an
+			// unanswered one once with the SAME PID: ESB dedup drops it if the first copy landed.
+			if (!rx && m.isHaptic && m.rid >= 0x86 && m.rid <= 0x89)
+				rfConnTx(ch, s1, p, plen, 400);
 		}
 	}
 	return have; // true = a relay frame went out this cycle (its reply is harvested as input, above)

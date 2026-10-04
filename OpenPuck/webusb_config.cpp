@@ -1449,7 +1449,7 @@ void webusbPoll()
 				// the per-type cfg range (40..75) and the pad->stick fields (80..87).
 				case 88:
 					g_audioHapticStyle =
-						v > AUDIO_STYLE_SPLIT ?
+						v > AUDIO_STYLE_WAVE ?
 							AUDIO_STYLE_TONE :
 							v;
 					break;

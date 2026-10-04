@@ -170,6 +170,16 @@ bool hapticAudioRumble(uint16_t lowFreq, uint16_t highFreq, uint8_t slot = 0);
 // a stream that stops refreshing it ends on its own; gainDb -128 cuts a playing tone within ~25-50 ms.
 bool hapticAudioTone(uint8_t side, int8_t gainDb, uint16_t freqHz,
 		     uint16_t durMs, uint8_t slot = 0);
+// PCM haptic stream (OUTPUT 0x86 mode, 0x88 stereo frame; measured on the controller's IMU). Each frame
+// carries PCM_SAMPLES u-law samples per side at PCM_RATE_HZ; stereo L/R drive the two actuators. The
+// controller buffers ~40 ms before playing, rides out 120 ms of jitter, and falls silent on its own when
+// frames stop. hapticPcmStart sets the format (it persists, so it is re-sent periodically, not torn down).
+#define PCM_SAMPLES 31u
+#define PCM_RATE_HZ 4000u
+void hapticPcmStart(uint8_t slot);
+bool hapticPcmSend(uint8_t slot, const uint8_t *left, const uint8_t *right);
+// G.711 u-law byte for x in [-1, 1] (clamped).
+uint8_t hapticUlaw(float x);
 void hapticSwitchHd(uint8_t slot, uint16_t leftLow, uint16_t leftHigh,
 		    uint16_t rightLow, uint16_t rightHigh);
 
@@ -195,6 +205,8 @@ bool rfConnFlushRelay(uint8_t ch, uint8_t s1);
 // times a relay-ring drain hit its iteration cap (head/tail desync or corruption) -- non-zero means we caught
 // and recovered from what would otherwise be an IRQ-off watchdog hang. Surfaced on the WebUSB panel.
 extern volatile uint16_t g_ringFault;
+// relay entries evicted unsent because a slot's ring was full (serial "# stat" drop=)
+extern volatile uint16_t g_relayDrops;
 
 // boot reset: clear relay/active flags, arm the reconnect block
 void hapticInit();
