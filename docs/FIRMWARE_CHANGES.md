@@ -177,6 +177,10 @@ ATTRIB_CONNECTION_INTERVAL_IN_US:
     `F2`), and answers `F3 [ver]`.
   - The puck stores `F3` payload[1] (0 or 1) as the slot's protocol version; that is the byte
     ReversePuck must keep nonzero.
+- **OUTPUT reports `0x87`–`0x89` are haptic sample streams**, not settings, in every controller build we
+  checked: `0x87 [target][samples]` streams to one actuator set (trackpads or grips), `0x88` is a stereo
+  grip stream, and `0x89` is a length-prefixed `0x87`. The real puck forwards every OUTPUT report up to
+  64 bytes. OpenPuck dropped these three; it now relays them with the full 63-byte payload.
 - **Report `0x42` bits 28/29** are the grip-touch bits (set from the pad/grip sensor events), not
   always-on status bits.
 

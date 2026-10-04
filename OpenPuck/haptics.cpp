@@ -35,7 +35,7 @@ uint8_t g_suspendOff = 1;
 uint16_t g_rumbleScale = RUMBLE_SCALE_PCT;
 uint8_t g_rumbleStyle = RUMBLE_STYLE_NORMAL;
 uint16_t g_hdPadScale = 100;
-// Master enable for the puck->controller haptic RELAY (Steam OUTPUT reports 0x80-0x86, incl. the trackpad
+// Master enable for the puck->controller haptic RELAY (Steam OUTPUT reports 0x80-0x89, incl. the trackpad
 // texture-feedback stream Steam pushes WHILE you drag). Each relayed frame is an extra TX that precedes the
 // E3 poll and steals its reply window, and the controller must stop to process it -- both can depress the
 // input rate exactly during a drag. On by default; console "HR" toggles it so the drag-smoothness cost of
@@ -133,8 +133,9 @@ bool relayPending()
 bool relayEnqueue(uint8_t rid, const uint8_t *payload, uint8_t plen,
 		  bool isHaptic, uint8_t slot, bool expectReply)
 {
-	if (plen > RELAY_MAXP)
-		plen = RELAY_MAXP;
+	uint8_t cap = isHaptic ? RELAY_MAXP : RELAY_CMD_MAXP;
+	if (plen > cap)
+		plen = cap;
 	if (slot != 0xFF && slot >= NSLOT)
 		return false;
 	uint32_t pm = __get_PRIMASK();
@@ -887,7 +888,7 @@ bool rfConnFlushRelay(uint8_t ch, uint8_t s1)
 				rl = RELAY_MAXP;
 			// On-air sub-TLV framing. CONFIRMED from real puck<->controller sniffs: a command LANDS on
 			// the controller only with the type-01 + inner-len form E3 [2+rl][01][rid][innerlen][data];
-			// the legacy form E3 [1+rl][05][rid][data] makes the controller DISCARD any 0x87+ command.
+			// the form E3 [1+rl][05][rid][data] routes 0x87+ to the OUTPUT haptic sample streams instead.
 
 			// Same shape as the `[len][tag][value]` TLV grammar the F1 REPLY side
 			// already uses (tags 0x02/0x04/0x06, docs/PROTOCOL.md sec 7.3): read as len=1, tag=3,
