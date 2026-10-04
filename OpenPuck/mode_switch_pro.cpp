@@ -1035,15 +1035,12 @@ static void swDpadClickFeedback(uint8_t bond, uint32_t buttons)
 	held[bond] = clicks;
 	if (!g_swDpadHaptics || shortcutHeld(buttons) || haptic82Blocked(bond))
 		return;
-	uint8_t side = 0;
-	if ((pressed & TB_LPADC) && (buttons & TB_LPADT) &&
-	    g_padStick[0] >= PS_DPAD_TOUCH)
-		side |= 1;
-	if ((pressed & TB_RPADC) && (buttons & TB_RPADT) &&
-	    g_padStick[1] >= PS_DPAD_TOUCH)
-		side |= 2;
-	if (side) {
-		const uint8_t pulse[3] = { side, 2, 0xF7 };
+	bool left = (pressed & TB_LPADC) && (buttons & TB_LPADT) &&
+		    g_padStick[0] >= PS_DPAD_TOUCH;
+	bool right = (pressed & TB_RPADC) && (buttons & TB_RPADT) &&
+		     g_padStick[1] >= PS_DPAD_TOUCH;
+	if (left || right) {
+		const uint8_t pulse[3] = { hsidePads(left, right), 2, 0xF7 };
 		relayEnqueue(0x82, pulse, sizeof pulse, true, bond);
 	}
 }

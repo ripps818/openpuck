@@ -198,6 +198,28 @@ static inline float splitLow(Biquad *f, float x)
 	return y;
 }
 
+// Wave style anti-alias: 2nd-order Butterworth low-pass at 1.6 kHz (RBJ cookbook, fs 48 kHz, Q 0.7071) ahead of
+// the decimation to PCM_RATE_HZ.
+#define WAVE_B0 9.525750667e-03f
+#define WAVE_B1 1.905150133e-02f
+#define WAVE_A1 (-1.705550049f)
+#define WAVE_A2 0.743653052f
+
+static inline float waveLow(Biquad *f, float x)
+{
+	float y = WAVE_B0 * (x + f->x2) + WAVE_B1 * f->x1 - WAVE_A1 * f->y1 -
+		  WAVE_A2 * f->y2;
+	f->x2 = f->x1;
+	f->x1 = x;
+	f->y2 = f->y1;
+	f->y1 = y;
+	return y;
+}
+
+// Wave style: bond slots currently streaming (bit per slot) and the sample scale, set by ps5AudioTask.
+static volatile uint8_t s_waveMask = 0;
+static volatile float s_waveScale = 0;
+
 // Frequency is crossings per frame with signal, not per tick: a step starting late in a tick, or silence
 // after one, otherwise reads far too low. Stellar Blade's running steps then played at 40 Hz, where the
 // controller's IMU measured a quarter of the 125 Hz response.
@@ -223,6 +245,14 @@ static void processAudioSamples(const uint8_t *data, uint32_t len)
 	static int8_t s_signL = 1, s_signR = 1;
 	static Biquad s_lpL = {}, s_lpR = {};
 	bool split = g_audioHapticStyle == AUDIO_STYLE_SPLIT;
+	// wave style: decimation phase, fill of the frame being built, and that frame
+	static Biquad s_aaL = {}, s_aaR = {};
+	static uint8_t s_dec = 0, s_fill = 0;
+	static uint8_t s_pcmL[PCM_SAMPLES], s_pcmR[PCM_SAMPLES];
+	uint8_t waveMask = s_waveMask;
+	float waveScale = s_waveScale;
+	if (!waveMask)
+		s_fill = 0;
 
 	uint32_t num_frames = len / 8;
 	uint64_t sq_l = 0, sq_r = 0;
@@ -240,6 +270,20 @@ static void processAudioSamples(const uint8_t *data, uint32_t len)
 		hi_r += hr * hr;
 		zeroCross(split ? (int32_t)hl : s[2], &s_signL, &zc_l, &act_l);
 		zeroCross(split ? (int32_t)hr : s[3], &s_signR, &zc_r, &act_r);
+		if (!waveMask)
+			continue;
+		float al = waveLow(&s_aaL, s[2]), ar = waveLow(&s_aaR, s[3]);
+		if (++s_dec < 48000u / PCM_RATE_HZ)
+			continue;
+		s_dec = 0;
+		s_pcmL[s_fill] = hapticUlaw(al * waveScale);
+		s_pcmR[s_fill] = hapticUlaw(ar * waveScale);
+		if (++s_fill < PCM_SAMPLES)
+			continue;
+		s_fill = 0;
+		for (uint8_t b = 0; b < NSLOT; b++)
+			if (waveMask & (1u << b))
+				hapticPcmSend(b, s_pcmL, s_pcmR);
 	}
 
 	uint32_t pm = __get_PRIMASK();
@@ -456,6 +500,42 @@ static void toneUpdate(ToneSide *t, uint8_t side, uint16_t env, uint16_t ref,
 	t->sentMs = now;
 }
 
+// Wave style: stream while either channel is above the gate and for WAVE_HANG_MS after, so a short pause does
+// not pay the controller's ~40 ms pre-buffer again. The format is re-sent every WAVE_FMT_MS: it persists on the
+// controller, but one that power-cycled mid-stream comes back without it.
+#define WAVE_HANG_MS 300u
+#define WAVE_FMT_MS 1000u
+
+static void waveUpdate(bool active, uint16_t ref, uint16_t gain, uint32_t now)
+{
+	static bool s_on = false;
+	static uint32_t s_lastActive = 0, s_fmtMs[NSLOT] = {};
+	if (active) {
+		s_on = true;
+		s_lastActive = now;
+	} else if (s_on && now - s_lastActive >= WAVE_HANG_MS) {
+		s_on = false;
+	}
+	uint8_t mask = 0;
+	for (uint8_t u = 0; s_on && u < g_usbMountCount; u++) {
+		int bond = audioBond(u);
+		if (bond >= 0)
+			mask |= (uint8_t)(1u << bond);
+	}
+	for (uint8_t b = 0; b < NSLOT; b++) {
+		if (!(mask & (1u << b)))
+			continue;
+		if (!(s_waveMask & (1u << b)) ||
+		    now - s_fmtMs[b] >= WAVE_FMT_MS) {
+			hapticPcmStart(b);
+			s_fmtMs[b] = now;
+		}
+	}
+	// samples are int16 against an envelope reference in the same units: ref plays at full scale
+	s_waveScale = gain / (100.0f * ref);
+	s_waveMask = mask;
+}
+
 void ps5AudioTask(void)
 {
 	static uint16_t s_envL = 0, s_envR = 0;
@@ -486,7 +566,8 @@ void ps5AudioTask(void)
 
 	bool tone = g_audioHapticStyle == AUDIO_STYLE_TONE;
 	bool split = g_audioHapticStyle == AUDIO_STYLE_SPLIT;
-	uint16_t gate = tone ? TONE_GATE : HAPTIC_GATE;
+	bool wave = g_audioHapticStyle == AUDIO_STYLE_WAVE;
+	uint16_t gate = (tone || wave) ? TONE_GATE : HAPTIC_GATE;
 	uint16_t envL = hapticEnvelope(hapticLevel(sqL, frames), &s_envL, gate);
 	uint16_t envR = hapticEnvelope(hapticLevel(sqR, frames), &s_envR, gate);
 	// Split style: below SPLIT_HZ drives the rumble, the rest the tones, each with that output's gate.
@@ -509,8 +590,9 @@ void ps5AudioTask(void)
 		envL = envR = loL = loR = hiL = hiR = 0;
 	uint16_t toneL = tone ? envL : split ? hiL : 0;
 	uint16_t toneR = tone ? envR : split ? hiR : 0;
-	uint16_t rumL = tone ? 0 : split ? loL : envL;
-	uint16_t rumR = tone ? 0 : split ? loR : envR;
+	uint16_t rumL = (tone || wave) ? 0 : split ? loL : envL;
+	uint16_t rumR = (tone || wave) ? 0 : split ? loR : envR;
+	waveUpdate(wave && (envL || envR), ref, gain, now);
 
 	// A style that stops using an output stops whatever it left playing (a tone cuts once; a rumble stops below).
 	toneUpdate(&s_toneL, 0, toneL, ref, gain, zcL, actL, now);

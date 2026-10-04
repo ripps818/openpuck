@@ -8,9 +8,9 @@
 - Can you change modes via the chords? (back4 + A/B/X/Y **and** back4 + each D-pad direction; the chorded
   press must not reach the game, and a D-pad reassignment made in the panel must take effect)
 - Can you change modes via webusb?
-- Does rumble still work in the translated modes, and do the panel's Rumble style/strength settings
-  change how it feels? (heavy vs light drive different motors, so they must feel clearly different;
-  the Test rumble button must buzz and then stop on its own)
+- Does rumble still work in the translated modes, and does each mode's Grip rumble strength (Button
+  mapping) change how strong it feels? Switch Pro mode must play HD rumble (tones that change pitch
+  with the game), the other modes normal rumble. The Test rumble button must buzz and then stop on its own.
 - Do the modes work as expected (including gyro in gyro modes)
 - Is signal quality shown?
 - Is battery level shown and correct?

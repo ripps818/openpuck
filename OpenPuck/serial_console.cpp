@@ -90,7 +90,7 @@ void serialConsolePoll()
 			} else if (!strncmp(line, "RS", 2) &&
 				   (line[2] >= '0' && line[2] <= '9')) {
 				// "RS<pct>": host-rumble strength as a percent of the amplitude the host asked
-				// for. 200 = the shipped default (double). Persisted.
+				// for, for the active type. 200 = the shipped default (double). Persisted.
 				long p = atol(line + 2);
 				if (p < (long)RUMBLE_SCALE_MIN)
 					p = RUMBLE_SCALE_MIN;
@@ -98,22 +98,18 @@ void serialConsolePoll()
 					p = RUMBLE_SCALE_MAX;
 				g_rumbleScale =
 					(uint16_t)(p & ~1L); // stored as pct/2
+				rumbleStoreActive();
 				saveCfg();
 				Serial.printf("# rumble strength -> %u%%\n",
 					      g_rumbleScale);
 			} else if (!strncmp(line, "RY", 2) &&
 				   (line[2] >= '0' && line[2] <= '9')) {
-				// "RY<n>": host-rumble style, see RUMBLE_STYLE_* in haptics.h. Persisted.
+				// "RY<n>": diagnostic host-rumble style override (RUMBLE_STYLE_* in haptics.h). Not saved: the
+				// style follows the mode and returns to it on the next settings change or reboot.
 				static const char *const RY_NAME[] = {
-					"normal",
-					"mono",
-					"heavy",
-					"light",
-					"swap",
-					"punchy",
-					"soft",
-					"HD emulation",
-					"HD emulation - Punchy grips"
+					"normal", "mono",     "heavy",
+					"light",  "swap",     "punchy",
+					"soft",	  "(unused)", "HD emulation"
 				};
 				long n = atol(line + 2);
 				if (n < 0)
@@ -121,7 +117,6 @@ void serialConsolePoll()
 				else if (n > (long)RUMBLE_STYLE_SOFT)
 					n = RUMBLE_STYLE_HD;
 				g_rumbleStyle = (uint8_t)n;
-				saveCfg();
 				Serial.printf("# rumble style -> %u (%s)\n",
 					      g_rumbleStyle,
 					      RY_NAME[g_rumbleStyle]);

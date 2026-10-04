@@ -110,7 +110,10 @@ static bool boardCommand(uint8_t op)
 //                [local: p[197] audioHapticGain (field 30, percent/2; 0 = auto); p[198] audioHaptics (field 31);
 //                 p[199..204] LED config (fields 32,33,90,91,93,94); p[205] audioHapticStyle (field 88,
 //                 AUDIO_STYLE_* in config.h)]
-#define WB_PAYLEN 204
+//                [v24: p[206] trigger deadzone % (field 102); p[207] trigger full-press % (field 103)]
+//                [v25: p[208..211] zero (unused); p[212..215] per-type grip strength pct/2 (fields 108..111);
+//                 p[53] / p[195] report the active type's strength and the automatic rumble style]
+#define WB_PAYLEN 214
 // The blob send is drop-on-full (never blocks loop), so the vendor TX FIFO MUST be able to hold a whole blob
 // -- otherwise tud_vendor_write_available() never reaches the frame size and EVERY frame is dropped (blank
 // panel / stale mappings). The Makefile sets -DCFG_TUD_VENDOR_TX_BUFSIZE=256; guard it here so a build without
@@ -140,7 +143,9 @@ static void webusbSendBlob()
 
 	// clang-format off
 	// protocol version
-	// (23 = +0xAE Switch Pro profiles / HD rumble / shortcut frame (op 0x27), fields 190..252, op 0x28 save;
+	// (25 = +per-type grip strength (fields 108..111, blob p[212..215]); rumble style automatic;
+	// 24 = +trigger deadzone / full-press point (fields 102/103, blob p[206..207]);
+	// 23 = +0xAE Switch Pro profiles / HD rumble / shortcut frame (op 0x27), fields 190..252, op 0x28 save;
 	// 22 = +DualSense audio haptics style (field 88, blob p[198]);
 	// 21 = +rumble style (field 39, blob p[195]) and the REVIVED rumble-strength field 22 at blob p[53], 
 	// now carrying percent/2; 
@@ -157,7 +162,7 @@ static void webusbSendBlob()
 	// cfg; 8 = +per-slot link status; 7 = +raw accel; 
 	// 6 = +swPro120/gyroScale)
 	// clang-format on
-	p[2] = 23;
+	p[2] = 25;
 	p[3] = g_usbMode;
 	p[4] = (uint8_t)g_mDiv;
 	p[5] = (uint8_t)g_mFric;
@@ -354,6 +359,11 @@ static void webusbSendBlob()
 	p[203] = g_ledModeB;
 	p[204] = g_ledActiveLevelB;
 	p[205] = g_audioHapticStyle;
+	p[206] = g_trigInner;
+	p[207] = g_trigOuter;
+	// p[208..211] (per-type rumble style) stay zero: the style follows the mode
+	for (uint8_t et = 0; et < ET_COUNT; et++)
+		p[212 + et] = (uint8_t)(g_typeRumbleScale[et] / 2);
 	// CRITICAL: usb_web.write() SPINS (`while (remain && _connected) yield();`) until the IN FIFO drains or the
 	// panel disconnects. If the panel holds the WebUSB interface open but stops reading its IN endpoint -- a
 	// backgrounded tab, or the host briefly not servicing transferIn under load -- the FIFO never empties and
@@ -368,9 +378,10 @@ static void webusbSendBlob()
 	}
 }
 
-// Switch Pro profiles / HD rumble / shortcut settings frame (protocol v23, op 0x27):
-//   [0xAE][len][ver=1][SwProfiles 37][swDpadHaptics][storageState][hdPadScale/2][rumblePresets 3]
-//   [rumbleSlot][swQamSelect][shortcutFlags][strengthSteps/2 2x3][strengthSlots 2]   (len = 55)
+// Switch Pro / HD rumble / shortcut settings frame (protocol v23, op 0x27):
+//   [0xAE][len][ver=1][37 zero bytes, ex Switch Pro profiles][swDpadHaptics][storageState][hdPadScale/2]
+//   [4 zero bytes, ex rumble presets + slot][swQamSelect][shortcutFlags][8 zero bytes, ex strength steps + slots]
+//   (len = 55)
 #define WB_SW_PAYLEN 55
 static void webusbSendSwitchFrame()
 {
@@ -378,19 +389,14 @@ static void webusbSendSwitchFrame()
 	p[0] = 0xAE;
 	p[1] = WB_SW_PAYLEN;
 	p[2] = 1;
-	memcpy(p + 3, &g_swProfiles, sizeof g_swProfiles);
+	memset(p + 3, 0, 37);
 	p[40] = g_swDpadHaptics;
 	p[41] = g_storageState;
 	p[42] = (uint8_t)(g_hdPadScale / 2);
-	memcpy(p + 43, g_rumblePresets, 3);
-	p[46] = g_rumbleSlot;
+	memset(p + 43, 0, 4); // ex rumble presets + slot
 	p[47] = g_swQamSelect;
 	p[48] = g_shortcutFlags;
-	for (uint8_t w = 0; w < 2; w++) {
-		for (uint8_t i = 0; i < 3; i++)
-			p[49 + w * 3 + i] = g_strengthSteps[w][i] / 2;
-		p[55 + w] = g_strengthSlots[w];
-	}
+	memset(p + 49, 0, 8); // ex strength steps + slots
 	// drop-on-full, same anti-hang rule as the status blob
 	if (tud_vendor_write_available() >= sizeof p) {
 		usb_web.write(p, sizeof p);
@@ -1185,33 +1191,9 @@ void webusbPoll()
 					n -= need;
 					continue;
 				}
-				if ((f >= 190 && f <= 216) ||
-				    (f >= 218 && f < 230)) {
-					if (f == 190 && v <= 1) {
-						g_swProfiles.enabled = v;
-						g_shortcutFlags =
-							(g_shortcutFlags &
-							 ~SHORTCUT_PROFILES) |
-							(v ? SHORTCUT_PROFILES :
-							     0);
-					} else if (f == 191 &&
-						   v < SW_PROFILE_COUNT)
-						g_swProfiles.active = v;
-					else if (f >= 194 && f < 210 && v <= 20)
-						g_swProfiles
-							.back[(f - 194) / 4]
-							     [(f - 194) % 4] =
-							v;
-					else if (f >= 218 && f < 230 && v <= 20)
-						g_swProfiles
-							.extraBack[(f - 218) / 4]
-								  [(f - 218) %
-								   4] = v;
-					else if (f >= 210 && f <= 216 &&
-						 v <= SW_PROFILE_COUNT)
-						g_swProfiles.chord[f - 210] = v;
-					applyActiveType();
-					saveCfg();
+				// fields 190..229 were the Switch Pro profiles (removed): ignored, but still answered
+				// so an older panel waiting on the status reply doesn't stall
+				if (f >= 190 && f < 230) {
 					g_blobRequest = true;
 					memmove(buf, buf + need, n - need);
 					n -= need;
@@ -1347,6 +1329,33 @@ void webusbPoll()
 					else if (pct > RUMBLE_SCALE_MAX)
 						pct = RUMBLE_SCALE_MAX;
 					g_rumbleScale = pct;
+					rumbleStoreActive();
+					break;
+				}
+
+				// Per-type grip strength (108 + et, percent/2). Protocol v25; 22 still edits the active
+				// type. 104..107 (per-type rumble style) are ignored: the style follows the mode.
+				case 104:
+				case 105:
+				case 106:
+				case 107:
+					break;
+				// HD rumble grip renderer A/B (0 tones, 1 PCM). Hidden: not in the panel.
+				case 112:
+					g_hdPcm = v ? 1 : 0;
+					break;
+				case 108:
+				case 109:
+				case 110:
+				case 111: {
+					uint16_t pct = (uint16_t)v * 2;
+					g_typeRumbleScale[f - 108] =
+						pct < RUMBLE_SCALE_MIN ?
+							RUMBLE_SCALE_MIN :
+						pct > RUMBLE_SCALE_MAX ?
+							RUMBLE_SCALE_MAX :
+							pct;
+					applyActiveType();
 					break;
 				}
 
@@ -1355,81 +1364,29 @@ void webusbPoll()
 					g_hdPadScale =
 						v > 250 ? 500 : (uint16_t)v * 2;
 					break;
-				case 240:
-					if (v <= 63) {
-						bool entering =
-							!(g_shortcutFlags &
-							  SHORTCUT_PROFILES) &&
-							(v & SHORTCUT_PROFILES);
-						g_shortcutFlags = v;
-						g_swProfiles.enabled = !!(
-							v & SHORTCUT_PROFILES);
-						bool assigned = false;
-						for (uint8_t i = 0; i < 7; i++)
-							assigned |=
-								g_swProfiles
-									.chord[i] !=
-								0;
-						if (entering && !assigned)
-							for (uint8_t i = 0;
-							     i < 7; i++)
-								g_swProfiles
-									.chord[i] =
-									i + 1;
-						applyActiveType();
-					}
+				case 240: // bits 1/2 were the removed profiles / D-pad haptic behaviors
+					if (v <= 63)
+						g_shortcutFlags = v & ~6u;
 					break;
+				// 241..252 were the removed D-pad haptic shortcut presets / steps / slots: ignored
 				case 241:
 				case 242:
 				case 243:
-					if (v <= 6 || v == 8) {
-						g_rumblePresets[f - 241] = v;
-						if (g_rumbleSlot < 3 &&
-						    g_rumblePresets[g_rumbleSlot] !=
-							    g_rumbleStyle)
-							g_rumbleSlot = 0xFF;
-					}
-					break;
 				case 244:
 				case 245:
 				case 246:
 				case 247:
 				case 248:
 				case 249:
-					if (v <= 250) {
-						uint8_t w = (f - 244) / 3;
-						if (w == 1 && v < 5)
-							break;
-						g_strengthSteps[w][(f - 244) %
-								   3] = v * 2;
-						g_strengthSlots[w] = 0xFF;
-					}
-					break;
 				case 250:
-					if (v < 3 &&
-					    g_rumblePresets[v] == g_rumbleStyle)
-						g_rumbleSlot = v;
-					break;
 				case 251:
 				case 252:
-					if (v < 3 &&
-					    g_strengthSteps[f - 251][v] ==
-						    (f == 251 ? g_hdPadScale :
-								g_rumbleScale))
-						g_strengthSlots[f - 251] = v;
 					break;
 				case 239:
 					if (v <= 20)
 						g_swQamSelect = v;
 					break;
-				case 39:
-					g_rumbleStyle = v <= 6 ? v : 8;
-					g_rumbleSlot = 0xFF;
-					for (uint8_t i = 0; i < 3; i++)
-						if (g_rumblePresets[i] ==
-							    g_rumbleStyle &&
-						    g_rumbleSlot == 0xFF)
-							g_rumbleSlot = i;
+				case 39: // rumble style: no longer a setting (it follows the mode)
 					break;
 
 				// Switch Pro gyro mapping: 0 = corrected (default), 1 = legacy
@@ -1449,9 +1406,20 @@ void webusbPoll()
 				// the per-type cfg range (40..75) and the pad->stick fields (80..87).
 				case 88:
 					g_audioHapticStyle =
-						v > AUDIO_STYLE_SPLIT ?
-							AUDIO_STYLE_TONE :
+						v > AUDIO_STYLE_WAVE ?
+							AUDIO_STYLE_WAVE :
 							v;
+					break;
+
+				// Trigger deadzone / full-press point, percent (protocol v24). The pair stays ordered:
+				// an edit that would cross the other value is refused.
+				case 102:
+					if (v < g_trigOuter)
+						g_trigInner = v;
+					break;
+				case 103:
+					if (v > g_trigInner && v <= 100)
+						g_trigOuter = v;
 					break;
 
 				// DualSense audio-driven haptic gain (percent / 2, 10-500%; 0 = auto)

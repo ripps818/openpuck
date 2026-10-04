@@ -76,7 +76,7 @@ Note: to use the Switch mode on a real Switch you'll need to [enable the pro con
 
 ### Enhancements in this Fork
 Compared to upstream OpenPuck, this fork adds:
-- **DualSense 4-Channel USB Audio & Voice-Coil Haptics:** DualSense mode presents the same USB audio function as a real DualSense (4-channel output, silent 2-channel mic). Channels 3 & 4 (the haptic tracks) are turned into Steam Controller haptic commands in real time and sent over the 2.4GHz RF link, in one of three styles: rumble, tone, or split (low frequencies as rumble, the rest as tones).
+- **DualSense 4-Channel USB Audio & Voice-Coil Haptics:** DualSense mode presents the same USB audio function as a real DualSense (4-channel output, silent 2-channel mic). Channels 3 & 4 (the haptic tracks) are turned into Steam Controller haptic commands in real time and sent over the 2.4GHz RF link, in one of four styles: rumble, tone, split (low frequencies as rumble, the rest as tones), or wave (the haptic waveform itself, streamed as PCM).
 - **Enhanced PlayStation HID & Feature Reports:** A byte-for-byte copy of a real DualSense's report descriptor, and Feature Reports `0x03`, `0x08`, `0x09` (pairing & MAC), `0x0A`, `0x20` (accurate hardware revision and firmware version fields), `0x21`, and `0x22`, plus `GET_REPORT(0x01)` support for DirectInput game polling.
 - **Touchpad Toggle Chord:** Hold all 4 back buttons (`Back-4`) and click either trackpad (`LPADC` or `RPADC`) to toggle touchpad reporting on/off on the fly (high buzz = enabled, low buzz = disabled). Useful to prevent accidental trackpad touches when gripping in stick-only mode.
 

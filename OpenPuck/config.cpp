@@ -58,109 +58,22 @@ uint8_t g_padHaptics = 1;
 uint8_t g_rumble = 1;
 uint8_t g_audioHaptics = 1;
 uint16_t g_audioHapticGain = 0;
-uint8_t g_audioHapticStyle = AUDIO_STYLE_TONE;
+uint8_t g_audioHapticStyle = AUDIO_STYLE_WAVE;
+uint8_t g_trigInner = 0, g_trigOuter = 100;
 uint8_t g_ledBright = 0;
 
-SwProfiles g_swProfiles = {};
 uint8_t g_swDpadHaptics = 1;
 uint8_t g_swQamSelect = 18;
 // Default = the original shortcut arrangement: all four back buttons, controller modes, no D-pad haptic
 // shortcuts, no confirmation pulses, no Quick Access + Select capture.
 uint8_t g_shortcutFlags = SHORTCUT_ENABLED;
-uint8_t g_rumblePresets[3] = { 5, 0, 8 }, g_rumbleSlot = 2;
-uint16_t g_strengthSteps[2][3] = { { 200, 300, 500 }, { 200, 300, 500 } };
-uint8_t g_strengthSlots[2] = { 0xFF, 0xFF };
+uint16_t g_typeRumbleScale[ET_COUNT] = { RUMBLE_SCALE_PCT, RUMBLE_SCALE_PCT,
+					 RUMBLE_SCALE_PCT, RUMBLE_SCALE_PCT };
 
-uint8_t *swProfileBack(uint8_t profile)
+void rumbleStoreActive()
 {
-	return profile < 4 ? g_swProfiles.back[profile] :
-			     g_swProfiles.extraBack[profile - 4];
-}
-
-bool rumbleChord(uint8_t slot, uint32_t buttons)
-{
-	static uint8_t count[NSLOT] = {}, held[NSLOT] = {};
-	if (slot >= NSLOT)
-		return false;
-	const uint32_t keys = TB_A | TB_B | TB_X | TB_Y | TB_DLF | TB_DUP |
-			      TB_DRT | TB_DDN;
-	uint32_t key = buttons & keys;
-	uint8_t choice = key == TB_DLF ? 1 :
-			 key == TB_DUP ? 2 :
-			 key == TB_DDN ? 3 :
-					 0;
-	if (!shortcutHeld(buttons) || !(g_shortcutFlags & SHORTCUT_HAPTICS) ||
-	    (buttons & TB_MENU) || !choice) {
-		count[slot] = held[slot] = 0;
-		return false;
-	}
-	if (held[slot] != choice) {
-		held[slot] = choice;
-		count[slot] = 0;
-	}
-	if (count[slot] < 12 && ++count[slot] == 12) {
-		uint8_t pulses;
-		if (choice == 1) {
-			g_rumbleSlot =
-				g_rumbleSlot < 3 ? (g_rumbleSlot + 1) % 3 : 0;
-			g_rumbleStyle = g_rumblePresets[g_rumbleSlot];
-			pulses = g_rumbleSlot + 1;
-		} else {
-			uint8_t which = choice - 2;
-			uint16_t &strength = which == 0 ? g_hdPadScale :
-							  g_rumbleScale;
-			uint8_t &index = g_strengthSlots[which];
-			if (index >= 3 ||
-			    g_strengthSteps[which][index] != strength) {
-				index = 0xFF;
-				for (uint8_t i = 0; i < 3; i++)
-					if (g_strengthSteps[which][i] ==
-						    strength &&
-					    index == 0xFF)
-						index = i;
-			}
-			index = index < 3 ? (index + 1) % 3 : 0;
-			strength = g_strengthSteps[which][index];
-			pulses = index + 1;
-		}
-		hapticShortcutFeedback(slot, pulses);
-	}
-	return true;
-}
-
-bool swProfileChord(uint8_t slot, uint32_t buttons)
-{
-	static uint8_t held[NSLOT] = {}, count[NSLOT] = {};
-	const uint32_t keys[7] = { TB_B,   TB_X,   TB_Y,  TB_DLF,
-				   TB_DUP, TB_DRT, TB_DDN };
-	if (slot >= NSLOT)
-		return false;
-	uint8_t target = 0;
-	if ((g_shortcutFlags & SHORTCUT_PROFILES) && g_swProfiles.enabled &&
-	    shortcutHeld(buttons) && !(buttons & (TB_A | TB_MENU))) {
-		for (uint8_t i = 0; i < 7; i++) {
-			if ((!(g_shortcutFlags & SHORTCUT_HAPTICS) ||
-			     (i != 3 && i != 4 && i != 6)) &&
-			    (buttons & keys[i])) {
-				target = g_swProfiles.chord[i];
-				break;
-			}
-		}
-	}
-	if (!target) {
-		held[slot] = count[slot] = 0;
-		return false;
-	}
-	if (target != held[slot]) {
-		held[slot] = target;
-		count[slot] = 0;
-	}
-	if (count[slot] < 12 && ++count[slot] == 12) {
-		g_swProfiles.active = target - 1;
-		applyActiveType();
-		shortcutModeRequest(MODE_SW_PRO, slot);
-	}
-	return true;
+	if (g_etype < ET_COUNT)
+		g_typeRumbleScale[g_etype] = g_rumbleScale;
 }
 
 void captureFeedbackChord(uint8_t slot, uint32_t buttons)
@@ -189,6 +102,7 @@ void applyActiveType()
 		g_abSwap = 0;
 		g_padHaptics = 1;
 		g_rumble = 1;
+		g_rumbleStyle = RUMBLE_STYLE_NORMAL;
 		g_ledBright = 0;
 		g_padStick[0] = g_padStick[1] = PS_OFF;
 		return;
@@ -196,13 +110,14 @@ void applyActiveType()
 	const TypeCfg &t = g_type[g_etype];
 	for (int i = 0; i < 4; i++)
 		g_back[i] = t.back[i];
-	if (g_usbMode == MODE_SW_PRO && g_swProfiles.enabled)
-		for (int i = 0; i < 4; i++)
-			g_back[i] = swProfileBack(g_swProfiles.active)[i];
 	g_qamMap = t.qamMap;
 	g_abSwap = t.abSwap;
 	g_padHaptics = t.padHaptics;
 	g_rumble = t.rumble;
+	// HD rumble where the mode supports it (Switch Pro), plain rumble everywhere else
+	g_rumbleStyle = g_usbMode == MODE_SW_PRO ? RUMBLE_STYLE_HD :
+						   RUMBLE_STYLE_NORMAL;
+	g_rumbleScale = g_typeRumbleScale[g_etype];
 	g_ledBright = t.ledBright;
 	g_padStick[0] = g_padStickCfg[g_etype][0];
 	g_padStick[1] = g_padStickCfg[g_etype][1];
@@ -239,14 +154,19 @@ struct Cfg {
 	uint8_t suspendOff;
 	uint8_t ext[CFG_EXT_STORAGE_BYTES];
 	// PR #303 tail: Switch Pro profiles, HD rumble and shortcut settings.
-	SwProfiles swProfiles;
+	// ex Switch Pro back-button profiles (removed); kept so the fields after it keep their offsets
+	uint8_t reservedProfiles[37];
 	uint8_t swDpadHaptics;
 	uint8_t hdPadScale2, reservedRumbleStyles[2], reservedWaveform;
 	uint8_t reservedWavePresets[2];
 	uint8_t reservedWaveThird, reservedWaveSlot;
 	uint8_t swQamSelect;
-	uint8_t shortcutFlags, rumblePresets[3], strengthSteps[2][3];
-	uint8_t strengthSlots[2], rumbleSlot;
+	uint8_t shortcutFlags;
+	// ex D-pad haptic shortcut rumble presets / strength steps / slots (removed); kept for the layout
+	uint8_t reservedShortcutRumble[12];
+	// per-type grip strength (pct/2); 0xFF (older file) -> the legacy global value above. The byte before
+	// each was a per-type rumble style, now automatic.
+	uint8_t reservedTypeRumbleStyle[ET_COUNT], typeRumbleScale2[ET_COUNT];
 }; // rsvd0 = ex-padSmooth, now the one-shot debug-CDC arm
 
 // Shortest cfg.bin we still accept: the layout as of CFG_MAGIC 0xCF, i.e. everything before the appended tail.
@@ -275,6 +195,9 @@ void saveCfg()
 	cfgExtWrite(3u, (uint8_t)(g_audioHapticGain / 2));
 	cfgExtWrite(4u, g_audioHaptics);
 	cfgExtWrite(11u, g_audioHapticStyle);
+	cfgExtWrite(12u, g_trigInner);
+	cfgExtWrite(13u, g_trigOuter);
+	cfgExtWrite(14u, g_hdPcm);
 	cfgExtWrite(5u, g_ledMode);
 	cfgExtWrite(6u, g_ledPinA);
 	cfgExtWrite(7u, g_ledPinB);
@@ -301,7 +224,7 @@ void saveCfg()
 		  g_rumbleStyle,
 		  g_suspendOff,
 		  {},
-		  g_swProfiles,
+		  {},
 		  g_swDpadHaptics,
 		  (uint8_t)(g_hdPadScale / 2),
 		  { 0xFF, 0xFF },
@@ -310,47 +233,15 @@ void saveCfg()
 		  0xFF,
 		  0xFF,
 		  g_swQamSelect,
-		  g_shortcutFlags,
-		  { g_rumblePresets[0], g_rumblePresets[1],
-		    g_rumblePresets[2] },
-		  {},
-		  { g_strengthSlots[0], g_strengthSlots[1] },
-		  g_rumbleSlot };
+		  g_shortcutFlags };
 	memcpy(c.ext, g_cfgExt, sizeof c.ext);
 	for (int i = 0; i < ET_COUNT; i++) {
 		c.type[i] = g_type[i];
+		c.typeRumbleScale2[i] = (uint8_t)(g_typeRumbleScale[i] / 2);
 		c.padStick[i][0] = g_padStickCfg[i][0];
 		c.padStick[i][1] = g_padStickCfg[i][1];
 	}
-	for (uint8_t w = 0; w < 2; w++)
-		for (uint8_t i = 0; i < 3; i++)
-			c.strengthSteps[w][i] = g_strengthSteps[w][i] / 2;
 	storageWriteFile(CFG_FILE, "/cfg.tmp", (const uint8_t *)&c, sizeof c);
-}
-
-static void swProfilesLoad(const SwProfiles &saved, const uint8_t defaults[4])
-{
-	g_swProfiles = {};
-	for (int p = 0; p < SW_PROFILE_COUNT; p++)
-		memcpy(swProfileBack(p), defaults, 4);
-	if (saved.enabled > 1 || saved.active >= SW_PROFILE_COUNT)
-		return;
-	for (int p = 0; p < 4; p++)
-		for (int k = 0; k < 4; k++)
-			if (saved.back[p][k] > 20)
-				return;
-	for (int i = 0; i < 7; i++)
-		if (saved.chord[i] > SW_PROFILE_COUNT)
-			return;
-	// The prefix stays compatible with configs that lack extraBack.
-	memcpy(&g_swProfiles, &saved, 25);
-	bool extraValid = true;
-	for (int p = 0; p < 3; p++)
-		for (int k = 0; k < 4; k++)
-			if (saved.extraBack[p][k] > 20)
-				extraValid = false;
-	if (extraValid)
-		memcpy(g_swProfiles.extraBack, saved.extraBack, 12);
 }
 
 void loadCfg()
@@ -443,9 +334,7 @@ void loadCfg()
 					pct = RUMBLE_SCALE_MAX;
 				g_rumbleScale = pct;
 			}
-			// host-rumble style (0xFF = short pre-tail file -> keep the default)
-			if (c.rumbleStyle <= RUMBLE_STYLE_MAX)
-				g_rumbleStyle = c.rumbleStyle;
+			// c.rumbleStyle is ignored: the style follows the mode (applyActiveType)
 			// suspend power-off enable (0xFF = a cfg.bin predating this tail field -> keep the on default)
 			if (c.suspendOff <= 1)
 				g_suspendOff = c.suspendOff;
@@ -463,8 +352,17 @@ void loadCfg()
 			if (audioHapticsVal <= 1)
 				g_audioHaptics = audioHapticsVal;
 			const uint8_t audioStyleVal = cfgExtRead(11u);
-			if (audioStyleVal <= AUDIO_STYLE_SPLIT)
+			if (audioStyleVal <= AUDIO_STYLE_WAVE)
 				g_audioHapticStyle = audioStyleVal;
+			const uint8_t trigInnerVal = cfgExtRead(12u),
+				      trigOuterVal = cfgExtRead(13u);
+			if (trigInnerVal < trigOuterVal &&
+			    trigOuterVal <= 100) {
+				g_trigInner = trigInnerVal;
+				g_trigOuter = trigOuterVal;
+			}
+			if (cfgExtRead(14u) <= 1)
+				g_hdPcm = cfgExtRead(14u);
 
 			const uint8_t ledModeVal = cfgExtRead(5u);
 			if (ledModeVal <= LED_MODE_MAX)
@@ -495,47 +393,25 @@ void loadCfg()
 		}
 		f.close();
 	}
-	swProfilesLoad(c.swProfiles, g_type[ET_SWITCH].back);
 	if (c.swDpadHaptics <= 1)
 		g_swDpadHaptics = c.swDpadHaptics;
 	if (c.hdPadScale2 <= 250)
 		g_hdPadScale = (uint16_t)c.hdPadScale2 * 2;
-	if (g_rumbleStyle == 7)
-		g_rumbleStyle = 8;
+	// per-type grip strength; a file from before it seeds every type with the legacy global value
+	for (uint8_t et = 0; et < ET_COUNT; et++) {
+		uint8_t sc2 = c.typeRumbleScale2[et];
+		g_typeRumbleScale[et] = (sc2 * 2u >= RUMBLE_SCALE_MIN &&
+					 sc2 * 2u <= RUMBLE_SCALE_MAX) ?
+						(uint16_t)(sc2 * 2u) :
+						g_rumbleScale;
+	}
 	if (c.swQamSelect <= 20)
 		g_swQamSelect = c.swQamSelect;
+	// bits 1 and 2 were the removed profiles and D-pad haptic shortcut behaviors
 	if (c.shortcutFlags <= 63)
-		g_shortcutFlags = c.shortcutFlags;
+		g_shortcutFlags = c.shortcutFlags & ~6u;
 	else
-		g_shortcutFlags =
-			SHORTCUT_ENABLED |
-			(g_swProfiles.enabled ? SHORTCUT_PROFILES : 0);
-	for (uint8_t i = 0; i < 3; i++) {
-		if (c.rumblePresets[i] <= 6 || c.rumblePresets[i] == 8)
-			g_rumblePresets[i] = c.rumblePresets[i];
-		for (uint8_t w = 0; w < 2; w++)
-			if (c.strengthSteps[w][i] <= 250 &&
-			    (w == 0 || c.strengthSteps[w][i] >= 5))
-				g_strengthSteps[w][i] =
-					c.strengthSteps[w][i] * 2;
-	}
-	g_rumbleSlot = 0xFF;
-	for (uint8_t i = 0; i < 3; i++)
-		if (g_rumblePresets[i] == g_rumbleStyle && g_rumbleSlot == 0xFF)
-			g_rumbleSlot = i;
-	if (c.rumbleSlot < 3 && g_rumblePresets[c.rumbleSlot] == g_rumbleStyle)
-		g_rumbleSlot = c.rumbleSlot;
-	for (uint8_t w = 0; w < 2; w++) {
-		uint16_t strength = w == 0 ? g_hdPadScale : g_rumbleScale;
-		g_strengthSlots[w] = 0xFF;
-		for (uint8_t i = 0; i < 3; i++)
-			if (g_strengthSteps[w][i] == strength &&
-			    g_strengthSlots[w] == 0xFF)
-				g_strengthSlots[w] = i;
-		if (c.strengthSlots[w] < 3 &&
-		    g_strengthSteps[w][c.strengthSlots[w]] == strength)
-			g_strengthSlots[w] = c.strengthSlots[w];
-	}
+		g_shortcutFlags = SHORTCUT_ENABLED;
 	// resolve the active emulated type's settings into the live mirrors the mode builders read
 	applyActiveType();
 	// clear the one-shot so the NEXT cold boot reverts to the default/persist policy

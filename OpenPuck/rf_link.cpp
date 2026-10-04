@@ -3697,11 +3697,11 @@ uint8_t rfConnTx(uint8_t ch, uint8_t s1, const uint8_t *payload, uint8_t plen,
 						g_in[g_curSlot].ry =
 							(int16_t)s16off(rep,
 									14);
-						g_in[g_curSlot].lt =
-							trigU8(u16off(rep, 4));
+						g_in[g_curSlot].lt = trigShape(
+							trigU8(u16off(rep, 4)));
 						// for the Switch digital-trigger threshold
-						g_in[g_curSlot].rt =
-							trigU8(u16off(rep, 6));
+						g_in[g_curSlot].rt = trigShape(
+							trigU8(u16off(rep, 6)));
 						// Timestamped report 0x47 inserts unTrackpadTimestamp before the pad coordinates.
 						if (rep[0] ==
 						    OPK_TRITON_REPORT_STATE_TIMESTAMP) {
@@ -3946,14 +3946,7 @@ uint8_t rfConnTx(uint8_t ch, uint8_t s1, const uint8_t *payload, uint8_t plen,
 					captureFeedbackChord(
 						g_curSlot,
 						g_in[g_curSlot].buttons);
-					bool rumbleHandled = rumbleChord(
-						g_curSlot,
-						g_in[g_curSlot].buttons);
-					bool profileHandled = swProfileChord(
-						g_curSlot,
-						g_in[g_curSlot].buttons);
-					// Modifier + trackpad click toggles the touchpad, independent of the profile/mode
-					// shortcut behavior.
+					// Modifier + trackpad click toggles the touchpad, independent of the mode shortcuts.
 					if (shortcutHeld(
 						    g_in[g_curSlot].buttons) &&
 					    (g_in[g_curSlot].buttons &
@@ -3975,11 +3968,7 @@ uint8_t rfConnTx(uint8_t ch, uint8_t s1, const uint8_t *payload, uint8_t plen,
 					} else {
 						chPadLatched[g_curSlot] = false;
 					}
-					if (!profileHandled && !rumbleHandled &&
-					    (!(g_shortcutFlags &
-					       SHORTCUT_PROFILES) ||
-					     (g_in[g_curSlot].buttons & TB_A)) &&
-					    shortcutHeld(
+					if (shortcutHeld(
 						    g_in[g_curSlot].buttons) &&
 					    !(g_in[g_curSlot].buttons &
 					      TB_MENU)) {
@@ -3995,25 +3984,16 @@ uint8_t rfConnTx(uint8_t ch, uint8_t s1, const uint8_t *payload, uint8_t plen,
 						else if (g_in[g_curSlot].buttons &
 							 TB_Y)
 							want = g_chordBtn[2];
-						else if (!(g_shortcutFlags &
-							   SHORTCUT_HAPTICS) &&
-							 (g_in[g_curSlot]
-								  .buttons &
-							  TB_DLF))
+						else if (g_in[g_curSlot].buttons &
+							 TB_DLF)
 							want = g_chordDpad
 								[CHD_LEFT];
-						else if (!(g_shortcutFlags &
-							   SHORTCUT_HAPTICS) &&
-							 (g_in[g_curSlot]
-								  .buttons &
-							  TB_DUP))
+						else if (g_in[g_curSlot].buttons &
+							 TB_DUP)
 							want = g_chordDpad
 								[CHD_UP];
-						else if (!(g_shortcutFlags &
-							   SHORTCUT_HAPTICS) &&
-							 (g_in[g_curSlot]
-								  .buttons &
-							  TB_DDN))
+						else if (g_in[g_curSlot].buttons &
+							 TB_DDN)
 							want = g_chordDpad
 								[CHD_DOWN];
 						else if (g_in[g_curSlot].buttons &
@@ -4174,6 +4154,14 @@ static void rfConnStep()
 				(uint8_t)((((g_relayPid[k]++) & 3) << 1) | 1);
 			if (rfConnFlushRelay(ch, rs1))
 				g_stRelay[k]++;
+			// Backlog: a second frame this cycle. A wireless PCM stream (0x88, 8 kHz) needs ~258/s,
+			// above the 250 Hz cycle rate, so one per cycle starves it and the ring evicts samples.
+			if (relayPending()) {
+				rs1 = (uint8_t)((((g_relayPid[k]++) & 3) << 1) |
+						1);
+				if (rfConnFlushRelay(ch, rs1))
+					g_stRelay[k]++;
+			}
 		}
 		// per-slot PID cycle so each bonded controller's polls stay distinct
 		uint8_t pidv = g_pollPid[k]++;
@@ -4438,11 +4426,12 @@ void rfLinkTask()
 		// was the confirmed diagnostic-induced hang: the capture ended truncated mid-"# stat".)
 		if (Serial.availableForWrite() > 130)
 			Serial.printf(
-				"# stat polls=%lu/s F1=%lu/s new=%lu/s F3=%lu/s(v%d) e7b=%u crcfail=%lu noRx=%lu slot=%d\n",
+				"# stat polls=%lu/s F1=%lu/s new=%lu/s F3=%lu/s(v%d) e7b=%u crcfail=%lu noRx=%lu slot=%d relay=%lu/s drop=%u\n",
 				(unsigned long)tPoll, (unsigned long)tF1,
 				(unsigned long)tNew, (unsigned long)g_stF3,
 				(int8_t)g_connF3v, g_e7b, (unsigned long)tCrc,
-				(unsigned long)tNoRx, g_curSlot);
+				(unsigned long)tNoRx, g_curSlot,
+				(unsigned long)tRelay, (unsigned)g_relayDrops);
 		g_stF3 = 0;
 		g_chF1[0] = g_chF1[1] = g_chF1[2] = 0;
 		g_stMs = millis();
