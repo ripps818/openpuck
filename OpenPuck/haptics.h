@@ -189,11 +189,18 @@ static inline uint8_t hsidePads(bool left, bool right)
 // frames stop. hapticPcmStart sets the format (it persists, so it is re-sent periodically, not torn down).
 #define PCM_SAMPLES 31u
 #define PCM_RATE_HZ 4000u
-// HD rumble grip renderer under A/B test: 0 = 0x83 tones (low band per grip), 1 = both bands as 4 kHz PCM on the
-// grips (0x88; ~25 ms later onset, the real waveform). Hidden WebUSB field 112, persisted.
-extern uint8_t g_hdPcm;
 void hapticPcmStart(uint8_t slot);
-bool hapticPcmSend(uint8_t slot, const uint8_t *left, const uint8_t *right);
+// Sends the first n samples of each side (n <= PCM_SAMPLES).
+bool hapticPcmSend(uint8_t slot, const uint8_t *left, const uint8_t *right,
+		   uint8_t n);
+// Samples in frame `index` (0-based, saturating) of a new stream. The controller starts playing on the first
+// frame to arrive once it holds more than 16 ms (64 samples at 4 kHz), and that fill stays buffered for the rest
+// of the stream. Full frames cross at 93 samples and start at 124 (31 ms); a 3-sample third frame crosses at 65,
+// so playback starts at 96 (24 ms).
+static inline uint8_t hapticPcmFrameLen(uint8_t index)
+{
+	return index == 2 ? 3 : PCM_SAMPLES;
+}
 // G.711 u-law byte for x in [-1, 1] (clamped).
 uint8_t hapticUlaw(float x);
 void hapticSwitchHd(uint8_t slot, uint16_t leftLow, uint16_t leftHigh,

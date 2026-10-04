@@ -395,6 +395,17 @@ PCM streaming, measured with the controller's IMU over USB (2026-10-03):
   and 0-20 ms jitter without a dip, and falls silent by itself 60-85 ms later than a tone once frames stop
   (op 1 at the stop trims that to about 50 ms).
   The playback clock does not drift against 4 kHz pacing. `0x82` does not cut a stream.
+- Start and underrun, read from the controller firmware: each channel plays in 8 ms blocks (grips at 8 kHz, touchpads
+  at 4 kHz), and a stream starts on the first frame to arrive once more than two blocks (16 ms) of samples are
+  queued, at any format. That fill then stays queued for the whole stream. Running dry stops the stream, and the
+  next frames wait for 16 ms again. With 31-sample 4 kHz frames, playback starts at 124 samples (31 ms). OpenPuck
+  makes the third frame of each stream 3 samples (`n` = 3, same 63-byte layout) so it starts at 96 (24 ms).
+  Measured through OpenPuck in Steam mode (20 runs each, 2026-10-04): IMU onset median 61 ms with full frames,
+  54 ms with the short third frame.
+- The controller reports stream events as input report `0x44 [channel][event]` (channel 0 left, 1 right grip).
+  Event `0x02` = the stream ran dry and stopped; it arrives ~30-45 ms after the last frame. The firmware also
+  defines events for format accepted, bad format, already playing, buffer low, buffer high and overflow. Six 3 s
+  streams over RF, with either start, showed no mid-stream `0x02`.
 - Level: a u-law sample amplitude of about 0.4 (0.31 at 100 Hz, 0.49 at 320 Hz) matches a -3 dB `0x83` tone.
 - An 8 kHz stereo stream is 258 frames/s, above one relay per 4 ms poll. OpenPuck flushes a second queued relay in
   the same cycle when the ring holds a backlog, and resends an unanswered `0x86`-`0x89` frame once with the same PID.

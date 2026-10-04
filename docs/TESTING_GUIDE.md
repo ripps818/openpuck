@@ -9,7 +9,7 @@
   press must not reach the game, and a D-pad reassignment made in the panel must take effect)
 - Can you change modes via webusb?
 - Does rumble still work in the translated modes, and does each mode's Grip rumble strength (Button
-  mapping) change how strong it feels? Switch Pro mode must play HD rumble (tones that change pitch
+  mapping) change how strong it feels? Switch Pro mode must play HD rumble (a grip waveform and pad tones that change pitch
   with the game), the other modes normal rumble. The Test rumble button must buzz and then stop on its own.
 - Do the modes work as expected (including gyro in gyro modes)
 - Is signal quality shown?

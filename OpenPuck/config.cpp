@@ -197,7 +197,8 @@ void saveCfg()
 	cfgExtWrite(11u, g_audioHapticStyle);
 	cfgExtWrite(12u, g_trigInner);
 	cfgExtWrite(13u, g_trigOuter);
-	cfgExtWrite(14u, g_hdPcm);
+	// 14 reserved (was the HD grip renderer A/B switch)
+	cfgExtWrite(14u, 0xFFu);
 	cfgExtWrite(5u, g_ledMode);
 	cfgExtWrite(6u, g_ledPinA);
 	cfgExtWrite(7u, g_ledPinB);
@@ -361,8 +362,6 @@ void loadCfg()
 				g_trigInner = trigInnerVal;
 				g_trigOuter = trigOuterVal;
 			}
-			if (cfgExtRead(14u) <= 1)
-				g_hdPcm = cfgExtRead(14u);
 
 			const uint8_t ledModeVal = cfgExtRead(5u);
 			if (ledModeVal <= LED_MODE_MAX)
