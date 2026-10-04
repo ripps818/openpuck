@@ -347,12 +347,13 @@ does a `detach -> rebuild -> attach` so the host re-reads the descriptor cleanly
   the same command, leaving the controller buzzing; suppressing them keeps the lizard state clean. The
   same gate applies during the post-resume input mute (`POST_RESUME_MUTE_MS`): Steam can't read `0x45`
   back in that window either, so a wake-time haptic would loop identically.
-- **Which OUTPUT reports are relayed**: the haptic/actuator reports `0x80`–`0x86` are forwarded to the
+- **Which OUTPUT reports are relayed**: all haptic/actuator reports `0x80`–`0x89` are forwarded to the
   **connected slot only** (the slot gate is what stops a haptic aimed at another of the four exposed
-  slots from buzzing the single controller). The 63-byte settings/config reports `0x87`/`0x88`/`0x89`
-  are not haptics and are not pushed on this path (`0x87` lizard-off reaches the controller via the
-  feature `0x01` passthrough). Each `0x87` payload is a sequence of `[setting][value u16 LE]` tuples;
-  OpenPuck removes setting `0x30` (`IMU_MODE`) and any incomplete trailing tuple before relaying it.
+  slots from buzzing the single controller). The 63-byte `0x87`/`0x88`/`0x89` are raw haptic sample
+  streams (table below), used by audio-to-haptics apps. The real puck forwards every OUTPUT report
+  unfiltered. Separately, the feature-`0x01` command `0x87` (`SET_SETTINGS_VALUES`, the lizard-off
+  heartbeat) is a sequence of `[setting][value u16 LE]` tuples; OpenPuck removes setting `0x30`
+  (`IMU_MODE`) and any incomplete trailing tuple before relaying it.
   Steam writes IMU mode for its native puck path, but landing that write disables the controller's RF
   motion stream, which every gyro-capable emulated mode still needs. Additionally, Switch Pro mode
   writes raw accelerometer + gyroscope (`0x18`) when the RF link comes up to clear any retained
@@ -375,7 +376,9 @@ from the feature-`0x01` **command** space even though the numbers overlap. Groun
 | `0x84` | `HAPTIC_LOG_SWEEP` `[side][gain_db][dur u16][start u16][end u16]` | 8 | `GET_ATTRIBUTE_LABEL` |
 | `0x85` | `HAPTIC_SCRIPT` `[side][script_id][gain_db]` | 3 | `SET_DEFAULT_DIGITAL_MAPPINGS` |
 | `0x86` | (unnamed) | 3 | `FACTORY_RESET` |
-| `0x87`+ | 63-byte settings/config | 63 | `SET_SETTINGS_VALUES` … |
+| `0x87` | sample stream `[target][samples]` to one actuator set (trackpads / grips) | 63 | `SET_SETTINGS_VALUES` |
+| `0x88` | stereo grip stream `[n<=31][31 samples grip B][31 samples grip A]` | 63 | `CLEAR_SETTINGS_VALUES` |
+| `0x89` | length-prefixed `0x87`: `[len][0x87 payload]` | 63 | `GET_SETTINGS_VALUES` |
 
 
 ### 9.2 Xbox mode
