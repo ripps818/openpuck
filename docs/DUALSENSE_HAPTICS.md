@@ -13,7 +13,7 @@ Status at the time of writing:
 | Split style (`AUDIO_STYLE_SPLIT`) | Works (Hi-Fi Rush, Stellar Blade). Rumble and a tone on the same actuator play together |
 | Wave style (`AUDIO_STYLE_WAVE`, the default) | Works (Stellar Blade: smoother than tone, a little soft). The haptic channels streamed as 4 kHz PCM to the grip actuators |
 | Tone style (`AUDIO_STYLE_TONE`, the default before wave) | Works, but deep effects play as higher tones, and it misses the deep feel split gives |
-| FFXIV (XIVLauncher) | **Broken in DualSense mode**: no input, silent haptics (§9). Workaround: buttons through XInput, no haptics |
+| FFXIV (XIVLauncher) | Input + audio haptics work (GE-Proton10-34; GE-Proton11-7 after `tools/fix-dualsense-prefix.py`, §9) |
 | Windows | Untested |
 | PS5 console | Not supported: the console authenticates controllers and the puck can't answer |
 
@@ -245,9 +245,9 @@ In [mode_ps5_audio.cpp](../OpenPuck/mode_ps5_audio.cpp) (`processAudioSamples`, 
      side's `0x80` rumble speed (gate 400), and the rest (signal minus low-pass) drives the tone as above, including
      its zero crossings (gate 100).
    - **Wave** (default): the haptic channels themselves, through a 1.6 kHz 2nd-order Butterworth low-pass, decimated to 4 kHz,
-     scaled linearly with no auto gain, as a real DualSense plays them: 100% (and Auto) puts int16 full scale at half
-     of u-law full scale. In FFXIV (2026-10-04) that matched a real pad's strength; full scale felt about twice as
-     strong. Then u-law encoded and sent as `0x88` stereo PCM frames of 31
+     scaled linearly with no auto gain, as a real DualSense plays them: 100% (and Auto) puts int16 full scale at 40%
+     of u-law full scale. Half matched a real pad's strength in FFXIV (2026-10-04) but felt too strong in most other
+     games, including Control Resonant, where 80% of that felt right (2026-10-05). Then u-law encoded and sent as `0x88` stereo PCM frames of 31
      samples (129 frames/s), left channel to the left **grip** actuator (`0x88` is a grip stream). Streams while either channel's envelope is above
      gate 100 and for 300 ms after; `0x86 {2, 2, 9}` sets the format at each start and every second. The controller
      pre-buffers (24 ms with the short third frame, PROTOCOL.md), so it starts about 20 ms later than a tone. No `0x80` rumble from the audio. See PROTOCOL.md
@@ -290,28 +290,51 @@ extension bytes 3, 4 and 11 (`cfgExtRead`).
 
 ## 9. FFXIV
 
-FFXIV worked with the puck's DualSense mode on 2026-09-09: input, and haptics including the confirmation pulse when
-DualSense features are switched on in the gamepad settings. That setup used an older GE-Proton, older firmware and the
-old WirePlumber rename, under which Wine created separate HID (`MI_00`) and XInput (`IG_00`) devices.
+Works (2026-10-04) with a real DualSense and with the puck in DualSense mode, on GE-Proton10-34 and, after the prefix
+repair below, on GE-Proton11-7: buttons, audio haptics, and the confirmation pulse when "PlayStation controller
+support" is switched on in the gamepad settings. Setup: XIVLauncher-RB with its managed Proton, USB, PipeWire's stock
+Direct profile, no `PROTON_SONY_*` variables.
 
-It no longer works on this branch's firmware: the game ignores all button presses and its haptic stream is silent.
-Observed with Wine tracing:
+How FFXIV uses the pad, from Wine traces (`WINEDEBUG=+hid,+dinput,+mmdevapi`):
 
-- FFXIV's own DualSense code runs. It reads features `0x09`, `0x20` and `0x05`, writes output report `0x02`
-  (lightbar, player LEDs, mute light), reads input reports about 225 times per second, and opens a second,
-  4-channel audio stream for haptics. It never acts on the input and only writes silence to the haptic stream.
-- The game's gamepad dropdown shows only "Wireless Controller", and it is selected.
+- **Buttons come through DirectInput.** The game lists joysticks, runs the usual "is this an XInput device?" check
+  (a WMI query of `Win32_PnPEntity` for a device ID with `IG_` and the pad's VID/PID), then opens the pad's
+  DirectInput device and polls `GetDeviceState`. The device's button map is saved in `FFXIV.cfg`, under
+  `<GamePad Settings>`, as `InstanceGuid`, `ProductGuid` and `Alias`, for one pad identified by its DirectInput
+  instance GUID.
+- **DualSense features come through raw HID.** It reads features `0x09`, `0x20` and `0x05`, writes output report
+  `0x02` (lightbar, player LEDs, triggers, speaker routing), and opens a 4-channel audio stream for the haptics.
 
-Ruled out, each tested without a change: Valve Proton Experimental, Proton-cachyos and GE-Proton; Steam running or
-closed; Dalamud on or off; the audio endpoint registry reset; product string "DualSense Wireless Controller"; echoing
-the host timestamp (output bytes 32–35) into input bytes 43–46 and a running device clock in bytes 48–51. The
-`ffxiv_dx11.exe` binary has no AES tables and no Windows crypto imports, so it can't be checking the 8-byte
-authentication tag at input bytes 55–62. The firmware as committed at `cfbdf54`, before the report descriptor,
-interface order and mic changes, fails the same way. A capture from a real DualSense would give a byte-level comparison; none was
-available.
+On Wine 11 (GE-Proton 11.x, Proton-cachyos 11) the same prefix failed in two ways that GE-Proton10-34 doesn't
+trigger. Neither depends on the controller: a real DualSense failed the same way as the puck. The firmware, the
+product string and the Steam Runtime version (steamrt4 vs steamrt3) were not the cause.
 
-**Workaround:** GE-Proton with `PROTON_SONY_HIDRAW_XINPUT=1` gives working buttons through XInput. FFXIV then doesn't
-use its DualSense mode, so there are no haptics.
+1. **Stale XInput devices hide the pad.** A prefix that ever exposed a Sony pad through XInput (older Proton, Steam
+   Input, `PROTON_SONY_HIDRAW_XINPUT=1`) keeps `WINEXINPUT\VID_054C&PID_0CE6&IG_xx` device keys. Wine 11's WMI lists
+   them even when nothing is plugged in (`wine wmic path Win32_PnPEntity get DeviceId` shows every device the prefix
+   has seen). The game's XInput check finds them, so it releases the DualSense's DirectInput device right after
+   `GetDeviceInfo` and `GetCapabilities`: no buttons, and no haptic stream. In a trace, that's
+   `dinput_device_Release` straight after a `wbemprox` query.
+2. **A saved button map points at nothing.** Wine 11 saves DirectInput instance GUIDs in the registry and reuses
+   them across runs, so the pad gets the same GUID that `FFXIV.cfg` holds, and the game applies the saved `Alias`.
+   That map was recorded while the pad looked different, so presses reach DirectInput (`hid_joystick_read`) while
+   the game's pad state (Dalamud's `/xldata`, gamepad tab) stays at zero. Wine 10 gives the pad a different instance
+   GUID, so the saved map was never applied there. Haptics work in this state.
+
+**Repair**, with the game closed:
+
+```sh
+tools/fix-dualsense-prefix.py ~/.local/share/dev.goats.xivlauncher/protonprefix \
+    --ffxiv-cfg ~/.local/share/dev.goats.xivlauncher/ffxivConfig/FFXIV.cfg
+```
+
+It removes the Sony `WINEXINPUT` keys from the prefix's `system.reg` and the saved `InstanceGuid`, `ProductGuid`
+and `Alias` from `FFXIV.cfg`, after backing up both (`*.bak-dualsense-<time>`). Use `--dry-run` to see what it
+would change. The game then builds its default DualSense layout and saves the three entries back as zeros, which
+the script leaves alone. The registry part applies to any game and prefix (pass the prefix, or a Proton
+`compatdata/<appid>` directory). Run it again after any session that put the pad in XInput mode.
+
+With Proton logging on in XIVLauncher, `WINEDEBUG` output goes to `logs/steam-default.log`, not `logs/wine.log`.
 
 Audio endpoint names, for reference: FFXIV is reported to pick the haptic endpoint by a name containing "Wireless
 Controller" ([Proton#5900](https://github.com/ValveSoftware/Proton/issues/5900)). Valve's winepulse uses the sink
