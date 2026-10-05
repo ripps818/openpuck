@@ -59,7 +59,7 @@ uint8_t g_rumble = 1;
 uint8_t g_audioHaptics = 1;
 uint16_t g_audioHapticGain = 0;
 uint8_t g_audioHapticStyle = AUDIO_STYLE_WAVE;
-uint16_t g_audioSpeaker = 100;
+uint16_t g_audioSpeaker = 0;
 uint8_t g_trigInner = 0, g_trigOuter = 100;
 uint8_t g_ledBright = 0;
 

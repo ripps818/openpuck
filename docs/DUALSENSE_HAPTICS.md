@@ -254,16 +254,29 @@ In [mode_ps5_audio.cpp](../OpenPuck/mode_ps5_audio.cpp) (`processAudioSamples`, 
      section 9.1 for the measured PCM behaviour.
 
 **Controller speaker** (off by default): channels 1 and 2, which a real DualSense plays on its speaker, mixed to mono
-and added to the grip stream, so the grips work as a small speaker. While it's enabled the grip stream runs at 8 kHz
-(`0x86 {2, 2, 8}`, the grips' native rate, 258 frames/s) instead of 4 kHz. The trackpad actuators run at 4 kHz and
-only rumbled with speech, so the speaker doesn't use them. The mono mix goes through a 3.2 kHz low-pass at 48 kHz
-(anti-alias), is decimated to 8 kHz, then a 300 Hz high-pass so it plays as sound rather than rumble; each filter is
-two cascaded 2nd-order Butterworth sections. In a listening test (2026-10-04) the 300 Hz cut beat no cut (rumble),
-500 Hz and 800 Hz (thin). The speaker is muted below gate 100, fading over ~12 ms, and keeps the stream up like
-the haptics do. Full scale plays at 100% volume. Changing the rate stops the stream (`0x86` op 1) first, since the
-controller refuses a new format while one plays. In other styles than wave the grip stream carries only the
-speaker. Field 114 sets the volume (percent/2, 0 = off, up to 200%), blob `p[208]` reports it (protocol v26), and it is saved in
-config extension byte 15.
+and added to the grip stream. Signal path, per sample at 48 kHz then at the grip rate:
+
+- **Anti-alias:** a 1.6 kHz low-pass (two cascaded 2nd-order Butterworth sections), then decimation to 4 kHz, the
+  same `0x86 {2, 2, 9}` stream the haptics use. 8 kHz (`0x86 {2, 2, 8}`, 3.2 kHz low-pass, build flag
+  `OPK_SPEAKER_8K`) sounded cleaner, but at 258 frames/s it outruns the 250 Hz RF cycle: the controller's buffer runs
+  dry several times a second, and the grips crackle and stop and restart (PROTOCOL.md section 9.1).
+- **Bass cut:** a 300 Hz high-pass (two sections, `OPK_SPK_LOWCUT_HZ`), so speech plays as sound rather than rumble.
+  In a listening test (2026-10-04) 300 Hz beat no cut (rumble), 500 Hz and 800 Hz (thin).
+- **Auto gain:** a peak follower lifts quiet audio by up to 16× toward 70% of full scale, with an instant attack and
+  a 0.3 s release. Games mix the speaker channel quietly, and at plain gain it was barely audible.
+- **Volume:** 100% doubles the samples, so with the system volume at 100% the auto gain's target lands in the soft
+  limiter at about 90% of full scale. Up to 200% gets louder but more compressed.
+- **Mix:** the speaker is added to the haptic channel on both grips, then a soft limiter (knee 0.7) rounds off peaks
+  before u-law encoding. Below gate 100 (about -50 dBFS) the speaker is muted, so hiss doesn't play as buzz.
+
+The trackpad actuators only rumbled with speech, so the speaker doesn't use them. In other styles than wave the grip
+stream carries only the speaker. Field 114 sets the volume (percent/2, 0 = off, up to 200%), blob `p[208]` reports it
+(protocol v26), and it is saved in config extension byte 15.
+
+**Why it's off by default:** the grips are vibration actuators, not a speaker. Speech is the best case: a radio voice
+over in Control Resonant (2026-10-05) came through and was understandable, but sounded buzzy and thin. Most other
+sounds play as vibration rather than sound, and the speaker adds to the haptics on the same actuators. It's a
+vibration trick more than a speaker, and filtering can't change that, so it stays opt-in.
 
 The game's ordinary rumble (output report `0x02`) always goes through `0x80`, in every style. `hapticUpdateRumble`
 adds it to the audio rumble (rumble and split styles) and sends one frame.
