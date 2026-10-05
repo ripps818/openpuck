@@ -113,6 +113,8 @@ static bool boardCommand(uint8_t op)
 //                [v24: p[206] trigger deadzone % (field 102); p[207] trigger full-press % (field 103)]
 //                [v25: p[208..211] zero (unused); p[212..215] per-type grip strength pct/2 (fields 108..111);
 //                 p[53] / p[195] report the active type's strength and the automatic rumble style]
+//                [v26: p[208] controller speaker volume pct/2 (field 114); v27: p[209] grip soft-limit knee %
+//                 (field 115); p[210..211] zero]
 #define WB_PAYLEN 214
 // The blob send is drop-on-full (never blocks loop), so the vendor TX FIFO MUST be able to hold a whole blob
 // -- otherwise tud_vendor_write_available() never reaches the frame size and EVERY frame is dropped (blank
@@ -143,7 +145,8 @@ static void webusbSendBlob()
 
 	// clang-format off
 	// protocol version
-	// (26 = +DualSense controller speaker volume (field 114, blob p[208], percent/2, 0 = off);
+	// (27 = +grip soft-limit knee (field 115, blob p[209], percent 50..100, 100 = off);
+	// 26 = +DualSense controller speaker volume (field 114, blob p[208], percent/2, 0 = off);
 	// 25 = +per-type grip strength (fields 108..111, blob p[212..215]); rumble style automatic;
 	// 24 = +trigger deadzone / full-press point (fields 102/103, blob p[206..207]);
 	// 23 = +0xAE Switch Pro profiles / HD rumble / shortcut frame (op 0x27), fields 190..252, op 0x28 save;
@@ -163,7 +166,7 @@ static void webusbSendBlob()
 	// cfg; 8 = +per-slot link status; 7 = +raw accel; 
 	// 6 = +swPro120/gyroScale)
 	// clang-format on
-	p[2] = 26;
+	p[2] = 27;
 	p[3] = g_usbMode;
 	p[4] = (uint8_t)g_mDiv;
 	p[5] = (uint8_t)g_mFric;
@@ -362,9 +365,10 @@ static void webusbSendBlob()
 	p[205] = g_audioHapticStyle;
 	p[206] = g_trigInner;
 	p[207] = g_trigOuter;
-	// p[208]: controller speaker volume (v26). p[209..211] (per-type rumble style) stay zero: the style
-	// follows the mode
+	// p[208]: controller speaker volume (v26). p[209]: grip soft-limit knee (v27). p[210..211] (per-type rumble
+	// style) stay zero: the style follows the mode
 	p[208] = (uint8_t)(g_audioSpeaker / 2);
+	p[209] = g_hapticLimitKnee;
 	for (uint8_t et = 0; et < ET_COUNT; et++)
 		p[212 + et] = (uint8_t)(g_typeRumbleScale[et] / 2);
 	// CRITICAL: usb_web.write() SPINS (`while (remain && _connected) yield();`) until the IN FIFO drains or the
@@ -1415,6 +1419,12 @@ void webusbPoll()
 				// DualSense controller speaker volume, percent/2 (0 = off, up to 200%). Protocol v26.
 				case 114:
 					g_audioSpeaker = v > 100 ? 200 : v * 2;
+					break;
+
+				// Grip PCM soft-limit knee, percent of full scale (50..100, 100 = off). Protocol v27.
+				case 115:
+					if (v >= 50 && v <= 100)
+						g_hapticLimitKnee = v;
 					break;
 
 				// Trigger deadzone / full-press point, percent (protocol v24). The pair stays ordered:

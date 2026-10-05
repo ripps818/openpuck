@@ -187,16 +187,19 @@ enum { HDR_AMP_MIN = -256, HDR_AMP_OFF = -256 }; // -8.0 log2 units == silent
 
 // Absolute 7-bit amplitude code -> 1/32 log2 units. The documented curve is
 // piecewise linear with progressively finer steps toward full scale (slopes
-// 1/4, 1/16, 1/32); code 0 is silence.
+// 1/4, 1/16, 1/32); code 0 is silence. Code 100 is amplitude 1.0: the public
+// amplitude table and SDL's encoder map full strength to 0xC8 (code 100), and
+// codes 101-127 overdrive past it, so they play at full scale. The curve used
+// to put 1.0 at code 127, which played every level at 0.56x (Super Mario
+// Odyssey's strongest hit, code 94, at 0.49 instead of 0.88).
 static inline int16_t hdrAmp7(uint8_t code)
 {
 	if (code == 0)
 		return HDR_AMP_MIN;
-	if (code < 16)
-		return (int16_t)(8 * (int)code - 248); // slope 1/4
-	if (code < 32)
-		return (int16_t)(2 * (int)code - 158); // slope 1/16
-	return (int16_t)((int)code - 127); // slope 1/32
+	int u = code < 16 ? 8 * (int)code - 221 : // slope 1/4
+			code < 32 ? 2 * (int)code - 131 : // slope 1/16
+				    (int)code - 100; // slope 1/32
+	return (int16_t)(u > 0 ? 0 : u);
 }
 // Apply a compact 5-bit command to the running amplitude (1/32 log2 units):
 //   0        -> silence
@@ -741,7 +744,11 @@ static void spiRead(uint8_t slot, uint32_t addr, uint8_t len, uint8_t *dst)
 	for (uint8_t i = 0; i < len; i++) {
 		uint32_t a = addr + i;
 		uint8_t v = 0xFF;
-		if (a >= 0x6020 && a < 0x6020 + 24)
+		if (a == 0x6012)
+			// device type: 3 = Pro Controller (1/2 = Joy-Con L/R). Eden's direct Pro Controller driver reads
+			// it to tell a real Pro Controller from a third-party pad and drops input when it is blank.
+			v = 0x03;
+		else if (a >= 0x6020 && a < 0x6020 + 24)
 			v = SPI_IMU_CAL[a - 0x6020];
 		else if (a >= 0x603D && a < 0x603D + 18)
 			v = g_spiStickCal[a - 0x603D];

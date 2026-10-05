@@ -14,6 +14,7 @@
 // controller (captured), so an unconditional burst on each link-up edge is itself a buzz source on a flapping
 // link. The g_hapLog ring captures recent OUTPUT reports for the 'H' dump.
 #pragma once
+#include <math.h>
 #include <stdint.h>
 #include "config.h" // OPK_LOG
 #include "bonds.h" // NSLOT
@@ -214,6 +215,17 @@ static inline uint8_t hapticPcmFrameLen(uint16_t queued, uint16_t rate)
 }
 // G.711 u-law byte for x in [-1, 1] (clamped).
 uint8_t hapticUlaw(float x);
+// PCM soft limit: linear up to the knee (g_hapticLimitKnee), then eases toward full scale, so peaks past it round
+// off instead of clipping. A clipped peak plays on the grips as a pop. Knee 100 passes y through to the clamp.
+static inline float hapticSoftLimit(float y)
+{
+	float k = g_hapticLimitKnee * 0.01f, a = fabsf(y);
+	if (a <= k || k >= 1.0f)
+		return y;
+	float o = (a - k) / (1.0f - k);
+	a = k + (1.0f - k) * o / (1.0f + o);
+	return y < 0 ? -a : a;
+}
 void hapticSwitchHd(uint8_t slot, uint16_t leftLow, uint16_t leftHigh,
 		    uint16_t rightLow, uint16_t rightHigh);
 

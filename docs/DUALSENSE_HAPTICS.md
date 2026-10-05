@@ -266,7 +266,7 @@ and added to the grip stream. Signal path, per sample at 48 kHz then at the grip
   a 0.3 s release. Games mix the speaker channel quietly, and at plain gain it was barely audible.
 - **Volume:** 100% doubles the samples, so with the system volume at 100% the auto gain's target lands in the soft
   limiter at about 90% of full scale. Up to 200% gets louder but more compressed.
-- **Mix:** the speaker is added to the haptic channel on both grips, then a soft limiter (knee 0.7) rounds off peaks
+- **Mix:** the speaker is added to the haptic channel on both grips, then a soft limiter rounds off peaks (knee: the panel's Grip limiter, 70% by default)
   before u-law encoding. Below gate 100 (about -50 dBFS) the speaker is muted, so hiss doesn't play as buzz.
 
 The trackpad actuators only rumbled with speech, so the speaker doesn't use them. In other styles than wave the grip
@@ -284,6 +284,13 @@ adds it to the audio rumble (rumble and split styles) and sends one frame.
 Web panel and config: gain is field 30 (0 = Auto), style is field 88 (blob `p[205]`: 0 rumble, 1 tone, 2 split,
 3 wave; protocol v22). The panel's style button cycles tone, split, wave, rumble. Gain, on/off and style are saved in the config
 extension bytes 3, 4 and 11 (`cfgExtRead`).
+
+**Grip limiter** (DS5 and Switch tabs, protocol v27): the knee of the soft limiter on the grip PCM stream, as a
+percent of full scale: 50, 60, 70 (default), 80, 90, or 100 = off. Below the knee the waveform passes unchanged;
+above it, peaks are rounded off toward full scale instead of clipping, which plays as a pop. Lower is smoother on
+the strongest hits, higher keeps more of their punch. One setting (`g_hapticLimitKnee`, `hapticSoftLimit` in
+haptics.h) covers wave haptics, the controller speaker's own limiting and Switch HD rumble. Field 115, blob
+`p[209]`, config extension byte 14 (formerly the HD grip renderer switch, whose 0/1 values load as the default).
 
 ## 8. Pitfalls
 
