@@ -7,9 +7,12 @@
 -- signal until the output is raised -- once per device name, and the puck presents several.
 --
 -- The Direct output carries speaker/headphone audio on channels 1-2 (FL/FR) and the two haptic actuators on
--- channels 3-4 (RL/RR). Only the haptic channels start at full volume; the speaker/headphone channels keep the
--- normal cautious default, so a real DualSense's headphone jack is not affected. Inputs (the mic), the split
--- profile's Speaker/Headphones routes and any volume WirePlumber has already saved are left alone.
+-- channels 3-4 (RL/RR). The haptic channels start at full volume. The speaker/headphone channels keep the normal
+-- cautious default, so a real DualSense's headphone jack is not affected -- except on a puck in MODE_PS5, which
+-- plays them on its grips at the panel's speaker volume: its USB serial carries the mounted-controller count,
+-- so it shows up under a new device name whenever a controller connects or leaves. A real pad has no serial,
+-- so its device.serial ends in "Controller". Inputs (the mic), the split profile's Speaker/Headphones routes and
+-- any volume WirePlumber has already saved are left alone.
 
 devinfo = require ("device-info-cache")
 log = Log.open_topic ("s-openpuck")
@@ -39,6 +42,9 @@ SimpleEventHook {
 
     local default = tonumber (dp ["device.routes.default-sink-volume"])
         or Settings.get_float ("device.routes.default-sink-volume")
+    if string.find (dp ["device.serial"] or "", "Controller_%w+$") then
+      default = 1.0
+    end
     local new_routes = {}
     for device_id, route_json in pairs (selected_routes) do
       new_routes [device_id] = route_json
@@ -54,7 +60,8 @@ SimpleEventHook {
           index = route.index,
           props = Json.Object (props),
         }:to_string ()
-        log:info (device, "haptic channels RL/RR start at full volume on " .. dev_info.name)
+        log:info (device, "Direct output starts at FL/FR " .. default ..
+            ", haptic channels RL/RR at full volume on " .. dev_info.name)
       end
     end
     event:set_data ("selected-routes", new_routes)

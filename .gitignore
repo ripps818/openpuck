@@ -16,3 +16,4 @@ test_all4_haptic.wav
 
 # Valve firmware images and their decompilation (local reference only; never commit)
 valve-fw/
+tools/ds_verbose_test

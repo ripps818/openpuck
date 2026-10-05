@@ -221,7 +221,7 @@ extern uint16_t g_audioHapticGain;
 // the haptic channels themselves, streamed to the grip actuators as PCM (0x88)
 #define AUDIO_STYLE_WAVE 3
 extern uint8_t g_audioHapticStyle;
-// DualSense speaker channels played on the grip actuators: volume percent, 0 = off (default), up to 200
+// DualSense speaker channels played on the grip actuators: volume percent, 0 = off, 100 (default), up to 200
 extern uint16_t g_audioSpeaker;
 // Analog trigger response for the emulated modes (Steam mode relays raw input): travel at or below
 // g_trigInner % reads 0, travel at or past g_trigOuter % reads full, linear between. 0/100 = raw. A lower

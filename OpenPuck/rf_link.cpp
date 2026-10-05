@@ -3895,6 +3895,19 @@ uint8_t rfConnTx(uint8_t ch, uint8_t s1, const uint8_t *payload, uint8_t plen,
 							g_battery[g_curSlot] =
 								rep[2];
 						}
+#ifdef OPK_PS5_CDC
+						// 0x44 [channel][event]: PCM stream events (PROTOCOL.md section 9.1)
+						if (rep[0] == 0x44 &&
+						    tlen >= 3 &&
+						    Serial.availableForWrite() >
+							    40)
+							Serial.printf(
+								"# pcm44 t=%lu slot=%d ch=%u ev=%02x\n",
+								(unsigned long)
+									millis(),
+								g_curSlot,
+								rep[1], rep[2]);
+#endif
 						if (g_active)
 							g_active->onAuxReport(
 								g_curSlot,

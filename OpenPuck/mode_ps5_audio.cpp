@@ -11,15 +11,17 @@
 // The mic carries only silence, but Linux needs it: Sony's stock UCM profile opens the capture PCM and
 // PipeWire rejects the whole profile (and its Direct 4ch sink) when that fails.
 #define UAC1_IAD_LEN 8
-// IAD(8)+AC_std(9)+CS_hdr(10)+speaker IT(12)+FU(12)+OT(9)+mic IT(12)+mic OT(9)
-#define UAC1_AC_DESC_LEN 81
+// IAD(8)+AC_std(9)+CS_hdr(10)+speaker IT(12)+FU(12)+OT(9)+mic IT(12)+mic FU(9)+mic OT(9)
+#define UAC1_AC_DESC_LEN 90
 // Each AS interface: alt0(9)+alt1(9)+CS_general(7)+format(11)+std_ep(9)+CS_ep(7)
 #define UAC1_AS_DESC_LEN 52
 #define UAC1_DESC_LEN (UAC1_AC_DESC_LEN + 2 * UAC1_AS_DESC_LEN)
-// 4ch * 2 bytes * 48 frames/ms = 384 bytes per 1ms isochronous packet
-#define UAC1_ISO_EP_BUFSIZE 384
-// 2ch * 2 bytes * 48 frames/ms
-#define UAC1_ISO_IN_EP_BUFSIZE 192
+// Max packet sizes as a real pad declares them: one 8-byte frame (4ch * 16 bit) and one 4-byte frame (2ch) more
+// than the 48 frames of a 1 ms packet at 48 kHz.
+#define UAC1_ISO_EP_BUFSIZE 392
+#define UAC1_ISO_IN_EP_BUFSIZE 196
+// The mic sends exactly 48 frames per packet.
+#define UAC1_ISO_IN_PACKET 192
 
 static uint8_t g_uac1ItfAc = 0xFF;
 static uint8_t g_uac1ItfAs = 0xFF;
@@ -71,27 +73,34 @@ uint16_t Adafruit_USBD_Audio_UAC1::getInterfaceDescriptor(uint8_t itfnum,
 		9, TUSB_DESC_INTERFACE, ac_itf, 0, 0, TUSB_CLASS_AUDIO, 0x01,
 		0x00, 0,
 
+		// The terminals and units below are a real pad's, IDs and associations included: speaker path
+		// IT 1 -> FU 2 -> OT 3, mic path IT 4 -> FU 5 -> OT 6, with IT 1/OT 6 and OT 3/IT 4 paired.
+
 		// AC Class-Specific Header Descriptor - 10 bytes
-		// wTotalLength = CS_hdr(10)+IT(12)+FU(12)+OT(9)+mic IT(12)+mic OT(9) = 64
-		10, 0x24, 0x01, 0x00, 0x01, 64, 0x00, 2, as_out, as_in,
+		// wTotalLength = CS_hdr(10)+IT(12)+FU(12)+OT(9)+mic IT(12)+mic FU(9)+mic OT(9) = 73
+		10, 0x24, 0x01, 0x00, 0x01, 73, 0x00, 2, as_out, as_in,
 
 		// Input Terminal Descriptor (USB Streaming, 4ch) - 12 bytes
 		// wChannelConfig 0x0033: FL + FR + BL(haptic-L) + BR(haptic-R)
-		12, 0x24, 0x02, 0x01, 0x01, 0x01, 0x00, 4, 0x33, 0x00, 0x00, 0,
+		12, 0x24, 0x02, 0x01, 0x01, 0x01, 0x06, 4, 0x33, 0x00, 0x00, 0,
 
-		// Feature Unit Descriptor (Mute / Volume, 4ch) - 12 bytes
-		// bControlSize=1: master mute(0x01), ch1-4 volume(0x02 each)
-		12, 0x24, 0x06, 0x02, 0x01, 0x01, 0x01, 0x02, 0x02, 0x02, 0x02,
+		// Feature Unit Descriptor - 12 bytes
+		// bControlSize=1: master mute + volume (0x03), no per-channel controls
+		12, 0x24, 0x06, 0x02, 0x01, 0x01, 0x03, 0x00, 0x00, 0x00, 0x00,
 		0,
 
-		// Output Terminal Descriptor (Speaker) - 9 bytes
-		9, 0x24, 0x03, 0x03, 0x01, 0x03, 0x00, 0x02, 0,
+		// Output Terminal Descriptor (Speaker 0x0301) - 9 bytes
+		9, 0x24, 0x03, 0x03, 0x01, 0x03, 0x04, 0x02, 0,
 
-		// Input Terminal Descriptor (Microphone 0x0201, 2ch FL+FR) - 12 bytes
-		12, 0x24, 0x02, 0x04, 0x01, 0x02, 0x00, 2, 0x03, 0x00, 0x00, 0,
+		// Input Terminal Descriptor (Headset 0x0402, 2ch FL+FR) - 12 bytes
+		12, 0x24, 0x02, 0x04, 0x02, 0x04, 0x03, 2, 0x03, 0x00, 0x00, 0,
 
-		// Output Terminal Descriptor (USB Streaming, source = mic IT) - 9 bytes
-		9, 0x24, 0x03, 0x05, 0x01, 0x01, 0x00, 0x04, 0,
+		// Feature Unit Descriptor (mic) - 9 bytes
+		// master mute + volume only, the same 9-byte form a real pad sends
+		9, 0x24, 0x06, 0x05, 0x04, 0x01, 0x03, 0x00, 0,
+
+		// Output Terminal Descriptor (USB Streaming, source = mic FU) - 9 bytes
+		9, 0x24, 0x03, 0x06, 0x01, 0x01, 0x01, 0x05, 0,
 
 		// Speaker/haptics AS Standard Interface Descriptor (Alt 0) - 9 bytes
 		9, TUSB_DESC_INTERFACE, as_out, 0, 0, TUSB_CLASS_AUDIO, 0x02,
@@ -108,12 +117,14 @@ uint16_t Adafruit_USBD_Audio_UAC1::getInterfaceDescriptor(uint8_t itfnum,
 		11, 0x24, 0x02, 0x01, 4, 2, 16, 1, 0x80, 0xBB, 0x00,
 
 		// Standard Isochronous Audio Data Endpoint Descriptor - 9 bytes (EP 0x08)
-		// bmAttributes 0x05: isochronous (01b) + asynchronous sync (01b)
-		9, TUSB_DESC_ENDPOINT, 0x08, 0x05,
+		// bmAttributes 0x09: isochronous (01b) + adaptive sync (10b), as on a real pad. The nRF52840's only
+		// isochronous endpoint is EP8, so the address can't match a real pad's 0x01.
+		9, TUSB_DESC_ENDPOINT, 0x08, 0x09,
 		U16_TO_U8S_LE(UAC1_ISO_EP_BUFSIZE), 1, 0, 0,
 
 		// Class-Specific Audio Data Endpoint Descriptor - 7 bytes
-		7, 0x25, 0x01, 0x01, 0, 0, 0,
+		// bmAttributes 0: no sampling-frequency control, as on a real pad
+		7, 0x25, 0x01, 0x00, 0, 0, 0,
 
 		// Mic AS Standard Interface Descriptor (Alt 0) - 9 bytes
 		9, TUSB_DESC_INTERFACE, as_in, 0, 0, TUSB_CLASS_AUDIO, 0x02,
@@ -123,18 +134,19 @@ uint16_t Adafruit_USBD_Audio_UAC1::getInterfaceDescriptor(uint8_t itfnum,
 		9, TUSB_DESC_INTERFACE, as_in, 1, 1, TUSB_CLASS_AUDIO, 0x02,
 		0x00, 0,
 
-		// AS Class-Specific General Descriptor (terminal link = OT 5) - 7 bytes
-		7, 0x24, 0x01, 0x05, 0x01, 0x01, 0x00,
+		// AS Class-Specific General Descriptor (terminal link = OT 6) - 7 bytes
+		7, 0x24, 0x01, 0x06, 0x01, 0x01, 0x00,
 
 		// AS Class-Specific Format Type I Descriptor (PCM 2ch 16-bit 48kHz) - 11 bytes
 		11, 0x24, 0x02, 0x01, 2, 2, 16, 1, 0x80, 0xBB, 0x00,
 
 		// Standard Isochronous Audio Data Endpoint Descriptor - 9 bytes (EP 0x88)
+		// bmAttributes 0x05: isochronous (01b) + asynchronous sync (01b)
 		9, TUSB_DESC_ENDPOINT, 0x88, 0x05,
 		U16_TO_U8S_LE(UAC1_ISO_IN_EP_BUFSIZE), 1, 0, 0,
 
 		// Class-Specific Audio Data Endpoint Descriptor - 7 bytes
-		7, 0x25, 0x01, 0x01, 0, 0, 0
+		7, 0x25, 0x01, 0x00, 0, 0, 0
 	};
 
 	memcpy(buf, desc, UAC1_DESC_LEN);
@@ -200,41 +212,72 @@ static inline float splitLow(Biquad *f, float x)
 	return y;
 }
 
-// Wave style anti-alias: 2nd-order Butterworth low-pass at 1.6 kHz (RBJ cookbook, fs 48 kHz, Q 0.7071) ahead of
-// the decimation to PCM_RATE_HZ.
-#define WAVE_B0 9.525750667e-03f
-#define WAVE_B1 1.905150133e-02f
-#define WAVE_A1 (-1.705550049f)
-#define WAVE_A2 0.743653052f
-
-static inline float waveLow(Biquad *f, float x)
-{
-	float y = WAVE_B0 * (x + f->x2) + WAVE_B1 * f->x1 - WAVE_A1 * f->y1 -
-		  WAVE_A2 * f->y2;
-	f->x2 = f->x1;
-	f->x1 = x;
-	f->y2 = f->y1;
-	f->y1 = y;
-	return y;
-}
-
 // Controller speaker: the front channel pair, which a real DualSense plays on its speaker, mixed to mono into
-// the grip stream at 8 kHz (the grips' native rate; the trackpad actuators only rumble with audio). Anti-aliased
-// at 3.2 kHz and low-cut at 300 Hz so it plays as sound, not rumble: in a listening test 300 Hz beat no cut
-// (rumble) and 500 / 800 Hz (thin). Each filter is two cascaded 2nd-order Butterworth sections (RBJ cookbook,
-// Q 0.7071), -6 dB at the corner.
+// the grip stream (the trackpad actuators only rumble with audio). Anti-aliased at 0.8 x Nyquist and low-cut at
+// SPK_LOWCUT_HZ so it plays as sound, not rumble: in a listening test at 8 kHz, 300 Hz beat no cut (rumble) and
+// 500 / 800 Hz (thin). Each filter is two cascaded 2nd-order Butterworth sections (RBJ cookbook, Q 0.7071),
+// -6 dB at the corner.
 struct BiquadCoef {
 	float b0, b1, b2, a1, a2;
 };
+#ifndef OPK_SPEAKER_8K
+// The speaker plays at 4 kHz, the haptic stream's rate. 8 kHz (the grips' native rate, OPK_SPEAKER_8K) sounds
+// cleaner but needs 258 frames/s, above the 250 Hz RF cycle: the controller's buffer runs dry several times a
+// second and the grips stop and restart (PROTOCOL.md section 9.1).
+// low-pass 1.6 kHz at 48 kHz
+static const BiquadCoef SPK_AA = { 9.525762376e-03f, 1.905152475e-02f,
+				   9.525762376e-03f, -1.705552146f,
+				   0.743655195f };
+#define SPEAKER_RATE_HZ 4000u
+#define PCM_FMT_SPEAKER PCM_FMT_ULAW_4K
+#else
 // low-pass 3.2 kHz at 48 kHz
 static const BiquadCoef SPK_AA = { 3.357180937e-02f, 6.714361874e-02f,
 				   3.357180937e-02f, -1.418982652f,
 				   0.553269890f };
-// high-pass 300 Hz at 8 kHz
-static const BiquadCoef SPK_LOWCUT = { 8.464592541e-01f, -1.692918508e+00f,
-				       8.464592541e-01f, -1.669203143f,
-				       0.716633874f };
 #define SPEAKER_RATE_HZ 8000u
+#define PCM_FMT_SPEAKER PCM_FMT_ULAW_8K
+#endif
+#ifndef OPK_SPK_LOWCUT_HZ
+#define OPK_SPK_LOWCUT_HZ 300
+#endif
+
+// RBJ high-pass at f0 Hz for a stream at fs Hz, Q 0.7071.
+static BiquadCoef highPass(float f0, float fs)
+{
+	float w = 6.2831853f * f0 / fs, c = cosf(w), a = sinf(w) * 0.70710678f,
+	      a0 = 1.0f + a;
+	return { (1.0f + c) / 2.0f / a0, -(1.0f + c) / a0,
+		 (1.0f + c) / 2.0f / a0, -2.0f * c / a0, (1.0f - a) / a0 };
+}
+static const BiquadCoef SPK_LOWCUT =
+	highPass(OPK_SPK_LOWCUT_HZ, SPEAKER_RATE_HZ);
+
+// RBJ low-pass at f0 Hz for a stream at fs Hz, Q 0.7071.
+static BiquadCoef lowPass(float f0, float fs)
+{
+	float w = 6.2831853f * f0 / fs, c = cosf(w), a = sinf(w) * 0.70710678f,
+	      a0 = 1.0f + a;
+	return { (1.0f - c) / 2.0f / a0, (1.0f - c) / a0,
+		 (1.0f - c) / 2.0f / a0, -2.0f * c / a0, (1.0f - a) / a0 };
+}
+
+// Wave style: the haptic channels low-passed at OPK_HAPTIC_LP_HZ (two sections at 48 kHz, which is also the
+// anti-alias ahead of the decimation). The grip actuators turn content above a few hundred Hz into clicks and
+// buzz, so sharp effects felt harsh through the old 1.6 kHz anti-alias alone.
+#ifndef OPK_HAPTIC_LP_HZ
+#define OPK_HAPTIC_LP_HZ 500
+#endif
+static const BiquadCoef HAP_LP = lowPass(OPK_HAPTIC_LP_HZ, 48000.0f);
+
+// Speaker auto gain: lifts quiet game audio by up to SPK_AGC_MAX toward a SPK_AGC_TARGET peak (fraction of full
+// scale, before the volume setting). Instant attack on a louder peak, SPK_AGC_RELEASE_S to recover; the gate below
+// keeps silence from being lifted into hiss.
+#define SPK_AGC_TARGET 0.7f
+#define SPK_AGC_MAX 16.0f
+#define SPK_AGC_RELEASE_S 0.3f
+// Soft limit above this level, so peaks the volume pushes past full scale round off instead of clipping.
+#define SPK_LIMIT_KNEE 0.7f
 // Below this level (~-50 dBFS, as the tone gate) the speaker is muted, so hiss doesn't play as buzz.
 #define SPEAKER_GATE TONE_GATE
 
@@ -247,6 +290,17 @@ static inline float biquad(Biquad *f, const BiquadCoef &c, float x)
 	f->y2 = f->y1;
 	f->y1 = y;
 	return y;
+}
+
+// Linear up to SPK_LIMIT_KNEE, then eases toward full scale.
+static inline float softLimit(float y)
+{
+	float a = fabsf(y);
+	if (a <= SPK_LIMIT_KNEE)
+		return y;
+	float o = (a - SPK_LIMIT_KNEE) / (1.0f - SPK_LIMIT_KNEE);
+	a = SPK_LIMIT_KNEE + (1.0f - SPK_LIMIT_KNEE) * o / (1.0f + o);
+	return y < 0 ? -a : a;
 }
 
 // Grip stream (wave haptics and/or the speaker), set by ps5AudioTask: bond slots streaming (bit per slot), the
@@ -282,19 +336,21 @@ static void processAudioSamples(const uint8_t *data, uint32_t len)
 	static Biquad s_lpL = {}, s_lpR = {};
 	bool split = g_audioHapticStyle == AUDIO_STYLE_SPLIT;
 	// grip stream: decimation phase, fill of the frame being built, samples sent, and that frame
-	static Biquad s_aaL = {}, s_aaR = {};
+	static Biquad s_aaL[2] = {}, s_aaR[2] = {};
 	static uint8_t s_dec = 0, s_fill = 0;
 	static uint16_t s_queued = 0;
 	static uint8_t s_pcmL[PCM_SAMPLES], s_pcmR[PCM_SAMPLES];
-	// speaker: anti-alias and low-cut sections, and its gain eased toward s_spkScale (~12 ms) so the gate fades
+	// speaker: anti-alias and low-cut sections, its gain eased toward s_spkScale (~12 ms) so the gate fades, and
+	// the auto gain's peak envelope and gain
 	static Biquad s_spkAa[2] = {}, s_spkCut[2] = {};
-	static float s_spkGain = 0;
+	static float s_spkGain = 0, s_spkPeak = 0, s_spkAgc = 1;
 	uint8_t waveMask = s_waveMask;
 	float waveScale = s_waveScale, spkScale = s_spkScale;
 	uint8_t dec = s_streamDec;
 	uint16_t rate = (uint16_t)(48000u / dec);
-	// the speaker filters are tuned for 8 kHz; at 4 kHz (speaker off) it stays silent
+	// the speaker filters are tuned for SPEAKER_RATE_HZ; at another rate (speaker off) it stays silent
 	bool spk = rate == SPEAKER_RATE_HZ;
+	const float spkRelease = 1.0f - 1.0f / (SPK_AGC_RELEASE_S * rate);
 	if (!waveMask) {
 		s_fill = 0;
 		s_queued = 0;
@@ -322,7 +378,10 @@ static void processAudioSamples(const uint8_t *data, uint32_t len)
 		zeroCross(split ? (int32_t)hr : s[3], &s_signR, &zc_r, &act_r);
 		if (!waveMask)
 			continue;
-		float al = waveLow(&s_aaL, s[2]), ar = waveLow(&s_aaR, s[3]);
+		float al = biquad(&s_aaL[1], HAP_LP,
+				  biquad(&s_aaL[0], HAP_LP, s[2])),
+		      ar = biquad(&s_aaR[1], HAP_LP,
+				  biquad(&s_aaR[0], HAP_LP, s[3]));
 		float sp = spk ? biquad(&s_spkAa[1], SPK_AA,
 					biquad(&s_spkAa[0], SPK_AA, mono)) :
 				 0.0f;
@@ -333,10 +392,23 @@ static void processAudioSamples(const uint8_t *data, uint32_t len)
 			sp = biquad(&s_spkCut[1], SPK_LOWCUT,
 				    biquad(&s_spkCut[0], SPK_LOWCUT, sp));
 			s_spkGain += (spkScale - s_spkGain) * 0.01f;
-			sp *= s_spkGain;
+			float peak = fabsf(sp) * (1.0f / 32768.0f);
+			s_spkPeak = peak > s_spkPeak ? peak :
+						       s_spkPeak * spkRelease;
+			float want = s_spkPeak * SPK_AGC_MAX > SPK_AGC_TARGET ?
+					     SPK_AGC_TARGET / s_spkPeak :
+					     SPK_AGC_MAX;
+			if (want < 1.0f)
+				want = 1.0f;
+			// down within ~1 ms, back up over ~50 ms (at 4 kHz)
+			s_spkAgc += (want - s_spkAgc) *
+				    (want < s_spkAgc ? 0.2f : 0.005f);
+			sp = softLimit(sp * s_spkGain * s_spkAgc);
 		}
-		s_pcmL[s_fill] = hapticUlaw(al * waveScale + sp);
-		s_pcmR[s_fill] = hapticUlaw(ar * waveScale + sp);
+		// soft limit, not hapticUlaw's clamp: a sharp hit peaks above the 20 ms envelope the haptic gain
+		// follows, and a clipped peak plays as a pop
+		s_pcmL[s_fill] = hapticUlaw(softLimit(al * waveScale + sp));
+		s_pcmR[s_fill] = hapticUlaw(softLimit(ar * waveScale + sp));
 		if (++s_fill < hapticPcmFrameLen(s_queued, rate))
 			continue;
 		for (uint8_t b = 0; b < NSLOT; b++)
@@ -565,8 +637,9 @@ static void toneUpdate(ToneSide *t, uint8_t side, uint16_t env, uint16_t ref,
 // Grip stream (wave haptics and/or the speaker): stream while either is above its gate and for WAVE_HANG_MS
 // after, so a short pause does not pay the controller's pre-buffer again. The format is re-sent every
 // WAVE_FMT_MS: it persists on the controller, but one that power-cycled mid-stream comes back without it. The
-// stream runs at 8 kHz while the speaker is enabled, else at 4 kHz (half the RF traffic); the controller refuses
-// a new format while a stream plays, so a rate change stops the stream and the next tick restarts it.
+// stream runs at SPEAKER_RATE_HZ while the speaker is enabled, else at 4 kHz (the same unless OPK_SPEAKER_8K);
+// the controller refuses a new format while a stream plays, so a rate change stops the stream and the next tick
+// restarts it.
 #define WAVE_HANG_MS 300u
 #define WAVE_FMT_MS 1000u
 
@@ -603,7 +676,7 @@ static void waveUpdate(bool active, bool speaker, float waveScale,
 			continue;
 		if (!(s_waveMask & (1u << b)) ||
 		    now - s_fmtMs[b] >= WAVE_FMT_MS) {
-			hapticPcmStart(b, speaker ? PCM_FMT_ULAW_8K :
+			hapticPcmStart(b, speaker ? PCM_FMT_SPEAKER :
 						    PCM_FMT_ULAW_4K);
 			s_fmtMs[b] = now;
 		}
@@ -672,14 +745,15 @@ void ps5AudioTask(void)
 	uint16_t toneR = tone ? envR : split ? hiR : 0;
 	uint16_t rumL = (tone || wave) ? 0 : split ? loL : envL;
 	uint16_t rumR = (tone || wave) ? 0 : split ? loR : envR;
-	// speaker: on while its mono mix is above the gate; samples are int16, so full scale plays at 100%
+	// speaker: on while its mono mix is above the gate. Samples are int16; 100% doubles them, because the grips
+	// are a quiet speaker: the auto gain's target peak then lands in the soft limiter, at about 90% of full scale.
 	uint16_t spkEnv = hapticEnvelope(hapticLevel(sqSpk, frames), &s_envSpk,
 					 SPEAKER_GATE);
 	bool spkOn = g_audioSpeaker && spkEnv;
 	// wave samples are int16 against an envelope reference in the same units: ref plays at full scale
 	waveUpdate((wave && (envL || envR)) || spkOn, g_audioSpeaker != 0,
 		   (wave && g_audioHaptics) ? gain / (100.0f * ref) : 0.0f,
-		   spkOn ? g_audioSpeaker / (100.0f * 32768.0f) : 0.0f, now);
+		   spkOn ? g_audioSpeaker / (50.0f * 32768.0f) : 0.0f, now);
 
 	// A style that stops using an output stops whatever it left playing (a tone cuts once; a rumble stops below).
 	toneUpdate(&s_toneL, 0, toneL, ref, gain, zcL, actL, now);
@@ -709,8 +783,8 @@ static const tusb_desc_endpoint_t s_iso_ep_out = {
 	.bLength = sizeof(tusb_desc_endpoint_t),
 	.bDescriptorType = TUSB_DESC_ENDPOINT,
 	.bEndpointAddress = 0x08,
-	// bmAttributes 0x05: isochronous (01b) + asynchronous sync (01b)
-	.bmAttributes = { .xfer = TUSB_XFER_ISOCHRONOUS, .sync = 1, .usage = 0 },
+	// bmAttributes 0x09: isochronous (01b) + adaptive sync (10b)
+	.bmAttributes = { .xfer = TUSB_XFER_ISOCHRONOUS, .sync = 2, .usage = 0 },
 	.wMaxPacketSize = UAC1_ISO_EP_BUFSIZE,
 	.bInterval = 1,
 };
@@ -791,7 +865,7 @@ static bool uac1_control_xfer_cb(uint8_t rhport, uint8_t stage,
 			// A transfer left queued by an earlier alt 1 keeps the silence loop running on its own.
 			if (alt == 1 && !usbd_edpt_busy(rhport, g_uac1EpIn))
 				usbd_edpt_xfer(rhport, g_uac1EpIn, g_isoInBuf,
-					       UAC1_ISO_IN_EP_BUFSIZE);
+					       UAC1_ISO_IN_PACKET);
 		}
 		return tud_control_status(rhport, request);
 	}
@@ -811,55 +885,45 @@ static bool uac1_control_xfer_cb(uint8_t rhport, uint8_t stage,
 		return tud_control_xfer(rhport, request, s_freq, sizeof s_freq);
 	}
 
-	// Interface-directed: mute / volume on the Feature Unit
-	static uint8_t s_cur_mute = 0;
-	static int16_t s_cur_vol[2] = { 0, 0 }; // 0 dB default
+	// Interface-directed: master mute / volume on Feature Unit 2 (speaker) or 5 (mic), never applied.
+	// Volumes are 16-bit signed 1/256 dB. The ranges give what Linux shows for a real pad: speaker
+	// -100..0 dB in 1 dB steps, mic 0..+48 dB in 101 steps.
+	static const int16_t s_volRange[2][3] = {
+		{ -100 * 256, 0, 256 }, // speaker: min, max, res
+		{ 0, 48 * 256, 121 }, // mic
+	};
+	static uint8_t s_curMute[2] = { 0, 0 };
+	static int16_t s_curVol[2] = { 0, 0 };
 	uint8_t cs = tu_u16_high(request->wValue);
+	uint8_t u = tu_u16_high(request->wIndex) == 0x05 ? 1 : 0;
 
 	if (request->bRequest == 0x01) { // SET_CUR
-		if (cs == 0x01) { // Mute
-			return tud_control_xfer(rhport, request, &s_cur_mute,
+		if (cs == 0x01)
+			return tud_control_xfer(rhport, request, &s_curMute[u],
 						1);
-		}
-		if (cs == 0x02) { // Volume
-			uint8_t cn = tu_u16_low(request->wValue);
-			uint8_t ch = (cn > 0 && cn <= 2) ? (cn - 1) : 0;
-			return tud_control_xfer(rhport, request, &s_cur_vol[ch],
+		if (cs == 0x02)
+			return tud_control_xfer(rhport, request, &s_curVol[u],
 						sizeof(int16_t));
-		}
 		return tud_control_xfer(rhport, request, s_ctrlScratch,
 					tu_min16(request->wLength,
 						 sizeof s_ctrlScratch));
 	}
 
-	if (cs == 0x01) {
-		// Mute: 1-byte boolean
-		return tud_control_xfer(rhport, request, &s_cur_mute, 1);
-	}
+	if (cs == 0x01)
+		return tud_control_xfer(rhport, request, &s_curMute[u], 1);
 
 	if (cs == 0x02) {
-		// Volume: 16-bit signed 1/256-dB, little-endian
-		uint8_t cn = tu_u16_low(request->wValue);
-		uint8_t ch = (cn > 0 && cn <= 2) ? (cn - 1) : 0;
 		switch (request->bRequest) {
 		case 0x81: // GET_CUR
-			return tud_control_xfer(rhport, request, &s_cur_vol[ch],
+			return tud_control_xfer(rhport, request, &s_curVol[u],
 						sizeof(int16_t));
-		case 0x82: { // GET_MIN: -46 dB (0xD200 LE)
-			static const int16_t s_min = (int16_t)0xD200;
-			return tud_control_xfer(rhport, request, (void *)&s_min,
-						sizeof s_min);
-		}
-		case 0x83: { // GET_MAX: 0 dB
-			static const int16_t s_max = 0;
-			return tud_control_xfer(rhport, request, (void *)&s_max,
-						sizeof s_max);
-		}
-		case 0x84: { // GET_RES: 1 dB (0x0100 LE)
-			static const int16_t s_res = (int16_t)0x0100;
-			return tud_control_xfer(rhport, request, (void *)&s_res,
-						sizeof s_res);
-		}
+		case 0x82: // GET_MIN
+		case 0x83: // GET_MAX
+		case 0x84: // GET_RES
+			return tud_control_xfer(
+				rhport, request,
+				(void *)&s_volRange[u][request->bRequest - 0x82],
+				sizeof(int16_t));
 		default:
 			return false;
 		}
@@ -881,7 +945,7 @@ static bool uac1_xfer_cb(uint8_t rhport, uint8_t ep_addr, xfer_result_t result,
 	if (ep_addr == g_uac1EpIn) {
 		if (g_uac1AltSettingIn == 1)
 			usbd_edpt_xfer(rhport, g_uac1EpIn, g_isoInBuf,
-				       UAC1_ISO_IN_EP_BUFSIZE);
+				       UAC1_ISO_IN_PACKET);
 		return true;
 	}
 	return false;

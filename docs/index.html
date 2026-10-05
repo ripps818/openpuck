@@ -859,10 +859,10 @@ const HD_PAD_SCALES=Array.from({length:251},(_,i)=>i*2);
       const row=document.createElement("div"); row.className="row hide";
       const lab=document.createElement("label"); lab.textContent="Controller speaker"; row.appendChild(lab);
       const sel=document.createElement("select"); row.appendChild(sel);
-      for(const v of [0,25,50,75,100,150,200]){ const o=document.createElement("option"); o.value=v; o.textContent=v?v+"%":"Off (default)"; sel.appendChild(o); }
+      for(const v of [0,25,50,75,100,150,200]){ const o=document.createElement("option"); o.value=v; o.textContent=v?v+"%"+(v===100?" (default)":""):"Off"; sel.appendChild(o); }
       sel.addEventListener("change",()=>setField(114,(+sel.value)/2));
       const note=document.createElement("p"); note.className="note";
-      note.textContent="Plays what a game sends to the DualSense speaker (the first two channels of its audio device) through the grips, up to about 4 kHz, like a small speaker. Bass is cut so it sounds rather than rumbles. While it's on, the grip stream runs at 8 kHz (twice the radio traffic).";
+      note.textContent="Plays what a game sends to the DualSense speaker (the first two channels of its audio device) through the grips, up to about 1.6 kHz, like a small speaker. Quiet audio is raised automatically, and bass is cut so it sounds rather than rumbles. 100% is full volume with the system volume at 100%; above that it gets louder but more compressed.";
       const wrap=document.createElement("div"); wrap.className="hide"; wrap.append(row,note); row.classList.remove("hide"); sec.appendChild(wrap);
       rec.speaker=sel; rec.speakerWrap=wrap;
     }

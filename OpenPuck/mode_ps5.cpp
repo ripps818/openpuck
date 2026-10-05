@@ -82,6 +82,11 @@ static const uint8_t PS5_PAIRING_TAIL[9] = { 0x08, 0x25, 0x00, 0x1E, 0x00,
 // GET_FEATURE handler. Per-slot dispatch via per-instance callback. Sizes per drivers/hid/hid-playstation.c:
 // 0x05=41, 0x09=20, 0x20=64. TinyUSB writes the report id itself and hands us the buffer PAST it, so we
 // fill only the PAYLOAD and return size-1.
+//
+// A real USB DualSense either answers a feature GET in full or stalls it; it never sends a short reply.
+// TinyUSB always prepends the report id and stalls only when the total length is 0, so PS5_STALL wraps its
+// uint16_t length (1 + 0xFFFF) to 0.
+#define PS5_STALL 0xFFFFu
 static void ps5Build(uint8_t usbSlot, uint8_t slot, uint8_t out[63]);
 
 static uint16_t ps5GetCommon(uint8_t slot, uint8_t rid, hid_report_type_t type,
@@ -114,57 +119,78 @@ static uint16_t ps5GetCommon(uint8_t slot, uint8_t rid, hid_report_type_t type,
 	if (type != HID_REPORT_TYPE_FEATURE)
 		return 0;
 
+	// Payload sizes as declared by PS5_HID_DESC; the replies mirror a real pad's (all-zero unless set below).
+	uint16_t len;
 	switch (rid) {
-	// capabilities: identify as DualSense-capable (SDL-only probe; hid-playstation never reads 0x03)
-	case 0x03:
-	case 0x08: {
-		if (reqlen < 47)
-			return 0;
-		buf[0] = 0x00;
-		buf[1] = 0x28;
-		buf[2] = 0x01;
-		buf[3] = 0x00;
-		// Bit 0 (0x01): haptic audio endpoint present; bit 1-3: lightbar,
-		// vibration, sensors. hid-playstation and SDL2 check bit 0 before
-		// enabling the 4-channel audio-haptic path.
-		buf[4] = 0x0F;
-		return 47;
+	case 0x05: // motion calibration
+		len = 40;
+		break;
+	case 0x09: // pairing info / MAC
+		len = 19;
+		break;
+	case 0x20: // firmware info
+	case 0x22: // hardware info
+	case 0x81:
+	case 0x83:
+	case 0xE0:
+	case 0xF1:
+		len = 63;
+		break;
+	case 0x85:
+		len = 2;
+		break;
+	case 0xF2:
+		len = 15;
+		break;
+	case 0xF5:
+		len = 3;
+		break;
+	default: // 0x08, 0x0A, 0x21, 0x80, 0x82, 0x84, 0xA0, 0xF0, 0xF4 and undeclared ids
+		return PS5_STALL;
 	}
-	case 0x05: // motion calibration (41 incl id)
-		if (reqlen < 40)
-			return 0;
+	if (reqlen < len)
+		return PS5_STALL;
+
+	switch (rid) {
+	case 0x05:
 		psNeutralCalib(buf);
-		return 40;
-	case 0x09: // pairing info / MAC (20 incl id)
-		if (reqlen < 19)
-			return 0;
+		break;
+	case 0x09:
 		// MAC at kernel buf[1..6] = payload[0..5]
 		memcpy(buf, g_ps5Mac[slot], 6);
 		// A real pad follows its MAC with 08 25 00 and the MAC of the host it is paired with; mirror
 		// that rather than an all-zero tail, which a genuine DualSense never reports.
 		memcpy(buf + 6, PS5_PAIRING_TAIL, sizeof PS5_PAIRING_TAIL);
-		return 19;
-	case 0x0A: // audio status / mic mute (27 incl id)
-		if (reqlen < 26)
-			return 0;
-		return 26;
-	case 0x20: // firmware info (64 incl id)
-		if (reqlen < sizeof PS5_FIRMWARE_INFO)
-			return 0;
+		break;
+	case 0x20:
 		memcpy(buf, PS5_FIRMWARE_INFO, sizeof PS5_FIRMWARE_INFO);
-		return sizeof PS5_FIRMWARE_INFO;
-	case 0x21: // build info (5 incl id)
-		if (reqlen < 4)
-			return 0;
-		buf[0] = 0x01;
-		return 4;
-	case 0x22: // extra calibration / pairing (64 incl id)
-		if (reqlen < 63)
-			return 0;
-		return 63;
-	default:
-		return 0;
+		break;
+	case 0x22:
+		// Repeats fields of the firmware report around the pad's MAC. The real pad's remaining bytes are
+		// of unknown meaning or per-unit, so they stay zero.
+		buf[0] = PS5_FIRMWARE_INFO[19];
+		memcpy(buf + 2, PS5_FIRMWARE_INFO + 23, 8);
+		memcpy(buf + 16, g_ps5Mac[slot], 6);
+		memcpy(buf + 22, PS5_FIRMWARE_INFO + 51, 6);
+		memcpy(buf + 52, PS5_FIRMWARE_INFO + 47, 4);
+		break;
+	case 0x83:
+		memset(buf, 0xFF, 4);
+		break;
+	case 0x85:
+		buf[1] = 0xFF;
+		break;
+	case 0xE0:
+		buf[0] = 0x04;
+		buf[2] = 0x18;
+		buf[3] = 0x07;
+		buf[11] = 0x06;
+		break;
+	case 0xF2:
+		buf[2] = 0x10;
+		break;
 	}
+	return len;
 }
 static void ps5SetCommon(uint8_t slot, uint8_t rid, hid_report_type_t type,
 			 uint8_t const *b, uint16_t n)
@@ -273,6 +299,12 @@ static void ps5Build(uint8_t usbSlot, uint8_t slot, uint8_t out[63])
 	out[28] = (uint8_t)((ps5SensorTimestamp >> 8) & 0xFF);
 	out[29] = (uint8_t)((ps5SensorTimestamp >> 16) & 0xFF);
 	out[30] = (uint8_t)((ps5SensorTimestamp >> 24) & 0xFF);
+	// Values a real pad sends where we have no source: sensor temperature, two constant bytes, and a second
+	// clock that runs alongside the sensor timestamp.
+	out[31] = 0x02;
+	out[41] = 0x09;
+	out[42] = 0x09;
+	memcpy(out + 48, out + 27, 4);
 	uint16_t tlx, tly, trx, trry;
 	steamPadsToTouch(b, PS5_TOUCH_H, g_in[slot].lpx, g_in[slot].lpy,
 			 g_in[slot].rpx, g_in[slot].rpy, &tlx, &tly, &trx,
@@ -308,7 +340,7 @@ void Ps5Controller::usbIdentity()
 	// bcdDevice 1.00 like a real DualSense; Windows/Wine report it to games as the HID VersionNumber.
 	USBDevice.setDeviceVersion(0x0100);
 	USBDevice.setManufacturerDescriptor("Sony Interactive Entertainment");
-	USBDevice.setProductDescriptor("Wireless Controller");
+	USBDevice.setProductDescriptor("DualSense Wireless Controller");
 }
 #include "mode_ps5_audio.h"
 

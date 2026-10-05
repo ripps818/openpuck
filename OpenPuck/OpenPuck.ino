@@ -100,6 +100,11 @@ void usbReenumerate(uint8_t k)
 		k); // mode's fixed HIDs (if any) + k slot interfaces
 	if (s_dynWantWebusb)
 		USBDevice.addInterface(usb_web);
+#ifdef OPK_PS5_CDC
+	// Debug builds only: the CDC console after the pad's own interfaces, for the `# stat` line in PS modes.
+	if (modeIsPS(g_usbMode))
+		USBDevice.addInterface(Serial);
+#endif
 	// Config descriptor: clean-PS modes report what a genuine pad reports -- self-powered (it has a
 	// battery), 500 mA, and NO remote-wakeup (they have no wake mouse to wake a host with anyway). Values
 	// from a real DS4 / ViGEmBus's emulated one: bmAttributes 0xC0, bMaxPower 0xFA. Everything else keeps
