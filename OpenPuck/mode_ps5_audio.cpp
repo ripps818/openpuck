@@ -277,8 +277,6 @@ static const BiquadCoef HAP_LP = lowPass(OPK_HAPTIC_LP_HZ, 48000.0f);
 #define SPK_AGC_TARGET 0.7f
 #define SPK_AGC_MAX 16.0f
 #define SPK_AGC_RELEASE_S 0.3f
-// Soft limit above this level, so peaks the volume pushes past full scale round off instead of clipping.
-#define SPK_LIMIT_KNEE 0.7f
 // Below this level (~-50 dBFS, as the tone gate) the speaker is muted, so hiss doesn't play as buzz.
 #define SPEAKER_GATE TONE_GATE
 
@@ -291,17 +289,6 @@ static inline float biquad(Biquad *f, const BiquadCoef &c, float x)
 	f->y2 = f->y1;
 	f->y1 = y;
 	return y;
-}
-
-// Linear up to SPK_LIMIT_KNEE, then eases toward full scale.
-static inline float softLimit(float y)
-{
-	float a = fabsf(y);
-	if (a <= SPK_LIMIT_KNEE)
-		return y;
-	float o = (a - SPK_LIMIT_KNEE) / (1.0f - SPK_LIMIT_KNEE);
-	a = SPK_LIMIT_KNEE + (1.0f - SPK_LIMIT_KNEE) * o / (1.0f + o);
-	return y < 0 ? -a : a;
 }
 
 // Grip stream (wave haptics and/or the speaker), set by ps5AudioTask: bond slots streaming (bit per slot), the
@@ -404,12 +391,12 @@ static void processAudioSamples(const uint8_t *data, uint32_t len)
 			// down within ~1 ms, back up over ~50 ms (at 4 kHz)
 			s_spkAgc += (want - s_spkAgc) *
 				    (want < s_spkAgc ? 0.2f : 0.005f);
-			sp = softLimit(sp * s_spkGain * s_spkAgc);
+			sp = hapticSoftLimit(sp * s_spkGain * s_spkAgc);
 		}
 		// soft limit, not hapticUlaw's clamp: a sharp hit peaks above the 20 ms envelope the haptic gain
 		// follows, and a clipped peak plays as a pop
-		s_pcmL[s_fill] = hapticUlaw(softLimit(al * waveScale + sp));
-		s_pcmR[s_fill] = hapticUlaw(softLimit(ar * waveScale + sp));
+		s_pcmL[s_fill] = hapticUlaw(hapticSoftLimit(al * waveScale + sp));
+		s_pcmR[s_fill] = hapticUlaw(hapticSoftLimit(ar * waveScale + sp));
 		if (++s_fill < hapticPcmFrameLen(s_queued, rate))
 			continue;
 		for (uint8_t b = 0; b < NSLOT; b++)

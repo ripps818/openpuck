@@ -866,6 +866,18 @@ const HD_PAD_SCALES=Array.from({length:251},(_,i)=>i*2);
       const wrap=document.createElement("div"); wrap.className="hide"; wrap.append(row,note); row.classList.remove("hide"); sec.appendChild(wrap);
       rec.speaker=sel; rec.speakerWrap=wrap;
     }
+    // Grip limiter (protocol v27): one setting, shared by DualSense wave haptics/speaker and Switch HD rumble grips
+    if(def.key==="DS5"||def.key==="SWITCH"){
+      const row=document.createElement("div"); row.className="row";
+      const lab=document.createElement("label"); lab.textContent="Grip limiter"; row.appendChild(lab);
+      const sel=document.createElement("select"); row.appendChild(sel);
+      for(const v of [50,60,70,80,90,100]){ const o=document.createElement("option"); o.value=v; o.textContent=v===100?"Off (hard clip)":v+"%"+(v===70?" (default)":""); sel.appendChild(o); }
+      sel.addEventListener("change",()=>setField(115,+sel.value));
+      const note=document.createElement("p"); note.className="note";
+      note.textContent="Grip vibration above this level is rounded off toward full strength instead of clipping, which plays as a pop. Lower is smoother on the strongest hits, higher keeps more of their punch. One setting for DualSense audio haptics and Switch HD rumble.";
+      const wrap=document.createElement("div"); wrap.className="hide"; wrap.append(row,note); sec.appendChild(wrap);
+      rec.limiter=sel; rec.limiterWrap=wrap;
+    }
     // trackpad -> joystick mapping (one select per pad)
     for(let pad=0; pad<2; pad++){
       const row=document.createElement("div"); row.className="row";
@@ -1778,6 +1790,11 @@ function applyBlob(p){
         const cap=p[0]>=26 && p.length>206;
         rec.speakerWrap.classList.toggle("hide",!cap);
         if(cap && document.activeElement!==rec.speaker) rec.speaker.value=p[206]*2;
+      }
+      if(rec.limiter){
+        const cap=p[0]>=27 && p.length>207;
+        rec.limiterWrap.classList.toggle("hide",!cap);
+        if(cap && document.activeElement!==rec.limiter) rec.limiter.value=p[207];
       }
       if(rec.audioGain && p.length>195){
         const gain = p[195]*2;

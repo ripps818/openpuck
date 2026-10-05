@@ -11,6 +11,8 @@
 - Does rumble still work in the translated modes, and does each mode's Grip rumble strength (Button
   mapping) change how strong it feels? Switch Pro mode must play HD rumble (a grip waveform and pad tones that change pitch
   with the game), the other modes normal rumble. The Test rumble button must buzz and then stop on its own.
+- Grip limiter (Switch and DS5 tabs): changing it on one tab must show on the other, survive a reboot, and change
+  how the strongest hits feel in Switch HD rumble and DualSense wave haptics (100 = off is the punchiest, 50 the softest).
 - Do the modes work as expected (including gyro in gyro modes)
 - Is signal quality shown?
 - Is battery level shown and correct?

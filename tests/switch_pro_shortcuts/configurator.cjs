@@ -45,6 +45,12 @@ assert.equal(spk.length,1);assert(spk[0].parentElement.classList.contains('hide'
 const p26=p25.slice();p26[0]=26;p26[206]=50;w.eval('applyBlob(new Uint8Array('+JSON.stringify(p26)+'))');
 assert(!spk[0].parentElement.classList.contains('hide'));const spkSel=spk[0].querySelector('select');assert.equal(spkSel.value,'100');
 spkSel.value='0';spkSel.dispatchEvent(new w.Event('change'));assert.deepEqual(w.writes.pop(),[114,0]);
+// v27: one grip limiter knee (blob p[209] = JS p[207], percent; field 115) on the DS5 and Switch tabs, hidden before v27.
+const lim=secs.map(sec=>[...sec.querySelectorAll('.row')].find(r=>r.querySelector('label') && r.querySelector('label').textContent==='Grip limiter')).filter(Boolean);
+assert.equal(lim.length,2);for(const r of lim)assert(r.parentElement.classList.contains('hide'));
+const p27=p26.slice();p27[0]=27;p27[207]=80;w.eval('applyBlob(new Uint8Array('+JSON.stringify(p27)+'))');
+for(const r of lim){assert(!r.parentElement.classList.contains('hide'));assert.equal(r.querySelector('select').value,'80');}
+const limSel=lim[1].querySelector('select');limSel.value='100';limSel.dispatchEvent(new w.Event('change'));assert.deepEqual(w.writes.pop(),[115,100]);
 apply();
 // Original per-type mapping and mode controls remain present.
 assert(w.document.querySelectorAll('.modebtn').length>=11);assert($('#lizardList'));

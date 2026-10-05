@@ -460,9 +460,13 @@ Messages:
     shortcut presets / strength steps / slots and are ignored.
     Per-type grip strength (blob version >= 25): `108`-`111` as percent/2 for emulated types 0-3 (Xbox,
     Switch, DS4, DS5); `104`-`107` (a per-type rumble style during development) are ignored. Status blob
-    `p[212..215]` (payload bytes 210..213) report all four; `p[209..211]` are zero.
+    `p[212..215]` (payload bytes 210..213) report all four; `p[210..211]` are zero (`p[209]` before v27).
     Controller speaker (blob version >= 26): `114` DualSense speaker volume as percent/2, 0 = off (default),
     up to 200%. Status blob `p[208]` (payload byte 206). See DUALSENSE_HAPTICS.md §7.
+    Grip limiter (blob version >= 27): `115` soft-limit knee of the grip PCM stream, percent of full scale,
+    50..100 (70 default, 100 = off: hard clip only); other values are ignored. One setting for DualSense audio
+    haptics and speaker and Switch HD rumble grips. Status blob `p[209]` (payload byte 207); saved in config
+    extension byte 14.
     Triggers (blob version >= 24): `102` deadzone % and `103` full-press % for the emulated modes. Travel at or
     below the deadzone reads 0, travel at or past the full-press point reads 255, linear between; 0/100 is
     raw. An edit that would put the deadzone at or above the full-press point is refused. Status blob

@@ -754,7 +754,8 @@ static void hdPcmRun(uint8_t slot, const uint16_t bands[4],
 					p.phase[k] -= 6.2831853f;
 				v += bands[k] * sinf(p.phase[k]);
 			}
-			(side ? p.r : p.l)[p.fill] = hapticUlaw(v * gain);
+			// the two bands can sum past full scale
+			(side ? p.r : p.l)[p.fill] = hapticUlaw(hapticSoftLimit(v * gain));
 		}
 		if (++p.fill == hapticPcmFrameLen(p.queued, PCM_RATE_HZ)) {
 			hapticPcmSend(slot, p.l, p.r, p.fill);
