@@ -751,9 +751,10 @@ void ps5AudioTask(void)
 	uint16_t spkEnv = hapticEnvelope(hapticLevel(sqSpk, frames), &s_envSpk,
 					 SPEAKER_GATE);
 	bool spkOn = g_audioSpeaker && spkEnv;
-	// wave samples are int16 against an envelope reference in the same units: ref plays at full scale
+	// wave plays the haptic channels as sent, like a real DualSense, so it skips the auto gain. 100% (and Auto)
+	// is half of full scale: in FFXIV that matched a real pad's strength, and full scale was about twice as strong.
 	waveUpdate((wave && (envL || envR)) || spkOn, g_audioSpeaker != 0,
-		   (wave && g_audioHaptics) ? gain / (100.0f * ref) : 0.0f,
+		   (wave && g_audioHaptics) ? (g_audioHapticGain ? g_audioHapticGain : 100) / (200.0f * 32768.0f) : 0.0f,
 		   spkOn ? g_audioSpeaker / (50.0f * 32768.0f) : 0.0f, now);
 
 	// A style that stops using an output stops whatever it left playing (a tone cuts once; a rumble stops below).

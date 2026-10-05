@@ -845,7 +845,7 @@ const HD_PAD_SCALES=Array.from({length:251},(_,i)=>i*2);
     if(def.key==="DS5"){
       const row=document.createElement("div"); row.className="row";
       const lab=document.createElement("label"); lab.textContent="Audio Haptics Gain"; row.appendChild(lab);
-      // 0 = Auto (firmware default): the loudest recent haptic plays at full strength
+      // 0 = Auto (firmware default): the loudest recent haptic plays at full strength; in Wave style Auto = 100%, a real DualSense's strength
       const sl=document.createElement("input"); sl.type="range"; sl.min=0; sl.max=500; sl.step=10; row.appendChild(sl);
       const vspan=document.createElement("span"); vspan.className="val"; row.appendChild(vspan);
       sl.value=0; vspan.textContent="Auto";

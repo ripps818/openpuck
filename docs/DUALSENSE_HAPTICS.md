@@ -227,7 +227,7 @@ In [mode_ps5_audio.cpp](../OpenPuck/mode_ps5_audio.cpp) (`processAudioSamples`, 
    between ticks as RMS; the halving fall halves that jitter while hits land at full strength on their first tick.
 3. **Auto gain** (default, `g_audioHapticGain == 0`): a reference level plays at full strength. It jumps to any louder
    peak and sinks by 1/1024 per tick (about a 20 s time constant), never below 8192, which caps the boost at 4×. A
-   manual 10–500% gain uses full scale as the reference instead.
+   manual 10–500% gain uses full scale as the reference instead. Wave style skips this step (see below).
 4. **Drive:** √(level / reference) × gain, 1.0 = full strength. Linear left Stellar Blade's footsteps (40 ms pulses at
    about 5% of full scale) at 10–17% rumble or −15 to −20 dB tone, which isn't felt; the root puts them at 35–45%.
 5. **Output style** (`g_audioHapticStyle`):
@@ -245,7 +245,9 @@ In [mode_ps5_audio.cpp](../OpenPuck/mode_ps5_audio.cpp) (`processAudioSamples`, 
      side's `0x80` rumble speed (gate 400), and the rest (signal minus low-pass) drives the tone as above, including
      its zero crossings (gate 100).
    - **Wave** (default): the haptic channels themselves, through a 1.6 kHz 2nd-order Butterworth low-pass, decimated to 4 kHz,
-     scaled by gain / reference (linear, no square root), u-law encoded and sent as `0x88` stereo PCM frames of 31
+     scaled linearly with no auto gain, as a real DualSense plays them: 100% (and Auto) puts int16 full scale at half
+     of u-law full scale. In FFXIV (2026-10-04) that matched a real pad's strength; full scale felt about twice as
+     strong. Then u-law encoded and sent as `0x88` stereo PCM frames of 31
      samples (129 frames/s), left channel to the left **grip** actuator (`0x88` is a grip stream). Streams while either channel's envelope is above
      gate 100 and for 300 ms after; `0x86 {2, 2, 9}` sets the format at each start and every second. The controller
      pre-buffers (24 ms with the short third frame, PROTOCOL.md), so it starts about 20 ms later than a tone. No `0x80` rumble from the audio. See PROTOCOL.md
