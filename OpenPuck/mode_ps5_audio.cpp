@@ -264,9 +264,10 @@ static BiquadCoef lowPass(float f0, float fs)
 
 // Wave style: the haptic channels low-passed at OPK_HAPTIC_LP_HZ (two sections at 48 kHz, which is also the
 // anti-alias ahead of the decimation). The grip actuators turn content above a few hundred Hz into clicks and
-// buzz, so sharp effects felt harsh through the old 1.6 kHz anti-alias alone.
+// buzz, so sharp effects felt harsh through the old 1.6 kHz anti-alias alone. In a feel test (Stellar Blade)
+// 300 Hz was smooth on strong hits and 500 Hz still a little harsh.
 #ifndef OPK_HAPTIC_LP_HZ
-#define OPK_HAPTIC_LP_HZ 500
+#define OPK_HAPTIC_LP_HZ 300
 #endif
 static const BiquadCoef HAP_LP = lowPass(OPK_HAPTIC_LP_HZ, 48000.0f);
 
