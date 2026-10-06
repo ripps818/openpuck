@@ -755,7 +755,8 @@ static void hdPcmRun(uint8_t slot, const uint16_t bands[4],
 				v += bands[k] * sinf(p.phase[k]);
 			}
 			// the two bands can sum past full scale
-			(side ? p.r : p.l)[p.fill] = hapticUlaw(hapticSoftLimit(v * gain));
+			(side ? p.r : p.l)[p.fill] =
+				hapticUlaw(hapticSoftLimit(v * gain));
 		}
 		if (++p.fill == hapticPcmFrameLen(p.queued, PCM_RATE_HZ)) {
 			hapticPcmSend(slot, p.l, p.r, p.fill);
@@ -972,7 +973,7 @@ uint8_t hapticUlaw(float x)
 	uint8_t exp = 7;
 	while (exp && !(s & (1 << (exp + 7))))
 		exp--;
-	return (uint8_t)~(sign | (exp << 4) | ((s >> (exp + 3)) & 0x0F));
+	return (uint8_t) ~(sign | (exp << 4) | ((s >> (exp + 3)) & 0x0F));
 }
 
 void rfConnQueueHapticRelay()
