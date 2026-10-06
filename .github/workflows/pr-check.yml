@@ -1,0 +1,69 @@
+name: PR check
+
+# ripps818/openpuck only: gate pull requests that change code on formatting and a firmware compile. Upstream's
+# format.yml and build.yml run only in safijari/openpuck. Documentation-only PRs don't match the paths below and
+# skip this workflow.
+on:
+  pull_request:
+    paths:
+      - 'OpenPuck/**'
+      - 'ReversePuckFirmware/**'
+      - 'puck_sniffer/**'
+      - 'pairtui/**'
+      - '.clang-format'
+      - 'Makefile'
+      - 'gen_version.sh'
+      - 'gen_uf2.sh'
+      - '.github/workflows/pr-check.yml'
+
+# a new push to the PR supersedes a check still running
+concurrency:
+  group: pr-check-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  format:
+    if: github.repository == 'ripps818/openpuck'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Install clang-format
+        # Pinned to 18 to match the Makefile; output differs between major versions.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-format-18
+
+      - name: Check formatting
+        # Run `make format` locally to fix.
+        run: make check
+
+  build:
+    if: github.repository == 'ripps818/openpuck'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up Arduino CLI
+        uses: arduino/setup-arduino-cli@v2
+
+      - name: Install Adafruit nRF52 core
+        run: |
+          arduino-cli config init --overwrite
+          arduino-cli config set board_manager.additional_urls https://adafruit.github.io/arduino-board-index/package_adafruit_index.json
+          arduino-cli core update-index
+          arduino-cli core install adafruit:nrf52
+
+      - name: Generate version header
+        run: ./gen_version.sh
+
+      - name: Compile OpenPuck
+        run: |
+          mkdir -p build/openpuck build/cache/openpuck
+          make build BUILD_PATH=build/cache/openpuck OUTPUT_DIR=build/openpuck
