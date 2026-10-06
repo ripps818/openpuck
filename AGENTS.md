@@ -45,18 +45,20 @@ not
 uint8_t g_connType = 0xE7; // 0xE7 selects the protocol-version handshake ...
 ```
 
-Short trailing comments that fit within 80 columns are fine. The lint
-(`make lint`) enforces only the column rule; the rest is on you and review.
+Short trailing comments that fit within 80 columns are fine. Nothing enforces
+this automatically; `tools/check-trailing-comments.py` checks the column rule
+if you want to run it by hand.
 
 ## Before pushing
 
 ```sh
 make format   # auto-format (kernel style)
-make check    # what CI gates on: format-check + trailing-comment lint
+make check    # what CI gates on: clang-format check
 ```
 
-CI rejects a PR immediately if either fails. The lint lives in
-`tools/check-trailing-comments.py`.
+CI rejects a PR if `make check` fails: upstream's `format.yml`, and in this
+fork `pr-check.yml`, which also compiles the firmware. Both skip PRs that
+change only documentation.
 
 ## Build / compile-check (no hardware needed)
 

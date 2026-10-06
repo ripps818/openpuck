@@ -12,13 +12,15 @@ dongle the controller pairs with. It does three jobs at once:
    SoftDevice, no BLE stack). It bonds controllers, transmits the host frame they reconnect on, and polls them
    for input at ~250 Hz.
 2. **Presents a USB personality** to the host PC/console. The same controller input can be re-dressed as the
-   Valve puck (for Steam), an Xbox 360 pad, a Switch controller, a PS5 DualSense, or a DS4 — selected at boot.
+   Valve puck (for Steam), Xbox 360, Original Xbox, Switch Pro / HORIPAD, PS5 DualSense, DS4, PS3,
+   DirectInput or SInput — selected at boot (the mode list is in docs/PROTOCOL.md §9).
 3. **Exposes config surfaces** — a WebUSB channel for the browser panel and a CDC serial console for debugging
    and the protocol reverse-engineering tooling.
 
-It runs as a **single-threaded `loop()`** plus **USB interrupt callbacks**. There is no RTOS task switching in
-our code; concurrency is cooperative. The only preemption is the USB stack's ISR (which calls our HID report
-callbacks) and the radio's hardware events (which we poll, never interrupt on).
+Almost everything runs in the Arduino **`loop()` task**, cooperatively. The exception is TinyUSB's
+high-priority **`usbd` task**, which runs the USB callbacks (HID set/get report, class-driver transfers) and the
+device→host sends queued through `usb_tx`. The radio is polled, never interrupt-driven. CODE_MAP.md §0 lists
+which context owns what.
 
 ## The big picture
 
@@ -68,25 +70,35 @@ just points at the `OpenPuck` directory). Modules are layered low → high:
 | **`OpenPuck.ino`** | Entry point only: `setup()` builds the USB presentation for the persisted mode + arms the watchdog; `loop()` pumps each subsystem. |
 | `config.{h,cpp}` | USB-mode definitions (`MODE_*`), persisted settings (`cfg.bin`), all runtime tunables, mode-switch persistence policy. |
 | `identity.{h,cpp}` | Unique device serial from FICR DEVICEID; the puck `0x83` attribute blob. |
+| `storage.{h,cpp}` | LittleFS mount and safe file writes: each save goes to a temporary file, is read back and verified, then renamed over the original. A failed mount formats only blank flash, never existing data. |
+| `fault_diag.{h,cpp}` | "Why did we reboot?": classifies each boot (watchdog, HardFault, intentional reset, ...) for the boot banner and the panel. |
 | `bonds.{h,cpp}` | The four bond slots (`g_slot`), bond persistence (`bonds.bin`), and the live link state (`g_connSlot`, `g_connReplyMs`). |
 | `radio.{h,cpp}` | Bare-metal nRF52 `RADIO` register layer: PHY/CRC/whitening/address config (all live-tunable), `rfConfig()`/`rfSetAddr()`, the `rfrx`/`rftx` DMA buffers. |
 | `triton.{h,cpp}` | The controller's native input: report `0x45` button masks (`TB_*`) + decoders, and the shared decoded-input struct **`g_in`**. |
 | `gamepad_util.{h,cpp}` | Cross-mode helpers for building host reports: stick rescaling, Steam-trackpad → touch mapping, PlayStation-layout button packers. |
-| `haptics.{h,cpp}` | Host→controller haptic relay queue + the watchdogs that stop a latched buzz; the OUTPUT-report capture ring. |
+| `haptics.{h,cpp}` | Host→controller haptic relay queue + the watchdogs that stop a latched buzz; translated-mode rumble (normal rumble, and Switch Pro HD rumble as a grip PCM stream plus trackpad tones), the grip limiter, PCM stream start/stop, shortcut confirmation pulses; the OUTPUT-report capture ring. |
 | **`controllers.{h,cpp}`** | The `IController` abstraction + the `mode → singleton` registry. |
 | `puck_hid.{h,cpp}` | **Steam/Lizard** personality: the puck HID slot interfaces, the feature command channel (bond read/write, attributes), the seamless auto-lizard decision, and the USB connection presentation. |
-| `mode_lizard.{h,cpp}` | The lizard keyboard+mouse mapping (rides on the puck interface; not a standalone controller). |
+| `mode_lizard.{h,cpp}` | The lizard keyboard+mouse driver (rides on the puck interface; not a standalone controller). |
+| `lizard_map.{h,cpp}` | The configurable lizard binding table (`lizard_map.bin`), edited from the panel. |
 | `mode_xinput.{h,cpp}` | **Xbox** personality: a custom TinyUSB XInput class driver + right-pad mouse + rumble relay. |
 | `mode_switch_hori.{h,cpp}` | **Switch HORIPAD** personality (console-friendly, no handshake). |
 | `mode_switch_pro.{h,cpp}` | **Switch Pro** personality: the full Nintendo USB handshake/subcommand state machine + SPI calibration + gyro. |
-| `mode_ps5.{h,cpp}` | **PS5 DualSense** personality: gyro + split trackpad. |
-| `mode_hidgyro.{h,cpp}` | **DS4-layout** generic HID gyro personality (motion-aware PC games). |
+| `mode_ps5.{h,cpp}` | **PS5 DualSense** personality (normal and game/clean): gyro + split trackpad, real-DualSense feature reports. |
+| `mode_ps5_audio.{h,cpp}` | The DualSense **USB audio function** (UAC1, 4-channel out + silent mic): turns the haptic channels into grip PCM / rumble / tones and the speaker channels into grip audio. See docs/DUALSENSE_HAPTICS.md. |
+| `mode_hidgyro.{h,cpp}` | **DS4-layout** generic HID gyro personality (normal and game/clean; motion-aware PC games). |
+| `mode_ps3.{h,cpp}` | **PS3 DualShock 3 / Sixaxis** personality, built to enumerate on a real PS3 (static mount, console handshake). |
+| `mode_xbox_og.{h,cpp}` | **Original Xbox Controller S** personality: XID class driver for a real Original Xbox. |
 | `mode_dinput.{h,cpp}` | **DirectInput** personality: two joystick collections so every analog input (sticks, triggers, both trackpads, gyro) is bindable at once in flight/space sims. |
 | `mode_sinput.{h,cpp}` | **SInput** personality: the open SDL-native gamepad protocol (sticks, analog triggers, IMU, two touchpads, battery, rumble). |
 | `rf_link.{h,cpp}` | The operational puck protocol: host-frame beacons, connected-mode poll loop, `0xF1` decode + dispatch, chord detection, remote wakeup, QoS hopping, stats. |
 | `rf_diag.{h,cpp}` | RF reverse-engineering / calibration tooling: raw capture, CRC-validating config sweeps, frame replay, address listen, scan-then-respond, live-session sniffer. Not used in normal operation. |
 | `webusb_config.{h,cpp}` | The WebUSB binary config channel for the browser panel. |
 | `serial_console.{h,cpp}` | The CDC single-letter debug command line. |
+| `usb_mount.{h,cpp}` | Dynamic mounting: emulated modes present only the connected controllers and re-enumerate (no reboot) when that set changes. |
+| `usb_tx.{h,cpp}` | Moves device→host HID sends onto the TinyUSB `usbd` task, so the loop task never blocks on a busy endpoint. |
+| `usb_app_drivers.{h,cpp}` | Registry for the custom TinyUSB class drivers (XInput, XID, UAC1). |
+| `fw_update.{h,cpp}` | Staged firmware update over WebUSB: stage, CRC-verify, apply on reboot. |
 | `wake_hid.{h,cpp}` | A boot-mouse HID interface added to the clean controller modes so the host honors USB remote-wakeup (see "Wake from sleep"). |
 | `status_led.{h,cpp}` | Status and wake LED indicator: solid ON when connected, fast blink (5 Hz) when scanning/connecting, slow blink (1 Hz) when idle, dark when host suspended with 500 ms wake flash. Drives Feather (P1.15), SuperMini (P0.15), and Raytac CX-40 (P0.08). |
 | `pwr_switch.{h,cpp}` | Optional (`-DOPK_PWR_SWITCH=1`): pulses a GPIO wired to the HOST motherboard's power-switch header on a Steam-button short press while the host is off. See "Host power-switch trigger" below. |
@@ -98,10 +110,18 @@ one controller is active per boot, chosen by `g_usbMode` via `controllerFor()` a
 
 ```cpp
 class IController {
-  virtual void begin();                                              // setup(): register USB interface(s) + IDs
-  virtual void onReport45(const uint8_t* rep, bool fresh, uint8_t bodyTlen);  // RF input arrived (PUSH modes)
-  virtual void task();                                               // loop(): streaming emit / handshake drains
-  virtual bool isPuck() const;                                       // Steam/Lizard keep the boot CDC composite
+  virtual void begin();                         // setup(): register USB interface(s) + IDs
+  virtual void onReport45(int slot, const uint8_t* rep, bool fresh, uint8_t bodyTlen);  // RF input (PUSH modes)
+  virtual void onAuxReport(int slot, uint8_t rid, const uint8_t* data, uint8_t n);      // 0x43 battery, 0x44 events
+  virtual void task();                          // loop(): streaming emit / handshake drains
+  virtual void wakeEvent();                     // wake gesture while the host is suspended
+  virtual bool isPuck() const;                  // Steam/Lizard keep the boot CDC composite
+  // dynamic mounting (usb_mount.h): present only the connected controllers
+  virtual bool dynamicMount() const;
+  virtual uint8_t maxSlots() const;
+  virtual void usbIdentity();                   // re-apply VID/PID/strings after clearConfiguration
+  virtual void beginPool();                     // create the slot interfaces once at boot
+  virtual void mountSlots(uint8_t k);           // add the first k slot interfaces
 };
 ```
 
@@ -167,29 +187,37 @@ Full details are in `docs/PROTOCOL.md`; the register-level constants and their p
   timeout and bails rather than hanging. A wedged radio must never freeze the loop.
 - A **hardware watchdog** (~8 s, armed in `setup()`) resets the chip if `loop()` ever stops feeding it — so a
   hang re-enumerates USB and re-inits RF on its own without a physical replug.
-- USB HID report callbacks (`handleSet`/`handleGet` in `puck_hid`, `jcSet` in `mode_switch_pro`) run in **ISR
-  context**. They only stage data (into bond slots, the relay queue, or an SPSC reply ring); the actual
-  `sendReport` happens later from `task()`/`loop()` where it's safe.
-- `volatile` marks state shared across the ISR/loop boundary (the relay queue, the Switch-Pro reply ring
+- USB HID report callbacks (`handleSet`/`handleGet` in `puck_hid`, `jcSet` in `mode_switch_pro`, the mode
+  rumble callbacks) run on the **`usbd` task**, with a small stack. They only stage data (into bond slots,
+  the relay queue, or an SPSC reply ring); relay producers write under PRIMASK.
+- Device→host reports built in `loop()` are handed to `usb_tx`, which sends them from the `usbd` task, so the
+  loop never blocks on a busy USB endpoint.
+- `volatile` marks state shared across the `usbd`/loop boundary (the relay queue, the Switch-Pro reply ring
   indices, the rumble level).
 
 ## Persistence
 
-Two files in the nRF52 internal LittleFS:
+Files in the nRF52 internal LittleFS, all written through `storageWriteFile()` (temporary file, verify,
+replace):
 
-- `cfg.bin` (`config.cpp`) — USB mode, tunables, chord assignments, persistence policy. A magic byte versions
-  the layout; a mismatch falls back to clean defaults.
+- `cfg.bin` (`config.cpp`) — USB mode, tunables, mode shortcuts, per-type button and rumble settings, haptics
+  settings, persistence policy. A magic byte versions the layout; a mismatch falls back to clean defaults.
+  New settings are appended to the end, and a file that is short only in that appended part is accepted, so
+  an upgrade keeps existing settings and the new ones start at their defaults.
 - `bonds.bin` (`bonds.cpp`) — the four bond records.
+- `swprocfg.bin` (`mode_switch_pro.cpp`) — the Switch Pro gyro mapping, plus per-slot user calibration
+  files.
+- `lizard_map.bin` (`lizard_map.cpp`) — the lizard binding table.
 - The RF channel-history journal uses two CRC/commit-protected flash pages at `0x86000–0x87FFF`. Official
   application builds are link-guarded below that window and WebUSB update staging starts above it, so ordinary
   firmware updates preserve learned RF history. A full-board wipe intentionally clears the journal too.
 
-Mode switches (chord, WebUSB, or CDC) call `saveMode()` then reboot so the next boot enumerates the right
+Mode switches (shortcut, WebUSB, or CDC) call `saveMode()` then reboot so the next boot enumerates the right
 interface set. By default every cold boot returns to Steam mode unless "persist last mode" is enabled.
 
 ## Config & debug surfaces
 
-- **WebUSB** (`webusb_config.cpp`): present in every mode; the browser panel reads a status blob and sets
+- **WebUSB** (`webusb_config.cpp`): present in every mode except the game/clean PlayStation modes and PS3; the browser panel reads a status blob and sets
   one-byte tunable fields or requests a mode switch.
 - **CDC console** (`serial_console.cpp`): present only in puck modes. Single-letter commands toggle RF diag
   modes, poke radio registers live, switch USB mode, edit tunables, inject test haptics, and dump capture

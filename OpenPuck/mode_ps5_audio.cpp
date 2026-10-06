@@ -395,8 +395,10 @@ static void processAudioSamples(const uint8_t *data, uint32_t len)
 		}
 		// soft limit, not hapticUlaw's clamp: a sharp hit peaks above the 20 ms envelope the haptic gain
 		// follows, and a clipped peak plays as a pop
-		s_pcmL[s_fill] = hapticUlaw(hapticSoftLimit(al * waveScale + sp));
-		s_pcmR[s_fill] = hapticUlaw(hapticSoftLimit(ar * waveScale + sp));
+		s_pcmL[s_fill] =
+			hapticUlaw(hapticSoftLimit(al * waveScale + sp));
+		s_pcmR[s_fill] =
+			hapticUlaw(hapticSoftLimit(ar * waveScale + sp));
 		if (++s_fill < hapticPcmFrameLen(s_queued, rate))
 			continue;
 		for (uint8_t b = 0; b < NSLOT; b++)
@@ -741,7 +743,10 @@ void ps5AudioTask(void)
 	// wave plays the haptic channels as sent, like a real DualSense, so it skips the auto gain. 100% (and Auto)
 	// is 40% of full scale: half matched a real pad in FFXIV, but felt too strong across other games (2026-10-05).
 	waveUpdate((wave && (envL || envR)) || spkOn, g_audioSpeaker != 0,
-		   (wave && g_audioHaptics) ? (g_audioHapticGain ? g_audioHapticGain : 100) / (250.0f * 32768.0f) : 0.0f,
+		   (wave && g_audioHaptics) ?
+			   (g_audioHapticGain ? g_audioHapticGain : 100) /
+				   (250.0f * 32768.0f) :
+			   0.0f,
 		   spkOn ? g_audioSpeaker / (50.0f * 32768.0f) : 0.0f, now);
 
 	// A style that stops using an output stops whatever it left playing (a tone cuts once; a rumble stops below).

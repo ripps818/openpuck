@@ -75,6 +75,13 @@ re-add wake mouse + `g_active->mountSlots(k)` + WebUSB in locked instance order,
   `g_debugCdcThisBoot`, `g_mDiv`, `g_mFric`, `g_type[ET_COUNT]` (per-emulated-type
   button config), `g_etype`, live mirrors `g_abSwap`/`g_back[4]`/`g_qamMap`/
   `g_padHaptics`/`g_ledBright`, and the constant `g_pollUs = 4000` (250 Hz, **fixed**).
+  Also: `g_typeRumbleScale[ET_COUNT]` (per-type grip strength; `applyActiveType` copies the
+  active one into `g_rumbleScale`, `rumbleStoreActive` writes an edit back),
+  `g_shortcutFlags` (modifier / pulse / QAM+Select / enabled bits, `SHORTCUT_*` in
+  triton.h), `g_trigInner`/`g_trigOuter` (trigger deadzone / full press), the DualSense
+  audio settings `g_audioHaptics`/`g_audioHapticGain`/`g_audioHapticStyle`/`g_audioSpeaker`,
+  `g_hapticLimitKnee` (grip limiter), `g_swDpadHaptics`/`g_swQamSelect`, and the
+  extension block `g_cfgExt`.
   (`g_swGyroLegacy` is declared here but lives in `mode_switch_pro.cpp`/`swprocfg.bin`.)
 - `struct Cfg` is serialized to `/cfg.bin` (LittleFS), magic `0xCF`. `rxWin10`,
   `lizKeep`, `landAll87` and the per-type table travel with it; `rsvd0` is the
@@ -87,6 +94,14 @@ re-add wake mouse + `g_active->mountSlots(k)` + WebUSB in locked instance order,
   else `persistMode ? last mode : STEAM(0)`. Calls `applyActiveType()`.
 - `saveCfg`, `saveMode`, `armDebugCdcNextBoot`, `factoryErase` (LittleFS `format()`),
   `factoryResetOnce` (git-hash-tagged one-time wipe). All flash I/O — **loop context only**.
+- `captureFeedbackChord` (shortcut confirmation pulse for Switch Pro QAM+Minus).
+
+### `storage.cpp` / `storage.h` — LittleFS mount + safe writes (loop task)
+- `storageBegin()`: mounts LittleFS; on failure formats only if the filesystem region is
+  blank (`g_storageState` 0 unavailable / 1 mounted / 2 initialized blank / 3 save failed).
+- `storageWriteFile(path, tmp, data, len)`: write `tmp`, read back + compare, then
+  `rename` over `path`. Used by `cfg.bin`, `bonds.bin`, `lizard_map.bin`, `swprocfg.bin`
+  and the Switch Pro calibration files.
 - `applyActiveType()` copies `g_type[g_etype]` into the hot-path live mirrors.
 
 ### `identity.cpp` / `identity.h` (loop task, boot)
@@ -154,7 +169,9 @@ The "dongle" role. All driven synchronously from `rfLinkTask()` in `loop()`.
   samples RSSI, updates `g_connReplyMs`/`g_linkRssi`, calls `hapticOnReconnect` on a
   gap, and **decodes the 0x45 input report into `g_in[g_curSlot]`** (buttons, sticks,
   triggers, trackpads, IMU). Also handles: Steam-button short-press remote wakeup,
-  Steam+Y 2 s power-off chord, back-4 mode-switch chord (face + D-pad, `saveMode` + `NVIC_SystemReset`),
+  Steam+Y 2 s power-off chord, mode-switch shortcut (modifier = back-4 or QAM per `shortcutHeld()`;
+  face + D-pad → `shortcutModeRequest`/`shortcutModeTask`, `saveMode` + `NVIC_SystemReset`),
+  modifier + pad click touchpad toggle,
   and status reports 0x43 (battery → `g_battery`/`g_batteryState`) / 0x44 → dispatched
   via `g_active->onAuxReport`.
 - **`g_curSlot`** — the slot the poll loop is currently driving. Set by `rfConnStep`
@@ -261,6 +278,13 @@ The 28DE:1304 puck identity with four HID slot interfaces (interface N = bond sl
 
 ---
 
+### `lizard_map.cpp` / `lizard_map.h` — lizard binding table (loop task)
+- `g_lizardMap` (up to 32 `LizardBinding` v2 records, 24 bytes: out type + data, 64-bit
+  any-of `trigMask` and all-of `holdMask`; bits 32-39 are virtual stick directions).
+  `rfLizard()` walks it every input frame. `loadLizardMap`/`saveLizardMap`
+  (`lizard_map.bin` via `storageWriteFile`), `defaultLizardMap`. Edited over WebUSB ops
+  `0x11`-`0x15` (16-byte legacy records) and `0x17`-`0x1A` (24-byte).
+
 ## 8. XInput personality — `mode_xinput.cpp` / `mode_xinput.h`  (`g_xboxCtl`)
 
 Dynamic-mount, PUSH-style. Custom TinyUSB **vendor class driver** (0xFF/0x5D/0x01) plus a
@@ -286,6 +310,15 @@ boot mouse for the right pad.
 
 ---
 
+### `mode_xbox_og.cpp` / `mode_xbox_og.h`  (MODE_XBOX_OG)
+Original Xbox Controller S (045E:0289). **Static** mount, one controller, custom XID class
+driver (`xboxOgClassDriver`, usb_app_drivers) plus wake mouse + WebUSB.
+- **usbd task**: the XID vendor control requests (descriptor + capabilities, GET/SET_REPORT
+  on EP0) and the OUT endpoint; rumble is staged in the driver state under PRIMASK
+  (`rumble_pending`).
+- **loop task**: builds the 20-byte input report from `g_in`; applies staged rumble with
+  `hapticSteamRumble` (gated by `g_rumble`).
+
 ## 9. Switch personalities
 
 ### `mode_switch_hori.cpp` / `mode_switch_hori.h`  (`g_switchHori`)
@@ -300,8 +333,10 @@ machine. **This mode registers an OUT/set-report callback** (`setReportCallback(
 JC_SETCB[s])`).
 
 - **usbd-task code (800-byte stack, the deepest USB-callback path in the firmware)**:
-  `jcSet0..3` → `jcSetCommon` → `jcRumble` (decodes amplitudes, dedupes, calls
-  **`hapticSteamRumble(lo,hi,bond)` from usbd**) and `jcSubcmd` (builds a 63-byte 0x21
+  `jcSet0..3` → `jcSetCommon` → `jcRumble` (decodes HD rumble; in Switch Pro mode the
+  style is HD, so it calls **`hapticSwitchPitch(bond, 4 bands, 4 frequencies)` from usbd**,
+  which only stores the bands under PRIMASK for `hapticHdTask`; otherwise dedupes and
+  calls `hapticSteamRumble`) and `jcSubcmd` (builds a 63-byte 0x21
   reply: BT pairing, device info, SPI read via `spiRead`, SPI write via `jcSpiWrite`,
   report-mode set). `jcSubcmd`'s local `p[63]` plus `jcInputPrefix`/`spiRead` is the
   heaviest stack user on the 800-byte stack. `jcEnq` (usbd) is the **ring producer**.
@@ -340,6 +375,21 @@ callbacks** (`setReportCallback(PS5_GETCB[s], PS5_SETCB[s])`).
 - **loop task**: `task()` rate-gated → `ps5Build(u, bond, p[63])` from `g_in[bond]` (per-slot
   `seq[]`), `sendReport(0x01, p, 63)`. Touch packed at `out+32` (8 bytes).
 - **Buffers**: input report `p[63]`; `g_ps5Mac[NSLOT][6]`.
+- `mountSlots` adds the UAC1 audio function (`g_ps5Audio`, mode_ps5_audio) **before** the
+  gamepads, as on a real DualSense (audio on interfaces 0-2), in both PS5 modes.
+
+### `mode_ps5_audio.cpp` / `mode_ps5_audio.h` — DualSense USB audio (UAC1)
+Custom TinyUSB class driver (`uac1_get_driver`, registered via usb_app_drivers):
+4-channel 48 kHz speaker/haptics OUT stream + a silent 2-channel mic IN stream.
+- **usbd task**: `uac1_xfer_cb` → `processAudioSamples` filters the haptic channels
+  (3/4) and, if `g_audioSpeaker`, the speaker channels, accumulating levels and the
+  grip PCM; `hapticPcmSend` frames go into the relay ring under PRIMASK.
+- **loop task**: `ps5AudioTask()` (from `Ps5Controller::task`) runs the 20 ms level /
+  envelope / auto-gain steps and drives the selected style (`g_audioHapticStyle`):
+  wave → `hapticPcmStart`/`hapticPcmStop` around the PCM stream, rumble →
+  `hapticAudioRumble`, tone → `hapticAudioTone`, split → rumble for the lows and tones
+  for the rest. All grip PCM passes
+  `hapticSoftLimit` (the grip limiter). Details: docs/DUALSENSE_HAPTICS.md §7.
 
 ### `mode_hidgyro.cpp` / `mode_hidgyro.h`  (`g_hidGyroCtl`, MODE_HIDGYRO + MODE_DS4_GAME)
 DS4-layout (054C:05C4) + gyro. Same structure as PS5.
@@ -353,6 +403,14 @@ DS4-layout (054C:05C4) + gyro. Same structure as PS5.
 **Both PS modes**: `g_usbToBond[]` read in usbd without a lock (bounds-checked); the
 calib helper `psNeutralCalib` writes 34 bytes (buf[6..33]) while callers return 36/40
 (remainder zeroed by the prior memset).
+
+### `mode_ps3.cpp` / `mode_ps3.h`  (MODE_PS3)
+DualShock 3 / Sixaxis (054C:0268). **Static** mount (a real PS3 rejects the empty
+configuration a dynamic mode shows at plug-in), single HID, no wake mouse / WebUSB.
+- **usbd task**: answers the PS3 GET_REPORT(Feature) enable handshake (`0xF2`/`0xF5`/
+  `0xEF`/`0x01`); OUTPUT `0x01` rumble → `hapticSteamRumble(p[4]*257, p[2] ? 0xFFFF : 0)`
+  for `ds3ActiveSlot()`.
+- **loop task**: `task()` builds the Sixaxis input report from `g_in` (IMU as 10-bit).
 
 ## 10b. Open / generic personalities
 
@@ -417,10 +475,24 @@ Reads `g_qamMap`/`g_abSwap`/`g_back[]`. Pure transforms, no buffers beyond calle
 - `g_testHaptic`, `g_hapticStop` (`volatile`), `g_hapticBlockOn`, `g_hapticBlockMs`,
   `g_hapticBlockUntil[NSLOT]`, `g_relayOp`, `g_relaySub`.
 - `hapticSendShutdown()` — bursts 0x9F "off!" (`{6f 66 66 21}`) ×3 broadcast.
-- `hapticSteamRumble(low, high, slot)` — shapes the two amplitudes (`g_rumbleStyle`, then
-  `g_rumbleScale` %; integer-only, this runs in the USB OUT callback), builds a 9-byte 0x80
-  report, `relayEnqueue(0x80, p, 9, slot)`; **called from usbd (mode rumble callbacks) and
-  loop**. Per-slot stuck-rumble tracking `g_rumble80On/Ms[NSLOT]`.
+- `hapticSteamRumble(low, high, slot)` — the translated-mode rumble entry point, **called
+  from usbd (mode rumble callbacks) and loop**. In Switch Pro mode (style HD, set by
+  `applyActiveType`) it hands off to `hapticSwitchHd`; otherwise `hapticRumbleGrip` shapes
+  the amplitudes (`g_rumbleScale` %, integer-only), builds a 9-byte 0x80 report and
+  `relayEnqueue(0x80, p, 9, slot)`. Per-slot stuck-rumble tracking `g_rumble80On/Ms[NSLOT]`.
+- **HD rumble** (Switch Pro): `hapticSwitchHd`/`hapticSwitchPitch` (usbd) store four
+  band amplitudes + frequencies in `g_hdRumble[slot]` under PRIMASK. `hapticHdTask()`
+  (loop) snapshots them: the high bands become trackpad `0x83` tones (`hdToneSend`, with
+  the 250-300 Hz ceiling `hdQuietCeiling`), and `hdPcmRun` synthesizes both bands per side
+  into a 4 kHz u-law grip stream (`0x88`), held through silences up to `HD_PCM_HANG_MS`.
+- **PCM streams**: `hapticPcmStart`/`hapticPcmStop` (`0x86` format/stop),
+  `hapticPcmSend` (one `0x88` frame), `hapticUlaw`. `hapticSoftLimit` (haptics.h) rounds
+  off samples above `g_hapticLimitKnee` instead of clipping.
+- **Audio haptics** (DualSense): `hapticAudioRumble` (0x80, gated by `g_audioHaptics`
+  rather than `g_rumble`) and `hapticAudioTone` (0x83).
+- **Shortcut pulses**: `hapticShortcutFeedback(slot, n)` queues confirmation pulses when
+  `SHORTCUT_FEEDBACK` is set; `hapticShortcutFeedbackTask` plays them, and the HD pad
+  tones yield while one is active.
 - `hapticTestRumble()` — one `RUMBLE_TEST_AMP` buzz to every linked slot through the same
   shaping path (panel op `0x16`, console `TR`); `hapticTask()` sends the stop after
   `RUMBLE_TEST_MS` — the actuator latches, so the stop is not optional.
@@ -456,6 +528,15 @@ Reads `g_qamMap`/`g_abSwap`/`g_back[]`. Pure transforms, no buffers beyond calle
   no reboot). Order-preserving so existing instances keep their index.
 - No `delay()` here (the detach delay lives in `usbReenumerate`). Maps rewritten
   non-atomically just before re-attach; consumers tolerate the brief window.
+
+### `usb_tx.cpp` / `usb_tx.h` — device→host send marshalling
+- Loop-built HID reports are queued and sent from the **usbd task** (SOF drain), so a
+  busy USB DMA can never block `loop()` in TinyUSB's deferred-call path. Modes register
+  extra drains with `usbTxRegisterDrain` (e.g. XInput's `xiSofDrain`).
+
+### `usb_app_drivers.cpp` / `usb_app_drivers.h`
+- `usbd_app_driver_get_cb` registry for the custom class drivers: XInput, Original Xbox
+  XID, and UAC1 (DualSense audio).
 
 ### `wake_hid.cpp` / `wake_hid.h` — boot-mouse wake source
 - `WAKE_HID_DESC` = boot mouse, `g_wakeHid`, `g_wakeHidPresent`.

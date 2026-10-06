@@ -7,6 +7,22 @@ OpenPuck is an opensource firmware for NRF52840 Pro Micro that copycats the Stea
 > [!WARNING]
 > Every part of this project _HEAVILY_ used LLMs*
 
+This is ripps818's fork of [safijari/openpuck](https://github.com/safijari/openpuck). Its builds are on [this fork's releases page](https://github.com/ripps818/openpuck/releases) and its configurator is at [ripps818.github.io/openpuck](https://ripps818.github.io/openpuck/). Upstream's configurator doesn't have the settings below.
+
+## What this fork adds
+- **DualSense 4-channel USB audio & voice-coil haptics:** DualSense mode presents the same USB audio function as a real DualSense (4-channel output, silent 2-channel mic). Channels 3 & 4 (the haptic tracks) are turned into Steam Controller haptic commands in real time and sent over the 2.4GHz RF link. The default **wave** style streams the haptic waveform itself to the grip actuators as PCM; rumble, tone and split (low frequencies as rumble, the rest as tones) remain as options. Linux/Proton setup: [DualSense mode & audio haptics on Linux / Proton](#dualsense-mode--audio-haptics-on-linux--proton).
+- **Controller speaker:** in DualSense mode, what a game sends to the DualSense speaker can play through the grips, up to about 1.6 kHz with the bass cut. The grips are vibration actuators, so it is more a vibration trick than a speaker: voices come through but sound buzzy and thin. Off by default; turn it on in the DualSense tab.
+- **HD rumble in Switch Pro mode:** each grip plays the game's HD rumble as a waveform at the game's frequencies (both bands, streamed as PCM), and each trackpad plays the high band as tones. Effects keep their texture, closer to a real Pro Controller than motor-style rumble. In the Eden emulator, enable "Direct Pro Controller driver (experimental)" to get the game's real HD rumble data.
+- **Grip limiter:** strong grip vibration above a set level (70% by default) is rounded off instead of clipping into a pop. One setting, on the Switch and DS5 tabs, shared by Switch HD rumble and DualSense audio haptics.
+- **Per-mode rumble:** each mode keeps its own rumble switch and grip strength, and the rumble style follows the mode. See [Rumble](#rumble) below.
+- **Switch Pro trackpad D-pad and screenshot shortcut:** trackpads can act as a D-pad on touch or on click (diagonals included), and Quick Access + Minus can take a screenshot. Details: [docs/CONTROLLER_FEATURES.md](docs/CONTROLLER_FEATURES.md).
+- **Full-rate haptic streams in Steam mode:** the controller's PCM haptic commands are relayed at full rate, so audio-to-haptics apps such as Fancy Haptics play as cleanly through OpenPuck as over USB.
+- **Trigger deadzone and full-press point:** emulated modes can ignore the first part of the trigger travel and treat a pull past a set point as a full press. This helps games made for DualSense resistive triggers that never see a full pull.
+- **Shortcut modifier choice:** mode shortcuts can use Quick Access as the modifier instead of all four back buttons. Shortcuts can also play a confirmation pulse or be turned off entirely. See [Mode shortcuts](#mode-shortcuts).
+- **Touchpad toggle:** modifier + either trackpad click turns touchpad reporting on or off (high buzz = on, low buzz = off). Useful to stop accidental trackpad touches when you only use the sticks.
+- **Enhanced PlayStation HID & feature reports:** a byte-for-byte copy of a real DualSense's report descriptor, and Feature Reports `0x03`, `0x08`, `0x09` (pairing & MAC), `0x0A`, `0x20` (accurate hardware revision and firmware version fields), `0x21`, and `0x22`, plus `GET_REPORT(0x01)` support for DirectInput game polling.
+- **Nightly builds:** every push to `main` is built and can be flashed in-page from this fork's configurator. See [How to install/use it](#how-to-installuse-it).
+
 # The Steam Controller 2
 Released in 2026, the Steam Controller 2 represents the peak (IMO) of controller design. Trackpads, gyro, 4 back buttons, all with the flexibility of Steam Input brings the amazing flexiblity of the Steam Deck's controls to gaming PCs in general.
 
@@ -26,24 +42,45 @@ There are two fundamental problems with the controller:
 
 OpenPuck uses a [Pro Micro NRF52840](https://www.amazon.com/dp/B0GSZ7FD6T) ($8 on Amazon, possibly cheaper elsewhere) which uses a radio similar to the one being used by the controller and the puck. Once the arduino sketch is uploaded it emulates the puck over USB to Steam by default and allows pairing the controller normally (almost, the lizard mode for when Steam is off might not be 1:1). Latency [has been measured to be within 1ms of the official puck](https://www.reddit.com/r/SteamController/comments/1u754ze/complete_latency_testing_of_openpuck_project/).
 
-At any point you can hold all 4 back buttons and press X to switch over to ***Xbox mode** which maps all canonical inputs to their expected counterparts (plus L4 -> LB, L5 -> L3, etc which are configurable). In this mode the right trackpad acts as a mouse but at present this only works in Android and SteamOS.
+At any point you can hold the shortcut modifier (all four back buttons by default) and press X to switch over to **Xbox mode** which maps all canonical inputs to their expected counterparts (plus L4 -> LB, L5 -> L3, etc which are configurable). In this mode the right trackpad acts as a mouse but at present this only works in Android and SteamOS.
 
-Similarly you can hold all 4 back buttons and press Y to switch (teehee) over to a **Switch mode**. This emulates a pro controller full with gyro and haptics. There's other modes as well:
+Similarly you can hold the modifier and press Y to switch (teehee) over to a **Switch mode**. This emulates a pro controller full with gyro and haptics. There's other modes as well.
 
-| Button combo (configurable) | Mode | Comment |
+### Mode shortcuts
+Hold the modifier and press a button. The modifier is all four back buttons by default; the configurator's **Mode shortcuts** card can change it to Quick Access, reassign every shortcut except A, add a confirmation pulse, or turn shortcuts off.
+
+| Modifier + | Default | Notes |
 |---|---|---|
-| back-4 + A | Steam | Steam Controller Mode |
-| back-4 + B | Lizard | Lizard mode, even if Steam is open |
-| back-4 + X | Xbox | Xbox 360 Controller |
-| back-4 + Y | Switch Pro | Switch Controller + Gyro + Haptics |
-| back-4 + Pad Click (L/R) | Toggle Touchpad | Toggles touchpad reporting on/off (distinct buzz tone feedback) |
-| WebUSB panel → mode 4 | Hori Pad | Switch mode with no gyro or haptics |
-| WebUSB panel → mode 5 | DualSense + Gyro + Trackpad + Audio Haptics | PC (UAC1 4-channel audio sink for voice-coil haptics) |
-| WebUSB panel → mode 6 | DS4/HIDGYRO + Gyro + Trackpad | PC only |
-| WebUSB panel → mode 9 | PS3 DualShock 3 / Sixaxis | Enumerates on a real PS3 (+ gyro/haptics) |
-| WebUSB panel → mode 10 | Original Xbox Controller S | Enumerates on a real Original Xbox |
-| WebUSB panel → mode 11 | DirectInput (flight/space sims) | Every axis at once, as two DirectInput joysticks |
-| WebUSB panel → mode 12 | SInput (SDL-native) | Sticks + analog triggers + gyro + both trackpads + battery |
+| A | Steam | Fixed: always the way back |
+| B | Lizard | Configurable |
+| X | Xbox 360 | Configurable |
+| Y | Switch Pro | Configurable |
+| D-pad Left | PS3 | Configurable |
+| D-pad Up | DS4 (game/clean) | Configurable |
+| D-pad Right | PS5 (game/clean) | Configurable |
+| D-pad Down | Switch (HORIPAD) | Configurable |
+| Trackpad click (L/R) | Toggle touchpad | High buzz = on, low buzz = off |
+
+Also in every mode: **Steam + Y held for 2 seconds** turns the controller off. In Switch Pro mode, **Quick Access + Minus** can take a screenshot (turn on "Quick Access + Select action" in the Mode shortcuts card).
+
+### Modes
+| Mode (configurator name) | What it is |
+|---|---|
+| Steam (puck) | Steam Controller mode |
+| Lizard (always) | Lizard mode, even if Steam is open |
+| Xbox 360 | Xbox 360 controller |
+| Original Xbox | Original Xbox Controller S; enumerates on a real Original Xbox |
+| Switch Pro + gyro | Switch Pro Controller + gyro + HD rumble |
+| Switch (HORIPAD) | Switch mode with no gyro or haptics |
+| PS5 DualSense | DualSense + gyro + trackpad + 4-channel audio haptics (PC) |
+| PS5 (game/clean) | Same DualSense as a bare single-HID device, for PC games that refuse composite devices (e.g. Fortnite); one controller |
+| HID gyro (DS4) | DS4 + gyro + trackpad (PC) |
+| DS4 (game/clean) | Same DS4 as a bare single-HID device; one controller |
+| PS3 (DualShock 3) | DualShock 3 / Sixaxis; enumerates on a real PS3 (+ gyro/haptics) |
+| DirectInput (sims) | Every axis at once, as two DirectInput joysticks |
+| SInput (SDL native) | Sticks + analog triggers + gyro + both trackpads + battery |
+
+The two game/clean modes aren't in the configurator's mode list, so reach them with a shortcut. They and PS3 drop the configurator's WebUSB connection; use modifier + A to get back to Steam.
 
 **DirectInput mode** exists because Steam Input funnels everything through XInput, so only a handful of the
 controller's analog inputs can be live at once — a problem for flight and space sims, which bind axes through
@@ -68,23 +105,12 @@ battery level are all reported natively and simultaneously, with rumble coming b
 SDL build that ships the SInput driver (SDL 3.4+ / a current Steam client); older hosts fall back to seeing a
 plain HID gamepad.
 
-**Rumble.** In the translated modes (Xbox, Switch, PlayStation) the puck decodes the host's rumble packet itself. Each mode's tab under **Button mapping** has its own rumble on/off switch and **Grip rumble strength** (200% by default). The rumble style follows the mode: Switch Pro mode plays HD rumble, the other modes normal rumble. The Switch and DS5 tabs also have **Grip limiter** (70% by default): strong grip vibration above that level is rounded off instead of clipping into a pop. Raise it for more punch on the strongest hits, lower it for smoother ones; it's one setting for Switch HD rumble and DualSense audio haptics. The **Test rumble** button buzzes the controller at the current mode's strength. Steam mode relays Steam's own haptics untouched, so these settings don't apply there.
-
-I'm also adding various QOL items as I go as well. For example having to hold the Steam button for like 6 seconds feels like an eternity. If Steam is open you can do Steam + Y for a shutdown. I'm adding Steam + Y for 2 seconds as a shutdown chort in ALL modes now.
+I'm also adding various QOL items as I go as well. For example having to hold the Steam button for like 6 seconds feels like an eternity. If Steam is open you can do Steam + Y for a shutdown. I'm adding Steam + Y for 2 seconds as a shutdown chord in ALL modes now.
 
 Note: to use the Switch mode on a real Switch you'll need to [enable the pro controller wired communication option](https://www.nintendo.com/en-gb/Support/Troubleshooting/How-to-Enable-Disable-Pro-Controller-Wired-Communication-1516284.html).
 
-### Enhancements in this Fork
-Compared to upstream OpenPuck, this fork adds:
-- **DualSense 4-Channel USB Audio & Voice-Coil Haptics:** DualSense mode presents the same USB audio function as a real DualSense (4-channel output, silent 2-channel mic). Channels 3 & 4 (the haptic tracks) are turned into Steam Controller haptic commands in real time and sent over the 2.4GHz RF link. The default **wave** style streams the haptic waveform itself to the grip actuators as PCM; rumble, tone and split (low frequencies as rumble, the rest as tones) remain as options.
-- **Controller speaker:** in DualSense mode, what a game sends to the DualSense speaker can play through the grips, up to about 1.6 kHz with the bass cut. The grips are vibration actuators, so it is more a vibration trick than a speaker: voices come through but sound buzzy and thin. Off by default; turn it on in the DualSense tab.
-- **HD rumble in Switch Pro mode:** each grip plays the game's HD rumble as a waveform at the game's frequencies (both bands, streamed as PCM), and each trackpad plays the high band as tones. Effects keep their texture, closer to a real Pro Controller than motor-style rumble. In the Eden emulator, enable "Direct Pro Controller driver (experimental)" to get the game's real HD rumble data.
-- **Full-rate haptic streams in Steam mode:** the controller's PCM haptic commands are relayed at full rate, so audio-to-haptics apps such as Fancy Haptics play as cleanly through OpenPuck as over USB.
-- **Trigger deadzone and full-press point:** emulated modes can ignore the first part of the trigger travel and treat a pull past a set point as a full press. This helps games made for DualSense resistive triggers that never see a full pull.
-- **Per-mode rumble:** each mode keeps its own rumble switch and grip strength, and the style follows the mode, so there is nothing else to tune.
-- **Quick Access shortcut modifier:** mode shortcuts can use Quick Access as the modifier instead of all four back buttons, with optional confirmation pulses.
-- **Enhanced PlayStation HID & Feature Reports:** A byte-for-byte copy of a real DualSense's report descriptor, and Feature Reports `0x03`, `0x08`, `0x09` (pairing & MAC), `0x0A`, `0x20` (accurate hardware revision and firmware version fields), `0x21`, and `0x22`, plus `GET_REPORT(0x01)` support for DirectInput game polling.
-- **Touchpad Toggle Chord:** Hold all 4 back buttons (`Back-4`) and click either trackpad (`LPADC` or `RPADC`) to toggle touchpad reporting on/off on the fly (high buzz = enabled, low buzz = disabled). Useful to prevent accidental trackpad touches when gripping in stick-only mode.
+### Rumble
+In the translated modes (Xbox, Switch, PlayStation) the puck decodes the host's rumble packet itself. Each mode's tab under **Button mapping** has its own rumble on/off switch and **Grip rumble strength** (200% by default). The rumble style follows the mode: Switch Pro mode plays HD rumble, the other modes normal rumble. The Switch and DS5 tabs also have **Grip limiter** (70% by default): strong grip vibration above that level is rounded off instead of clipping into a pop. Raise it for more punch on the strongest hits, lower it for smoother ones; it's one setting for Switch HD rumble and DualSense audio haptics. The **Test rumble** button buzzes the controller at the current mode's strength. Steam mode relays Steam's own haptics untouched, so these settings don't apply there.
 
 ### DualSense Mode & Audio Haptics on Linux / Proton
 Full notes, measurements and known issues: [docs/DUALSENSE_HAPTICS.md](docs/DUALSENSE_HAPTICS.md).
@@ -133,9 +159,9 @@ The onboard user LED (P0.15 / Pin 24 on the SuperMini) indicates connection and 
 LED behavior can be customized in the [WebUSB configurator](https://ripps818.github.io/openpuck/) under the **Status LED** card. You can choose different behaviors (Connection status, Heartbeat pulse, Wake-only flash, Always on, or Always off / stealth mode), select pin presets (SuperMini / Nice!Nano, Nordic Dongle PCA10059, Feather), configure custom GPIO pins with independent behaviors per LED, invert polarity, and trigger a test flash.
 
 # Configuration
-A webusb based configuration UI is available [here](https://ripps818.github.io/openpuck/). It allows switching the mode manually, changing back button mappings, adjusting rumble strength, configuring status LED behavior, and more. This will likely only work in Chrome and Edge and needs the pro micro to be connected via USB to the same computer for it to function. Note that it might not work in all modes on all machines but should always work in the Steam Controller mode (which you can revert to with back-4 + A). Note that in some modes the webusb connection might not work. If you're encountering that try going back to the Steam Controller mode and unplugging and replugging the dongle.
+A webusb based configuration UI is available [here](https://ripps818.github.io/openpuck/). It allows switching the mode manually, changing back button mappings, adjusting rumble strength, configuring status LED behavior, and more. This will likely only work in Chrome and Edge and needs the pro micro to be connected via USB to the same computer for it to function. Note that it might not work in all modes on all machines but should always work in the Steam Controller mode (which you can revert to with modifier + A). Note that in some modes the webusb connection might not work. If you're encountering that try going back to the Steam Controller mode and unplugging and replugging the dongle.
 
-This is this fork's configurator, with its settings (triggers, per-mode rumble, wave haptics, shortcut modifier). Upstream's configurator at safijari.github.io doesn't have them.
+This is this fork's configurator, with its settings (triggers, per-mode rumble, grip limiter, DualSense haptics and speaker, shortcut modifier). Upstream's configurator at safijari.github.io doesn't have them.
 
 If you're running Linux and your browser still shows "disconnected" after selecting the OpenPuck in the device selector, it's probably a permissions issue. Check [this document](./docs/WEBUSB_LINUX.md) for more details.
 
@@ -180,7 +206,11 @@ I have tested this software fairly extensively but I have limited resources. Ple
 - Thanks to Lawstorant from a mutual discord server for constructive criticism of the repo's state
 - Everyone that participated in [issue #17](https://github.com/safijari/openpuck/issues/72) or reported/tested stability issues on various boards
 
-# * On LLM Use 
-Everything from discovery of the protocol to writing the arduino sketch and running various automated benchmarks invovled Claude and Codex. This readme is the only organic, single origin, ethically sourced and humanely slaughtered assemblage of words in this project. I have done my level best to review the code and I invite anyone concerned about the stability or security of this project to do the same. I test thoroughly and obsessively as the primary purpose of this project is to bring some much needed QOL to my own use of the Steam Controller.
+# * On LLM Use
+Upstream's author ([safijari](https://github.com/safijari)) wrote this about the original project:
 
-I want nothing more than for there to be a fully human coded alternative to OpenPuck that's on par with or better in every way. I would love to stop working on OpenPuck. If someone builds an alternative that matches this criteria I would also happily change the name of this project and archive this repo.
+> Everything from discovery of the protocol to writing the arduino sketch and running various automated benchmarks invovled Claude and Codex. This readme is the only organic, single origin, ethically sourced and humanely slaughtered assemblage of words in this project. I have done my level best to review the code and I invite anyone concerned about the stability or security of this project to do the same. I test thoroughly and obsessively as the primary purpose of this project is to bring some much needed QOL to my own use of the Steam Controller.
+>
+> I want nothing more than for there to be a fully human coded alternative to OpenPuck that's on par with or better in every way. I would love to stop working on OpenPuck. If someone builds an alternative that matches this criteria I would also happily change the name of this project and archive this repo.
+
+**In this fork,** the README is no longer hand-written. Large parts of it were written with Claude: the fork notes and feature list at the top, the mode shortcut and mode tables, and the DualSense setup notes. This fork's code and other docs were also written with heavy LLM help. The upstream statement above describes upstream's README, not this one.
