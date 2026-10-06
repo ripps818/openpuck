@@ -322,23 +322,41 @@ offset  size  meaning
 
 The RF side stays the same across modes. Only USB enumeration changes.
 
-There are three switchable modes (`0=Steam 1=Xbox 2=Switch`). Steam mode is a CDC + WebUSB composite;
-Xbox and Switch are **clean controller-only** devices — the auto-added CDC/WebUSB
-interfaces are torn down (`clearConfiguration`) and `bcdUSB` stays `0x0200` (no USB-2.1 BOS). This is
-required because Windows' `xusb` driver expects the Xbox 360 controller on the primary device/interface,
-and a real Switch console rejects composite devices. Every boot/mode-switch
-does a `detach -> rebuild -> attach` so the host re-reads the descriptor cleanly.
+Modes (`MODE_*` in `config.h`):
+
+| # | Mode | VID:PID | Extra interfaces |
+|---|---|---|---|
+| 0 | Steam (puck) | `28DE:1304` (`28DE:1305` as a Steam Machine internal receiver) | WebUSB + wake mouse |
+| 1 | Xbox 360 | `045E:028E` | WebUSB + wake mouse |
+| 2 | Switch (HORIPAD) | `0F0D:0092` | WebUSB + wake mouse |
+| 3 | Lizard (always) | as Steam | as Steam |
+| 4 | Switch Pro | `057E:2009` | WebUSB + wake mouse |
+| 5 | PS5 DualSense | `054C:0CE6` | WebUSB + UAC1 audio function |
+| 6 | HID gyro (DS4) | `054C:05C4` | WebUSB |
+| 7 | PS5 (game/clean) | `054C:0CE6` | UAC1 audio function only |
+| 8 | DS4 (game/clean) | `054C:05C4` | none |
+| 9 | PS3 (DualShock 3) | `054C:0268` | none |
+| 10 | Original Xbox | `045E:0289` | WebUSB + wake mouse |
+| 11 | DirectInput | `1209:4F50` | WebUSB + wake mouse |
+| 12 | SInput | `2E8A:10C6` | WebUSB + wake mouse |
+
+The CDC serial console is present only in the puck modes, and only for one boot after the debug-CDC arm
+(it replaces the wake mouse). The PlayStation modes drop the wake mouse; the game/clean modes and PS3 also
+drop WebUSB so games and the PS3 console see a single-HID Sony pad. Every boot/mode switch does a
+`detach -> rebuild -> attach` so the host re-reads the descriptor cleanly. Emulated modes other than PS3 and
+Original Xbox mount only the controllers that are connected and re-enumerate, without a reboot, when that
+set changes (`usb_mount.cpp`).
 
 ### 9.1 Steam mode
 
-- VID:PID `28DE:1142`
-- Four puck HID interfaces (CDC + WebUSB also present)
+- VID:PID `28DE:1304`, or `28DE:1305` when emulating a Steam Machine's internal receiver (WebUSB field `29`)
+- Four puck HID interfaces + WebUSB + wake mouse (CDC instead of the wake mouse for one boot after the debug arm)
 - `0x45` reports are forwarded to the connected slot's HID interface
 - **Seamless lizard**: when Steam is driving the device, `0x45` is forwarded; when it isn't
   (Steam closed, 7 s watchdog) the same `0x45` is translated into mouse (`0x40`) + keyboard (`0x41`)
   reports on the **same** puck interface, so the device is a driverless desktop keyboard+mouse with no
-  mode switch. This is purely USB-side; the RF poll and relay are unchanged. (There is no standalone
-  lizard mode.)
+  mode switch. This is purely USB-side; the RF poll and relay are unchanged. Lizard mode (3) is the
+  same presentation pinned to keyboard+mouse even while Steam is running.
 - **"Steam is driving" signal**: *any* Steam OUTPUT/settings report (`0x80`–`0x89`, e.g. the `0x87`
   lizard-off heartbeat, LED, or a `0x82` haptic) refreshes the watchdog — not just `0x87`. This makes
   the puck leave lizard for gamepad on Steam's **first** contact, even if that first packet is a haptic
@@ -413,14 +431,15 @@ PCM streaming, measured with the controller's IMU over USB (2026-10-03):
 
 ### 9.2 Xbox mode
 
-- VID:PID `045E:028E`, clean device (no CDC/WebUSB)
-- Custom XInput-compatible vendor interface on `MI_00` + HID boot mouse on `MI_01` (right-pad emulation)
+- VID:PID `045E:028E`
+- Right-pad HID boot mouse, then one custom XInput-compatible vendor interface per connected controller;
+  the wake mouse and WebUSB are added around them
 - `0x45` is converted into a 20-byte XInput report
 
 ### 9.3 Switch mode
 
-- VID:PID `0F0D:0092` (HORI Pokkén Tournament Pro Pad), clean device (no CDC/WebUSB)
-- Single HID interface with the canonical HORIPAD descriptor (interrupt IN + OUT endpoints), accepted by
+- VID:PID `0F0D:0092` (HORI Pokkén Tournament Pro Pad), plus WebUSB and the wake mouse
+- One HID interface per controller with the canonical HORIPAD descriptor (interrupt IN + OUT endpoints), accepted by
   a real Switch console with no handshake; an 8-byte report is streamed at ~250 Hz
 
 ### 9.4 Original Xbox mode
@@ -437,8 +456,8 @@ PCM streaming, measured with the controller's IMU over USB (2026-10-03):
 
 ## 10. WebUSB control channel
 
-The WebUSB vendor interface is present only in Steam mode (Xbox/Switch are clean controllers with no
-config interface — configure them from Steam mode or switch via the back-paddle chord).
+The WebUSB vendor interface is present in every mode except the game/clean PlayStation modes and PS3
+(§9). From those, use the mode shortcut (modifier + A) to get back to Steam mode and the panel.
 
 Messages:
 
@@ -452,6 +471,14 @@ Messages:
     `33` primary LED pin A, `90` secondary LED pin B, `91` primary LED polarity (1 active high, 0 active low),
     `92` LED test flash (temporary 2-second pulse), `93` secondary LED behavior mode (0..4),
     `94` secondary LED polarity (1 active high, 0 active low).
+    `29` Steam-mode identity: nonzero emulates a Steam Machine's internal receiver (`28DE:1305`) instead of the
+    puck (`28DE:1304`); takes effect on the next enumeration.
+    DualSense audio haptics: `31` on/off, `30` gain as percent/2 (10-500%, 0 = automatic), `88` style
+    (0 rumble, 1 tone, 2 split, 3 wave; default 3). See DUALSENSE_HAPTICS.md.
+    RF recovery (reply is an `0xAD` frame, not a status blob; nothing is saved except by `100`): `97` request
+    RF status, `98` run an ambient channel survey, `99 <ch>` hop to a channel, `100 <ch>` save a known channel
+    as the startup channel, `101` start (1) / cancel (0) the journal builder, `113` clear the RF journal
+    (applied once no controller is live).
     Switch Pro / HD rumble / shortcuts (blob version ≥ 23): `190`-`229` were the removed Switch Pro
     back-button profiles and are ignored (still answered with a status blob), `230` trackpad D-pad click
     feedback, `231` HD trackpad strength as percent/2, `239` Quick Access + Select target, `240` shortcut
@@ -474,13 +501,13 @@ Messages:
   - `0x03 <mode>`: switch mode and reboot
   - `0x07`: re-init haptics (clear a stuck buzz)
   - `0x08`: send controller power-off
-  - `0x16`: test rumble — buzz every linked controller with the configured style/strength for 500 ms,
+  - `0x16`: test rumble — buzz every linked controller at the current mode's strength for 500 ms,
     auto-stopped by the firmware. **Requires status-blob version ≥ 21**; older firmware drops it silently
     (the parser only accepts `0x01`–`0x15` and `0x20`–`0x25`).
   - `0x09`: export all bond slots (reply: `0xA7` frame) — see §10.1
   - `0x27`: get the Switch Pro / HD rumble / shortcut settings (reply: `0xAE` frame).
     **Requires status-blob version ≥ 23.**
-  - `0x28`: save the live shortcut settings (rumble option / strength slots changed from the controller)
+  - `0x28`: save the live settings to `cfg.bin` and reply with a status blob
   - `0x0A 0x45 0x52 0x53`: factory erase (`"ERS"` magic), then reboot
   - `0x0B` / `0x0C`: reboot into serial DFU / UF2 bootloader
   - `0x0D <slot> <used> <24-byte rec>`: write one bond slot into RAM — see §10.1
@@ -493,6 +520,11 @@ Messages:
   - `0x12 <idx> <16-byte binding>`: set one lizard binding (see below)
   - `0x14`: commit the edited lizard map to flash (device echoes `0xAA`)
   - `0x15`: reset the lizard map to built-in defaults (device echoes `0xAA`)
+  - `0x17`-`0x1A` (status-blob version ≥ 21): the same lizard-map operations with the native **24-byte**
+    binding (64-bit masks, see below), replying with a 24-byte-record `0xAA` frame: `0x17` dump,
+    `0x18 <idx> <24-byte binding>` set one, `0x19` commit to flash, `0x1A` reset to defaults. The 16-byte
+    ops above use the legacy 32-bit masks, where bits 28-31 are the left-stick directions; the firmware
+    translates them to and from the 64-bit form, so the right-stick triggers are reachable only through v2.
   - `0x20`–`0x24`: staged firmware update (begin/data/end/reboot/abort), acked with `0xAB` frames
   - `0x25 0x57 0x49 0x50 0x45`: **full board wipe** (`"WIPE"` magic, debug panel only). Erases the app
     region + LittleFS (settings + bonds) + bootloader-settings page and reboots app-less, so the board mounts
@@ -505,6 +537,8 @@ Messages:
   - `0xA9 ...`: live wedge report
   - `0xAA <count> <count×16-byte bindings>`: lizard binding map
   - `0xAB 5 <status> <nextOff u32 LE>`: firmware-update ack
+  - `0xAD <len> <payload>`: RF recovery status (current/target/startup channel, per-channel survey rows,
+    handoff and journal-builder progress); layout in `webusbSendRfStatus()` (`webusb_config.cpp`)
   - `0xAE 55 <payload>`: Switch Pro / HD rumble / shortcut settings: `[ver=1][37 zero bytes]`
     `[swDpadHaptics][storageState][hdPadScale/2][4 zero bytes][swQamSelect][shortcutFlags][8 zero bytes]`.
     The zero bytes held removed settings (Switch Pro profiles, rumble presets and slot, strength steps and
@@ -518,6 +552,10 @@ Lizard binding wire format (16 bytes), matching `LizardBinding` in `lizard_map.h
 [8..11] trigMask  u32 LE  (button bits: any-of)
 [12..15] holdMask u32 LE  (button bits: all-of guard)
 ```
+
+The v2 binding (ops `0x17`-`0x1A`) is `[0] outType`, `[1..7] outData`, `[8..15] trigMask u64 LE`,
+`[16..23] holdMask u64 LE`. Mask bits 0-31 are the native Triton button word; bits 32-39 are virtual
+stick-direction triggers (`LZ_BTN_LSTICK_*` / `LZ_BTN_RSTICK_*` in `lizard_map.h`).
 
 > Lizard-map commands and the `0xAA` reply were renumbered from `0x0D–0x11`/`0xA7` on the merges with
 > `main`, which had independently claimed `0x0D–0x10`, `0xA7` (bond export) and `0xA8` (flight

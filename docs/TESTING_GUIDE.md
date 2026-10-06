@@ -5,8 +5,10 @@
 - Does the controlelr work normally in Steam Controller mode, do the haptics work, is the gyro working?
 - Can you shut the controller off using Steam + Y?
 - Does the controller reconnect?
-- Can you change modes via the chords? (back4 + A/B/X/Y **and** back4 + each D-pad direction; the chorded
-  press must not reach the game, and a D-pad reassignment made in the panel must take effect)
+- Can you change modes via the shortcuts? (modifier + A/B/X/Y **and** modifier + each D-pad direction, with
+  both the four-back-button and the Quick Access modifier; the chorded press must not reach the game, a
+  reassignment made in the panel must take effect, and turning shortcuts off must disable them)
+- Does modifier + trackpad click toggle the touchpad (high buzz = on, low buzz = off)?
 - Can you change modes via webusb?
 - Does rumble still work in the translated modes, and does each mode's Grip rumble strength (Button
   mapping) change how strong it feels? Switch Pro mode must play HD rumble (a grip waveform and pad tones that change pitch

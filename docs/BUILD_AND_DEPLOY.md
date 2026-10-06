@@ -246,7 +246,7 @@ reboot copies staged→app from RAM (~5 s dark) and comes back up on the new fir
 > **Release downloads / the `firmware` branch:** GitHub's release-asset CDN sends no CORS headers, so the
 > browser cannot fetch release assets directly. The release workflow therefore mirrors every OpenPuck `.uf2`
 > onto the orphan **`firmware`** branch, and the panel downloads from
-> `raw.githubusercontent.com/safijari/openpuck/firmware/<asset>` (which is CORS-clean). If a release is
+> `raw.githubusercontent.com/<owner>/<repo>/firmware/<asset>` (which is CORS-clean). If a release is
 > missing from the mirror, the panel falls back to opening the asset in a new tab for manual drag-and-drop.
 
 > **Release notes and the pre-release flag are owned by GitHub, not the workflow:** the release job uploads
@@ -263,7 +263,8 @@ reboot copies staged→app from RAM (~5 s dark) and comes back up on the new fir
 > branch (one force-pushed commit), so the panel's release list can flash them in-page. The panel reads releases
 > from the repo whose GitHub Pages site serves it (`<owner>.github.io/<repo>/`), and from this fork when served
 > from anywhere else; this fork's panel is at https://ripps818.github.io/openpuck/, deployed by `nightly.yml` after each successful build (Pages source: GitHub Actions). The upstream workflows (`build.yml`, `format.yml`, `release.yml`) run only in
-> `safijari/openpuck`; in the fork their jobs show as skipped. Run `make check` locally for formatting.
+> `safijari/openpuck`; in the fork their jobs show as skipped. Instead, `pr-check.yml` runs `make check` and a
+> firmware compile on every pull request that changes code (documentation-only PRs skip it).
 
 Failure safety: **nothing is armed until the staged image verifies in flash**, so a disconnect, error, or
 power cut during the transfer leaves the current firmware untouched. The apply step erases the app's vector
@@ -273,7 +274,7 @@ half-flashed, crash-looping state is not reachable.
 
 ## 6. Factory reset (erase persistent storage)
 
-Re-flashing firmware does **not** erase the board's internal LittleFS. The paired-controller bond (`bonds.bin`) and every saved setting (`cfg.bin`: USB mode, chord assignments, back-paddle map, mouse sensitivity) survive a fresh build and upload. To bring a board up in a truly clean state — a new unit, a hand-me-down with a stale bond, or a corrupted config — wipe the filesystem with one of:
+Re-flashing firmware does **not** erase the board's internal LittleFS. The paired-controller bond (`bonds.bin`) and every saved setting (`cfg.bin`: USB mode, mode shortcuts, button mapping, rumble and haptics settings, mouse sensitivity) survive a fresh build and upload. To bring a board up in a truly clean state — a new unit, a hand-me-down with a stale bond, or a corrupted config — wipe the filesystem with one of:
 
 - **Recovery build (`-DOPK_FACTORY_RESET=1`):** a firmware that wipes all persistent storage **once, on the first boot after flashing**, then behaves like a normal build that persists settings. Use it to recover a board from a bad config/bond without a console or panel:
 
