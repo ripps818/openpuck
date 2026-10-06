@@ -13,6 +13,7 @@ Status at the time of writing:
 | Split style (`AUDIO_STYLE_SPLIT`) | Works (Hi-Fi Rush, Stellar Blade). Rumble and a tone on the same actuator play together |
 | Wave style (`AUDIO_STYLE_WAVE`, the default) | Works (Stellar Blade: smoother than tone, a little soft). The haptic channels streamed as 4 kHz PCM to the grip actuators |
 | Tone style (`AUDIO_STYLE_TONE`, the default before wave) | Works, but deep effects play as higher tones, and it misses the deep feel split gives |
+| Control Resonant, GE-Proton11-7, Steam Input off | Audio haptics work (wave). Reported working on Proton-Wineland `wineland-11.0-20261005`, and on older Wineland with `PROTON_USE_PIPEWIRE=0` ([proton-cachyos#86](https://github.com/nanomatters/proton-cachyos/issues/86)); not tested here (§4) |
 | FFXIV (XIVLauncher) | Input + audio haptics work (GE-Proton10-34; GE-Proton11-7 after `tools/fix-dualsense-prefix.py`, §9) |
 | Windows | Untested |
 | PS5 console | Not supported: the console authenticates controllers and the puck can't answer |
@@ -122,6 +123,14 @@ The [proton-ds5-haptic](https://github.com/xzn/proton-ds5-haptic) patches add th
 **11-2**. From **11-6**, GE-Proton also routes libScePad haptics through PipeWire, to a sink it recognizes by name: one
 with `api.alsa.split.name` (UCM Default profile) or one whose node name contains `Direct__Direct__sink` with a quad
 channel mask. Both names come from the stock UCM profiles.
+
+**Proton-Wineland** (nanomatters/proton-cachyos) uses Wine's PipeWire audio driver (`winepipewire.drv`) by
+default. Up to `wineland-11.0-20260930` that driver dropped DualSense USB audio haptics: Control Resonant played
+none, while `PROTON_USE_PIPEWIRE=0` (back to winepulse) made them work.
+[`wineland-11.0-20261005`](https://github.com/nanomatters/proton-cachyos/releases/tag/wineland-11.0-20261005)
+fixes it ([#86](https://github.com/nanomatters/proton-cachyos/issues/86)), so current builds need no variable. On
+2026-10-05 Control Resonant was also seen with no haptics on Wineland 20260930 with Steam Input on; GE-Proton11-7
+with Steam Input off fixed it, but that changed both at once, so it doesn't show which was needed.
 
 For libScePad games, **disable Steam Input** for the game. With it on, the game sees Steam's virtual Xbox pad
 (XInput) and libScePad never finds a DualSense. Don't set `PROTON_SONY_DUALSENSE_AS_DUALSHOCK4`, which hides the
