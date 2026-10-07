@@ -33,7 +33,7 @@ uint8_t g_suspendOff = 1;
 // Host-rumble shaping (persisted in cfg.bin; console "RS<pct>" / "RY<n>").
 uint16_t g_rumbleScale = RUMBLE_SCALE_PCT;
 uint8_t g_rumbleStyle = RUMBLE_STYLE_NORMAL;
-// Master enable for the puck->controller haptic RELAY (Steam OUTPUT reports 0x80-0x86, incl. the trackpad
+// Master enable for the puck->controller haptic RELAY (Steam OUTPUT reports 0x80-0x89, incl. the trackpad
 // texture-feedback stream Steam pushes WHILE you drag). Each relayed frame is an extra TX that precedes the
 // E3 poll and steals its reply window, and the controller must stop to process it -- both can depress the
 // input rate exactly during a drag. On by default; console "HR" toggles it so the drag-smoothness cost of
@@ -121,6 +121,7 @@ static inline uint8_t rqNext(uint8_t i)
 // watchdog recovers (an invisible "watchdog (hang)" -- the live stall monitor can't see it because the SOF
 // IRQ is dead). The cap turns that into a logged, recovered event instead of a hang. Surfaced on the panel.
 volatile uint16_t g_ringFault = 0;
+volatile uint16_t g_relayDrops = 0;
 
 bool relayPending()
 {
@@ -131,8 +132,9 @@ bool relayPending()
 bool relayEnqueue(uint8_t rid, const uint8_t *payload, uint8_t plen,
 		  bool isHaptic, uint8_t slot, bool expectReply)
 {
-	if (plen > RELAY_MAXP)
-		plen = RELAY_MAXP;
+	uint8_t cap = isHaptic ? RELAY_MAXP : RELAY_CMD_MAXP;
+	if (plen > cap)
+		plen = cap;
 	if (slot != 0xFF && slot >= NSLOT)
 		return false;
 	uint32_t pm = __get_PRIMASK();
@@ -151,8 +153,10 @@ bool relayEnqueue(uint8_t rid, const uint8_t *payload, uint8_t plen,
 		if (slot == 0xFF && !g_slot[s].used)
 			continue;
 		uint8_t h = g_rqHead[s], nx = rqNext(h);
-		if (nx == g_rqTail[s])
+		if (nx == g_rqTail[s]) {
 			g_rqTail[s] = rqNext(g_rqTail[s]);
+			g_relayDrops++;
+		}
 		g_rq[s][h].rid = rid;
 		g_rq[s][h].len = plen;
 		g_rq[s][h].expectReply = expectReply;
@@ -609,7 +613,7 @@ bool rfConnFlushRelay(uint8_t ch, uint8_t s1)
 				rl = RELAY_MAXP;
 			// On-air sub-TLV framing. CONFIRMED from real puck<->controller sniffs: a command LANDS on
 			// the controller only with the type-01 + inner-len form E3 [2+rl][01][rid][innerlen][data];
-			// the legacy form E3 [1+rl][05][rid][data] makes the controller DISCARD any 0x87+ command.
+			// the form E3 [1+rl][05][rid][data] routes 0x87+ to the OUTPUT haptic sample streams instead.
 
 			// Same shape as the `[len][tag][value]` TLV grammar the F1 REPLY side
 			// already uses (tags 0x02/0x04/0x06, docs/PROTOCOL.md sec 7.3): read as len=1, tag=3,
@@ -673,9 +677,12 @@ bool rfConnFlushRelay(uint8_t ch, uint8_t s1)
 			// full F1 decode (seq-dedup guards double-forward), so a drag streaming haptics now collects
 			// ~2x the samples, closing the gap to the real puck. A present reply returns early (~90us);
 			// only a genuine no-reply pays the bounded 400us window, so airtime stays in budget.
-			rfConnTx(
-				ch, s1, p, plen,
-				400); // one relay per poll cycle -- reply harvested as input
+			uint8_t rx = rfConnTx(ch, s1, p, plen,
+					      400); // reply harvested as input
+			// PCM mode/sample streams (0x86-0x89) underrun audibly when a frame is lost. Resend an
+			// unanswered one once with the SAME PID: ESB dedup drops it if the first copy landed.
+			if (!rx && m.isHaptic && m.rid >= 0x86 && m.rid <= 0x89)
+				rfConnTx(ch, s1, p, plen, 400);
 		}
 	}
 	return have; // true = a relay frame went out this cycle (its reply is harvested as input, above)

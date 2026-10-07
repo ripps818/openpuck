@@ -23,8 +23,11 @@
 // degraded/latched state (slow/stuck/missing haptics until a re-init). Runtime-adjustable (g_hapticBlockMs) and
 // toggleable (g_hapticBlockOn) from the WebUSB panel; this is the boot default.
 #define HAPTIC_BLOCK_MS_DEFAULT 10000u
-// max relayed payload bytes per entry: RF frame = [E3][len][05][rid][payload] and MAXLEN=64 -> 60
-#define RELAY_MAXP 60u
+// Max relayed payload bytes per entry. OUTPUT 0x87/0x88 haptic sample streams fill a whole 63-byte report;
+// the haptic frame [E3][len][05][rid][63] is 67 B, inside MAXLEN=96.
+#define RELAY_MAXP 63u
+// Feature-0x01 commands stay at 60: the controller copies the type-01 TLV into a 63-byte command buffer.
+#define RELAY_CMD_MAXP 60u
 // Controller power-off: hapticSendShutdown() relays Steam's confirmed "turn off controller" command (feature-0x01
 // cmd 0x9F, payload "off!" -- captured from the real puck). Sent as a small burst because the RF relay is NO-ACK.
 #define HAPTIC_SHUTDOWN_SHOTS 3u
@@ -93,7 +96,7 @@ extern uint8_t
 // physical gesture; the power-off fires once per suspend so the returning controller is not shut off again.
 // Turn this OFF (console "SO") if a controller must stay awake through host sleep. Persisted.
 extern uint8_t g_suspendOff;
-// Master enable for the puck->controller haptic relay (Steam 0x80-0x86 rumble/pad-feedback). Console "HR"
+// Master enable for the puck->controller haptic relay (Steam 0x80-0x89 rumble/pad-feedback). Console "HR"
 // toggles it to isolate the drag-smoothness cost of relaying Steam's trackpad haptics. See haptics.cpp.
 extern bool g_hapticRelay;
 
@@ -187,6 +190,8 @@ bool rfConnFlushRelay(uint8_t ch, uint8_t s1);
 // times a relay-ring drain hit its iteration cap (head/tail desync or corruption) -- non-zero means we caught
 // and recovered from what would otherwise be an IRQ-off watchdog hang. Surfaced on the WebUSB panel.
 extern volatile uint16_t g_ringFault;
+// relay entries evicted unsent because a slot's ring was full (serial "# stat" drop=)
+extern volatile uint16_t g_relayDrops;
 
 // boot reset: clear relay/active flags, arm the reconnect block
 void hapticInit();

@@ -1006,6 +1006,14 @@ static void rfConnStep()
 				(uint8_t)((((g_relayPid[k]++) & 3) << 1) | 1);
 			if (rfConnFlushRelay(ch, rs1))
 				g_stRelay[k]++;
+			// Backlog: a second frame this cycle. A wireless PCM stream (0x88, 8 kHz) needs ~258/s,
+			// above the 250 Hz cycle rate, so one per cycle starves it and the ring evicts samples.
+			if (relayPending()) {
+				rs1 = (uint8_t)((((g_relayPid[k]++) & 3) << 1) |
+						1);
+				if (rfConnFlushRelay(ch, rs1))
+					g_stRelay[k]++;
+			}
 		}
 		// per-slot PID cycle so each bonded controller's polls stay distinct
 		uint8_t pidv = g_pollPid[k]++;
@@ -1281,11 +1289,12 @@ void rfLinkTask()
 		// was the confirmed diagnostic-induced hang: the capture ended truncated mid-"# stat".)
 		if (Serial.availableForWrite() > 130)
 			Serial.printf(
-				"# stat polls=%lu/s F1=%lu/s new=%lu/s F3=%lu/s(v%d) e7b=%u crcfail=%lu noRx=%lu slot=%d\n",
+				"# stat polls=%lu/s F1=%lu/s new=%lu/s F3=%lu/s(v%d) e7b=%u crcfail=%lu noRx=%lu slot=%d relay=%lu/s drop=%u\n",
 				(unsigned long)tPoll, (unsigned long)tF1,
 				(unsigned long)tNew, (unsigned long)g_stF3,
 				(int8_t)g_connF3v, g_e7b, (unsigned long)tCrc,
-				(unsigned long)tNoRx, g_curSlot);
+				(unsigned long)tNoRx, g_curSlot,
+				(unsigned long)tRelay, (unsigned)g_relayDrops);
 		g_stF3 = 0;
 		g_chF1[0] = g_chF1[1] = g_chF1[2] = 0;
 		g_stMs = millis();
