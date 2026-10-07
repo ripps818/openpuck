@@ -52,6 +52,9 @@ static volatile bool g_bondExportRequest = false;
 // Switch Pro profiles / HD rumble / shortcut settings (op 0x27 -> one 0xAE frame). Kept out of the status blob,
 // which is already at its 255-byte frame limit. Deferred to the usbd task like the blob.
 static volatile bool g_swFrameRequest = false;
+// Motion sample for the panel's 3D view (op 0x2A <slot> -> one 0xAF frame). The panel asks ~25 times a second, so
+// it is deferred to the usbd task like the blob; 0xFF = nothing pending.
+static volatile uint8_t g_motionSlot = 0xFF;
 // Firmware-update ack ([0xAB][5][status][nextOff u32 LE]). Like the blob it is written from the usbd task
 // (webusbSofDrain), but unlike the blob it is NEVER dropped -- the panel's transfer flow-control is strict
 // ping-pong on these acks, so an unsent ack just stays pending until the FIFO has room (the panel is
@@ -631,6 +634,33 @@ static bool webusbSendRfStatus()
 	return true;
 }
 
+// 0x2A <slot>: one controller's live motion sample, polled at ~25 Hz by the panel's 3D view (status v28) and
+// written from the usbd task (webusbSofDrain) like the blob:
+//   [0xAF][23][ver=1][slot][linkUp][ax ay az gx gy gz: s16 LE][qw qx qy qz: s16 LE Q15]
+// The quaternion is all zero until the controller sends report 0x42 (0x45 carries none).
+static void webusbSendMotion(uint8_t slot)
+{
+	const PuckInput &in = g_in[slot];
+	const int16_t v[10] = { in.ax, in.ay, in.az, in.gx, in.gy,
+				in.gz, in.qw, in.qx, in.qy, in.qz };
+	static uint8_t f[2 + 23];
+	f[0] = 0xAF;
+	f[1] = 23;
+	f[2] = 1;
+	f[3] = slot;
+	f[4] = (g_connReplyMs[slot] != 0 &&
+		(millis() - g_connReplyMs[slot]) < RF_LINK_UP_MS);
+	for (int i = 0; i < 10; i++) {
+		f[5 + i * 2] = (uint8_t)v[i];
+		f[6 + i * 2] = (uint8_t)((uint16_t)v[i] >> 8);
+	}
+	// drop-on-full, same anti-hang rule as the status blob (the panel just asks again)
+	if (tud_vendor_write_available() >= sizeof f) {
+		usb_web.write(f, sizeof f);
+		usb_web.flush();
+	}
+}
+
 static void webusbSofDrain(void)
 {
 	// If loop() has stopped beating, it's wedged -- keep pushing the blob (which carries the live stuck stage)
@@ -663,6 +693,10 @@ static void webusbSofDrain(void)
 	if (g_swFrameRequest) {
 		g_swFrameRequest = false;
 		webusbSendSwitchFrame();
+	}
+	if (g_motionSlot != 0xFF) {
+		webusbSendMotion(g_motionSlot);
+		g_motionSlot = 0xFF;
 	}
 	if (g_rfStatusRequest && webusbSendRfStatus())
 		g_rfStatusRequest = false;
@@ -793,33 +827,6 @@ static void webusbSendLizard()
 		q[15] = (uint8_t)(hold >> 24);
 	}
 	usb_web.write(f, (uint16_t)(2 + count * 16));
-	usb_web.flush();
-}
-
-// 0x2A <slot>: one controller's live motion sample, polled at ~25 Hz by the panel's 3D view (status v28):
-//   [0xAF][23][ver=1][slot][linkUp][ax ay az gx gy gz: s16 LE][qw qx qy qz: s16 LE Q15]
-// The quaternion is all zero until the controller sends report 0x42 (0x45 carries none).
-static void webusbSendMotion(uint8_t slot)
-{
-	if (!usb_web.connected())
-		return;
-	if (slot >= NSLOT)
-		slot = 0;
-	const PuckInput &in = g_in[slot];
-	const int16_t v[10] = { in.ax, in.ay, in.az, in.gx, in.gy,
-				in.gz, in.qw, in.qx, in.qy, in.qz };
-	static uint8_t f[2 + 23];
-	f[0] = 0xAF;
-	f[1] = 23;
-	f[2] = 1;
-	f[3] = slot;
-	f[4] = (g_connReplyMs[slot] != 0 &&
-		(millis() - g_connReplyMs[slot]) < RF_LINK_UP_MS);
-	for (int i = 0; i < 10; i++) {
-		f[5 + i * 2] = (uint8_t)v[i];
-		f[6 + i * 2] = (uint8_t)((uint16_t)v[i] >> 8);
-	}
-	usb_web.write(f, sizeof f);
 	usb_web.flush();
 }
 
@@ -1013,7 +1020,7 @@ void webusbPoll()
 			} else if (op == 0x29) {
 				hapticImuOn();
 			} else if (op == 0x2A) {
-				webusbSendMotion(buf[1]);
+				g_motionSlot = buf[1] < NSLOT ? buf[1] : 0;
 			}
 
 			// trigger controller power-off (same path Steam 0x9F / host-suspend use)
