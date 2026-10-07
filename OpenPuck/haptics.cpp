@@ -1262,6 +1262,20 @@ void hapticRfJournalBuilderTick(uint8_t participantMask)
 		g_rfJournalBuilderTickStop = 1;
 }
 
+// WebUSB "Turn on IMU": the emulated modes land IMU mode on at connect, but Steam and Lizard modes never do
+// (and Steam's own IMU-mode writes are filtered out), so there the motion readout stays zero unless the
+// controller still holds an earlier IMU-on. Same setting value the emulated modes send. Sent as a small burst
+// like the power-off: the RF relay is no-ack, and a single lost frame left the first press doing nothing.
+void hapticImuOn()
+{
+	static const uint8_t IMU_ON[3] = { SETTING_IMU_MODE, 0x07, 0x00 };
+	for (uint8_t i = 0; i < HAPTIC_SHUTDOWN_SHOTS; i++)
+		for (uint8_t s = 0; s < NSLOT; s++)
+			if (hapticLinkUp((int)s))
+				relayEnqueue(IBEX_CMD_SET_SETTINGS_VALUES,
+					     IMU_ON, sizeof IMU_ON, false, s);
+}
+
 void hapticTestRumble()
 {
 	for (uint8_t s = 0; s < NSLOT; s++)

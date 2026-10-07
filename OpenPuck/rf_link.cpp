@@ -3851,6 +3851,29 @@ uint8_t rfConnTx(uint8_t ch, uint8_t s1, const uint8_t *payload, uint8_t plen,
 									 .gy,
 								&g_in[g_curSlot]
 									 .gz);
+							// 0x42 appends the orientation quaternion at rep[46..53]
+							if (rep[0] == 0x42 &&
+							    tlen >= 54 &&
+							    (size_t)(idx +
+								     2) + 54 <=
+								    (size_t)end) {
+								g_in[g_curSlot]
+									.qw = (int16_t)
+									s16off(rep,
+									       46);
+								g_in[g_curSlot]
+									.qx = (int16_t)
+									s16off(rep,
+									       48);
+								g_in[g_curSlot]
+									.qy = (int16_t)
+									s16off(rep,
+									       50);
+								g_in[g_curSlot]
+									.qz = (int16_t)
+									s16off(rep,
+									       52);
+							}
 						}
 						// Keep raw input for shortcut detection while masking host input.
 						uint32_t hostButtons =

@@ -15,6 +15,8 @@ on:
       - 'gen_version.sh'
       - 'gen_uf2.sh'
       - 'docs/*.html'
+      - 'panel/**'
+      - 'tools/build_panel.py'
   workflow_dispatch:
 
 # a newer push supersedes a nightly still building
@@ -59,7 +61,7 @@ jobs:
           else
             echo "firmware=false" >> "$GITHUB_OUTPUT"
           fi
-          if echo "$FILES" | grep -Eq '^docs/[^/]*\.html$'; then
+          if echo "$FILES" | grep -Eq '^(docs/[^/]*\.html|panel/.+|tools/build_panel\.py)$'; then
             echo "panel=true" >> "$GITHUB_OUTPUT"
           else
             echo "panel=false" >> "$GITHUB_OUTPUT"
@@ -212,6 +214,11 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
+
+      - name: Check the panel bundle
+        # docs/index.html carries the bundle of panel/*.js; a push that changed panel/ without `make panel`
+        # fails here instead of publishing a page that is missing the change.
+        run: make panel-check
 
       - name: Configure Pages
         uses: actions/configure-pages@v6

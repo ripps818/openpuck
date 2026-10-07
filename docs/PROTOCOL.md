@@ -326,22 +326,22 @@ Modes (`MODE_*` in `config.h`):
 
 | # | Mode | VID:PID | Extra interfaces |
 |---|---|---|---|
-| 0 | Steam (puck) | `28DE:1304` (`28DE:1305` as a Steam Machine internal receiver) | WebUSB + wake mouse |
+| 0 | Steam | `28DE:1304` (`28DE:1305` as a Steam Machine internal receiver) | WebUSB + wake mouse |
 | 1 | Xbox 360 | `045E:028E` | WebUSB + wake mouse |
-| 2 | Switch (HORIPAD) | `0F0D:0092` | WebUSB + wake mouse |
-| 3 | Lizard (always) | as Steam | as Steam |
+| 2 | Switch HORIPAD | `0F0D:0092` | WebUSB + wake mouse |
+| 3 | Lizard | as Steam | as Steam |
 | 4 | Switch Pro | `057E:2009` | WebUSB + wake mouse |
 | 5 | PS5 DualSense | `054C:0CE6` | WebUSB + UAC1 audio function |
-| 6 | HID gyro (DS4) | `054C:05C4` | WebUSB |
-| 7 | PS5 (game/clean) | `054C:0CE6` | UAC1 audio function only |
-| 8 | DS4 (game/clean) | `054C:05C4` | none |
-| 9 | PS3 (DualShock 3) | `054C:0268` | none |
+| 6 | PS4 DualShock | `054C:05C4` | WebUSB |
+| 7 | PS5 DualSense (single HID) | `054C:0CE6` | UAC1 audio function only |
+| 8 | PS4 DualShock (single HID) | `054C:05C4` | none |
+| 9 | PS3 DualShock | `054C:0268` | none |
 | 10 | Original Xbox | `045E:0289` | WebUSB + wake mouse |
 | 11 | DirectInput | `1209:4F50` | WebUSB + wake mouse |
 | 12 | SInput | `2E8A:10C6` | WebUSB + wake mouse |
 
 The CDC serial console is present only in the puck modes, and only for one boot after the debug-CDC arm
-(it replaces the wake mouse). The PlayStation modes drop the wake mouse; the game/clean modes and PS3 also
+(it replaces the wake mouse). The PlayStation modes drop the wake mouse; the single-HID modes and PS3 also
 drop WebUSB so games and the PS3 console see a single-HID Sony pad. Every boot/mode switch does a
 `detach -> rebuild -> attach` so the host re-reads the descriptor cleanly. Emulated modes other than PS3 and
 Original Xbox mount only the controllers that are connected and re-enumerate, without a reboot, when that
@@ -456,7 +456,7 @@ PCM streaming, measured with the controller's IMU over USB (2026-10-03):
 
 ## 10. WebUSB control channel
 
-The WebUSB vendor interface is present in every mode except the game/clean PlayStation modes and PS3
+The WebUSB vendor interface is present in every mode except the single-HID PlayStation modes and PS3
 (§9). From those, use the mode shortcut (modifier + A) to get back to Steam mode and the panel.
 
 Messages:
@@ -525,6 +525,18 @@ Messages:
     `0x18 <idx> <24-byte binding>` set one, `0x19` commit to flash, `0x1A` reset to defaults. The 16-byte
     ops above use the legacy 32-bit masks, where bits 28-31 are the left-stick directions; the firmware
     translates them to and from the 64-bit form, so the right-stick triggers are reachable only through v2.
+  - Which map the lizard ops edit: from status-blob version 28, always the **saved** map. In Lizard
+    mode that is the live map. Every other mode runs the built-in defaults (Steam-mode seamless lizard), so
+    the ops work on a separate copy loaded from flash, and committing it leaves the running defaults alone.
+    Before version 28 the ops edited the running map in every mode, so outside Lizard mode a dump returned
+    the defaults and a commit saved them over the user's map.
+  - `0x29` (status-blob version ≥ 28): turn on IMU streaming (`SETTING_IMU_MODE` = `0x07`) on every linked
+    controller, sent three times because the RF relay is no-ack. The emulated modes do this at connect; Steam
+    and Lizard modes never do, so there the panel's raw motion readout stays zero until this is sent. No reply.
+  - `0x2A <slot>` (status-blob version ≥ 28): one controller's live motion sample, replying with an `0xAF`
+    frame: `[ver=1][slot][linkUp]` then `ax ay az gx gy gz` and the report-`0x42` orientation quaternion
+    `qw qx qy qz` (Q15), all s16 LE. The quaternion reads all zero until the controller sends `0x42`; older
+    controller firmware sends identity. The panel polls it at about 25 Hz for its 3D motion view.
   - `0x20`–`0x24`: staged firmware update (begin/data/end/reboot/abort), acked with `0xAB` frames
   - `0x25 0x57 0x49 0x50 0x45`: **full board wipe** (`"WIPE"` magic, debug panel only). Erases the app
     region + LittleFS (settings + bonds) + bootloader-settings page and reboots app-less, so the board mounts

@@ -52,6 +52,9 @@ static volatile bool g_bondExportRequest = false;
 // Switch Pro profiles / HD rumble / shortcut settings (op 0x27 -> one 0xAE frame). Kept out of the status blob,
 // which is already at its 255-byte frame limit. Deferred to the usbd task like the blob.
 static volatile bool g_swFrameRequest = false;
+// Motion sample for the panel's 3D view (op 0x2A <slot> -> one 0xAF frame). The panel asks ~25 times a second, so
+// it is deferred to the usbd task like the blob; 0xFF = nothing pending.
+static volatile uint8_t g_motionSlot = 0xFF;
 // Firmware-update ack ([0xAB][5][status][nextOff u32 LE]). Like the blob it is written from the usbd task
 // (webusbSofDrain), but unlike the blob it is NEVER dropped -- the panel's transfer flow-control is strict
 // ping-pong on these acks, so an unsent ack just stays pending until the FIFO has room (the panel is
@@ -145,7 +148,10 @@ static void webusbSendBlob()
 
 	// clang-format off
 	// protocol version
-	// (27 = +grip soft-limit knee (field 115, blob p[209], percent 50..100, 100 = off);
+	// (28 = lizard-map ops 0x11..0x1A edit the SAVED map in every mode (a separate copy outside MODE_LIZARD,
+	// whose live map is the built-in defaults), +op 0x29 turn on controller IMU, +op 0x2A live motion sample
+	// (0xAF frame: accel, gyro, report-0x42 orientation quaternion); payload unchanged;
+	// 27 = +grip soft-limit knee (field 115, blob p[209], percent 50..100, 100 = off);
 	// 26 = +DualSense controller speaker volume (field 114, blob p[208], percent/2, 0 = off);
 	// 25 = +per-type grip strength (fields 108..111, blob p[212..215]); rumble style automatic;
 	// 24 = +trigger deadzone / full-press point (fields 102/103, blob p[206..207]);
@@ -166,7 +172,7 @@ static void webusbSendBlob()
 	// cfg; 8 = +per-slot link status; 7 = +raw accel; 
 	// 6 = +swPro120/gyroScale)
 	// clang-format on
-	p[2] = 27;
+	p[2] = 28;
 	p[3] = g_usbMode;
 	p[4] = (uint8_t)g_mDiv;
 	p[5] = (uint8_t)g_mFric;
@@ -628,6 +634,33 @@ static bool webusbSendRfStatus()
 	return true;
 }
 
+// 0x2A <slot>: one controller's live motion sample, polled at ~25 Hz by the panel's 3D view (status v28) and
+// written from the usbd task (webusbSofDrain) like the blob:
+//   [0xAF][23][ver=1][slot][linkUp][ax ay az gx gy gz: s16 LE][qw qx qy qz: s16 LE Q15]
+// The quaternion is all zero until the controller sends report 0x42 (0x45 carries none).
+static void webusbSendMotion(uint8_t slot)
+{
+	const PuckInput &in = g_in[slot];
+	const int16_t v[10] = { in.ax, in.ay, in.az, in.gx, in.gy,
+				in.gz, in.qw, in.qx, in.qy, in.qz };
+	static uint8_t f[2 + 23];
+	f[0] = 0xAF;
+	f[1] = 23;
+	f[2] = 1;
+	f[3] = slot;
+	f[4] = (g_connReplyMs[slot] != 0 &&
+		(millis() - g_connReplyMs[slot]) < RF_LINK_UP_MS);
+	for (int i = 0; i < 10; i++) {
+		f[5 + i * 2] = (uint8_t)v[i];
+		f[6 + i * 2] = (uint8_t)((uint16_t)v[i] >> 8);
+	}
+	// drop-on-full, same anti-hang rule as the status blob (the panel just asks again)
+	if (tud_vendor_write_available() >= sizeof f) {
+		usb_web.write(f, sizeof f);
+		usb_web.flush();
+	}
+}
+
 static void webusbSofDrain(void)
 {
 	// If loop() has stopped beating, it's wedged -- keep pushing the blob (which carries the live stuck stage)
@@ -660,6 +693,10 @@ static void webusbSofDrain(void)
 	if (g_swFrameRequest) {
 		g_swFrameRequest = false;
 		webusbSendSwitchFrame();
+	}
+	if (g_motionSlot != 0xFF) {
+		webusbSendMotion(g_motionSlot);
+		g_motionSlot = 0xFF;
 	}
 	if (g_rfStatusRequest && webusbSendRfStatus())
 		g_rfStatusRequest = false;
@@ -741,11 +778,29 @@ static uint32_t webusbLizardMaskToLegacy(uint64_t m)
 	return out;
 }
 
+// The lizard map the panel edits (status v28). In MODE_LIZARD that is the live g_lizardMap. Every other mode
+// keeps the built-in defaults in g_lizardMap for Steam-mode seamless lizard, so the editor works on a separate
+// copy of the SAVED map instead, loaded from flash on first use; saving it never touches the live defaults.
+// Modes only change across a reboot, so the copy can't go stale.
+static LizardMap s_lizardEdit;
+static bool s_lizardEditLoaded = false;
+static LizardMap &webusbLizardMap()
+{
+	if (g_usbMode == MODE_LIZARD)
+		return g_lizardMap;
+	if (!s_lizardEditLoaded) {
+		loadLizardMap(s_lizardEdit);
+		s_lizardEditLoaded = true;
+	}
+	return s_lizardEdit;
+}
+
 static void webusbSendLizard()
 {
 	if (!usb_web.connected())
 		return;
-	uint8_t count = g_lizardMap.count;
+	const LizardMap &m = webusbLizardMap();
+	uint8_t count = m.count;
 	if (count > LZ_MAX_BINDINGS)
 		count = LZ_MAX_BINDINGS;
 	// static (not stack): 514 B is large for the USB task stack, and webusbPoll is single-threaded.
@@ -755,7 +810,7 @@ static void webusbSendLizard()
 	f[0] = 0xAA;
 	f[1] = count;
 	for (uint8_t i = 0; i < count; i++) {
-		const LizardBinding &b = g_lizardMap.bindings[i];
+		const LizardBinding &b = m.bindings[i];
 		uint8_t *q = &f[2 + i * 16];
 		q[0] = b.outType;
 		for (int k = 0; k < 7; k++)
@@ -779,14 +834,15 @@ static void webusbSendLizardV2()
 {
 	if (!usb_web.connected())
 		return;
-	uint8_t count = g_lizardMap.count;
+	const LizardMap &m = webusbLizardMap();
+	uint8_t count = m.count;
 	if (count > LZ_MAX_BINDINGS)
 		count = LZ_MAX_BINDINGS;
 	static uint8_t f[2 + LZ_MAX_BINDINGS * 24];
 	f[0] = 0xAA;
 	f[1] = count;
 	for (uint8_t i = 0; i < count; i++) {
-		const LizardBinding &b = g_lizardMap.bindings[i];
+		const LizardBinding &b = m.bindings[i];
 		uint8_t *q = &f[2 + i * 24];
 		q[0] = b.outType;
 		for (int k = 0; k < 7; k++)
@@ -871,10 +927,10 @@ void webusbPoll()
 				break;
 			uint8_t op = buf[0];
 			// 0x16 = test rumble (v21), 0x17..0x1A = lizard v2 (v21), 0x27 = Switch Pro/shortcut frame
-			// request (v23), 0x28 = save shortcut settings (v23); extend this range whenever a new opcode
-			// is added, or the parser drops it as garbage.
+			// request (v23), 0x28 = save shortcut settings (v23), 0x29 = IMU on (v28), 0x2A = motion sample
+			// (v28); extend this range whenever a new opcode is added, or the parser drops it as garbage.
 			if ((op < 0x01 || op > 0x1A) &&
-			    (op < 0x20 || op > 0x28)) { // resync: drop one byte
+			    (op < 0x20 || op > 0x2A)) { // resync: drop one byte
 				memmove(buf, buf + 1, --n);
 				continue;
 			}
@@ -897,7 +953,8 @@ void webusbPoll()
 				(op == 0x18) ? 26 :
 				(op == 0x02) ? 3 :
 				(op == 0x03 || op == 0x05 || op == 0x0E ||
-				 op == 0x0F || op == 0x10 || op == 0x13) ?
+				 op == 0x0F || op == 0x10 || op == 0x13 ||
+				 op == 0x2A) ?
 					       2 :
 				(op == 0x0A) ? 4 :
 				(op == 0x25) ? 5 :
@@ -960,6 +1017,10 @@ void webusbPoll()
 				g_blobRequest = true;
 			} else if (op == 0x16) {
 				hapticTestRumble();
+			} else if (op == 0x29) {
+				hapticImuOn();
+			} else if (op == 0x2A) {
+				g_motionSlot = buf[1] < NSLOT ? buf[1] : 0;
 			}
 
 			// trigger controller power-off (same path Steam 0x9F / host-suspend use)
@@ -1055,7 +1116,7 @@ void webusbPoll()
 				// 0x13 [count]: BEGIN a map edit -- set the binding count (clamped). The
 				// panel then sends one 0x12 per binding (0..count-1) and a 0x14 to persist.
 			} else if (op == 0x13) {
-				g_lizardMap.count =
+				webusbLizardMap().count =
 					(buf[1] <= LZ_MAX_BINDINGS) ?
 						buf[1] :
 						LZ_MAX_BINDINGS;
@@ -1065,7 +1126,7 @@ void webusbPoll()
 				uint8_t idx = buf[1];
 				if (idx < LZ_MAX_BINDINGS) {
 					LizardBinding &b =
-						g_lizardMap.bindings[idx];
+						webusbLizardMap().bindings[idx];
 					b.outType = buf[2];
 					for (int k = 0; k < 7; k++)
 						b.outData[k] = buf[3 + k];
@@ -1086,12 +1147,12 @@ void webusbPoll()
 				}
 				// 0x14: COMMIT the edited map to flash and echo it back.
 			} else if (op == 0x14) {
-				saveLizardMap();
+				saveLizardMap(webusbLizardMap());
 				webusbSendLizard();
 				// 0x15: reset the map to the built-in defaults, persist, echo back.
 			} else if (op == 0x15) {
-				defaultLizardMap();
-				saveLizardMap();
+				defaultLizardMap(webusbLizardMap());
+				saveLizardMap(webusbLizardMap());
 				webusbSendLizard();
 			} else if (op == 0x17) {
 				// Native lizard-map dump: 24-byte records with uint64 masks.
@@ -1101,7 +1162,7 @@ void webusbPoll()
 				uint8_t idx = buf[1];
 				if (idx < LZ_MAX_BINDINGS) {
 					LizardBinding &b =
-						g_lizardMap.bindings[idx];
+						webusbLizardMap().bindings[idx];
 					b.outType = buf[2];
 					for (int k = 0; k < 7; k++)
 						b.outData[k] = buf[3 + k];
@@ -1117,11 +1178,11 @@ void webusbPoll()
 					}
 				}
 			} else if (op == 0x19) {
-				saveLizardMap();
+				saveLizardMap(webusbLizardMap());
 				webusbSendLizardV2();
 			} else if (op == 0x1A) {
-				defaultLizardMap();
-				saveLizardMap();
+				defaultLizardMap(webusbLizardMap());
+				saveLizardMap(webusbLizardMap());
 				webusbSendLizardV2();
 
 				// 0x20..0x24: staged firmware update (see fw_update.h). Each op is acked with an 0xAB

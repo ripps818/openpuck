@@ -127,7 +127,7 @@ panel detects the controller and shows a reduced UI:
 - **Paired pucks** — every puck the dongle is bonded to, with a live/offline badge and a **Remove**
   (un-bond) button. Same list the Deck app shows over CDC, just over WebUSB.
 - **Firmware update** — drop a `ReversePuckFirmware` `.uf2` on the card to stream it over WebUSB (verified
-  on-device, applied on an automatic reboot), or use **UF2 DFU** / **Serial DFU** in the top bar to reboot
+  on-device, applied on an automatic reboot), or use **UF2 DFU** / **Serial DFU** on the **Device** page to reboot
   into the bootloader for drag-and-drop / `adafruit-nrfutil` flashing.
 
 Build a flashable dongle image with `make reversepuck` (from the repo root); flash a connected dongle with
