@@ -11,15 +11,17 @@
 // The mic carries only silence, but Linux needs it: Sony's stock UCM profile opens the capture PCM and
 // PipeWire rejects the whole profile (and its Direct 4ch sink) when that fails.
 #define UAC1_IAD_LEN 8
-// IAD(8)+AC_std(9)+CS_hdr(10)+speaker IT(12)+FU(12)+OT(9)+mic IT(12)+mic OT(9)
-#define UAC1_AC_DESC_LEN 81
+// IAD(8)+AC_std(9)+CS_hdr(10)+speaker IT(12)+FU(12)+OT(9)+mic IT(12)+mic FU(9)+mic OT(9)
+#define UAC1_AC_DESC_LEN 90
 // Each AS interface: alt0(9)+alt1(9)+CS_general(7)+format(11)+std_ep(9)+CS_ep(7)
 #define UAC1_AS_DESC_LEN 52
 #define UAC1_DESC_LEN (UAC1_AC_DESC_LEN + 2 * UAC1_AS_DESC_LEN)
-// 4ch * 2 bytes * 48 frames/ms = 384 bytes per 1ms isochronous packet
-#define UAC1_ISO_EP_BUFSIZE 384
-// 2ch * 2 bytes * 48 frames/ms
-#define UAC1_ISO_IN_EP_BUFSIZE 192
+// Max packet sizes as a real pad declares them: one 8-byte frame (4ch * 16 bit) and one 4-byte frame (2ch) more
+// than the 48 frames of a 1 ms packet at 48 kHz.
+#define UAC1_ISO_EP_BUFSIZE 392
+#define UAC1_ISO_IN_EP_BUFSIZE 196
+// The mic sends exactly 48 frames per packet.
+#define UAC1_ISO_IN_PACKET 192
 
 static uint8_t g_uac1ItfAc = 0xFF;
 static uint8_t g_uac1ItfAs = 0xFF;
@@ -67,27 +69,34 @@ uint16_t Adafruit_USBD_Audio_UAC1::getInterfaceDescriptor(uint8_t itfnum,
 		9, TUSB_DESC_INTERFACE, ac_itf, 0, 0, TUSB_CLASS_AUDIO, 0x01,
 		0x00, 0,
 
+		// The terminals and units below are a real pad's, IDs and associations included: speaker path
+		// IT 1 -> FU 2 -> OT 3, mic path IT 4 -> FU 5 -> OT 6, with IT 1/OT 6 and OT 3/IT 4 paired.
+
 		// AC Class-Specific Header Descriptor - 10 bytes
-		// wTotalLength = CS_hdr(10)+IT(12)+FU(12)+OT(9)+mic IT(12)+mic OT(9) = 64
-		10, 0x24, 0x01, 0x00, 0x01, 64, 0x00, 2, as_out, as_in,
+		// wTotalLength = CS_hdr(10)+IT(12)+FU(12)+OT(9)+mic IT(12)+mic FU(9)+mic OT(9) = 73
+		10, 0x24, 0x01, 0x00, 0x01, 73, 0x00, 2, as_out, as_in,
 
 		// Input Terminal Descriptor (USB Streaming, 4ch) - 12 bytes
 		// wChannelConfig 0x0033: FL + FR + BL(haptic-L) + BR(haptic-R)
-		12, 0x24, 0x02, 0x01, 0x01, 0x01, 0x00, 4, 0x33, 0x00, 0x00, 0,
+		12, 0x24, 0x02, 0x01, 0x01, 0x01, 0x06, 4, 0x33, 0x00, 0x00, 0,
 
-		// Feature Unit Descriptor (Mute / Volume, 4ch) - 12 bytes
-		// bControlSize=1: master mute(0x01), ch1-4 volume(0x02 each)
-		12, 0x24, 0x06, 0x02, 0x01, 0x01, 0x01, 0x02, 0x02, 0x02, 0x02,
+		// Feature Unit Descriptor - 12 bytes
+		// bControlSize=1: master mute + volume (0x03), no per-channel controls
+		12, 0x24, 0x06, 0x02, 0x01, 0x01, 0x03, 0x00, 0x00, 0x00, 0x00,
 		0,
 
-		// Output Terminal Descriptor (Speaker) - 9 bytes
-		9, 0x24, 0x03, 0x03, 0x01, 0x03, 0x00, 0x02, 0,
+		// Output Terminal Descriptor (Speaker 0x0301) - 9 bytes
+		9, 0x24, 0x03, 0x03, 0x01, 0x03, 0x04, 0x02, 0,
 
-		// Input Terminal Descriptor (Microphone 0x0201, 2ch FL+FR) - 12 bytes
-		12, 0x24, 0x02, 0x04, 0x01, 0x02, 0x00, 2, 0x03, 0x00, 0x00, 0,
+		// Input Terminal Descriptor (Headset 0x0402, 2ch FL+FR) - 12 bytes
+		12, 0x24, 0x02, 0x04, 0x02, 0x04, 0x03, 2, 0x03, 0x00, 0x00, 0,
 
-		// Output Terminal Descriptor (USB Streaming, source = mic IT) - 9 bytes
-		9, 0x24, 0x03, 0x05, 0x01, 0x01, 0x00, 0x04, 0,
+		// Feature Unit Descriptor (mic) - 9 bytes
+		// master mute + volume only, the same 9-byte form a real pad sends
+		9, 0x24, 0x06, 0x05, 0x04, 0x01, 0x03, 0x00, 0,
+
+		// Output Terminal Descriptor (USB Streaming, source = mic FU) - 9 bytes
+		9, 0x24, 0x03, 0x06, 0x01, 0x01, 0x01, 0x05, 0,
 
 		// Speaker/haptics AS Standard Interface Descriptor (Alt 0) - 9 bytes
 		9, TUSB_DESC_INTERFACE, as_out, 0, 0, TUSB_CLASS_AUDIO, 0x02,
@@ -104,12 +113,14 @@ uint16_t Adafruit_USBD_Audio_UAC1::getInterfaceDescriptor(uint8_t itfnum,
 		11, 0x24, 0x02, 0x01, 4, 2, 16, 1, 0x80, 0xBB, 0x00,
 
 		// Standard Isochronous Audio Data Endpoint Descriptor - 9 bytes (EP 0x08)
-		// bmAttributes 0x05: isochronous (01b) + asynchronous sync (01b)
-		9, TUSB_DESC_ENDPOINT, 0x08, 0x05,
+		// bmAttributes 0x09: isochronous (01b) + adaptive sync (10b), as on a real pad. The nRF52840's only
+		// isochronous endpoint is EP8, so the address can't match a real pad's 0x01.
+		9, TUSB_DESC_ENDPOINT, 0x08, 0x09,
 		U16_TO_U8S_LE(UAC1_ISO_EP_BUFSIZE), 1, 0, 0,
 
 		// Class-Specific Audio Data Endpoint Descriptor - 7 bytes
-		7, 0x25, 0x01, 0x01, 0, 0, 0,
+		// bmAttributes 0: no sampling-frequency control, as on a real pad
+		7, 0x25, 0x01, 0x00, 0, 0, 0,
 
 		// Mic AS Standard Interface Descriptor (Alt 0) - 9 bytes
 		9, TUSB_DESC_INTERFACE, as_in, 0, 0, TUSB_CLASS_AUDIO, 0x02,
@@ -119,18 +130,19 @@ uint16_t Adafruit_USBD_Audio_UAC1::getInterfaceDescriptor(uint8_t itfnum,
 		9, TUSB_DESC_INTERFACE, as_in, 1, 1, TUSB_CLASS_AUDIO, 0x02,
 		0x00, 0,
 
-		// AS Class-Specific General Descriptor (terminal link = OT 5) - 7 bytes
-		7, 0x24, 0x01, 0x05, 0x01, 0x01, 0x00,
+		// AS Class-Specific General Descriptor (terminal link = OT 6) - 7 bytes
+		7, 0x24, 0x01, 0x06, 0x01, 0x01, 0x00,
 
 		// AS Class-Specific Format Type I Descriptor (PCM 2ch 16-bit 48kHz) - 11 bytes
 		11, 0x24, 0x02, 0x01, 2, 2, 16, 1, 0x80, 0xBB, 0x00,
 
 		// Standard Isochronous Audio Data Endpoint Descriptor - 9 bytes (EP 0x88)
+		// bmAttributes 0x05: isochronous (01b) + asynchronous sync (01b)
 		9, TUSB_DESC_ENDPOINT, 0x88, 0x05,
 		U16_TO_U8S_LE(UAC1_ISO_IN_EP_BUFSIZE), 1, 0, 0,
 
 		// Class-Specific Audio Data Endpoint Descriptor - 7 bytes
-		7, 0x25, 0x01, 0x01, 0, 0, 0
+		7, 0x25, 0x01, 0x00, 0, 0, 0
 	};
 
 	memcpy(buf, desc, UAC1_DESC_LEN);
@@ -536,8 +548,8 @@ static const tusb_desc_endpoint_t s_iso_ep_out = {
 	.bLength = sizeof(tusb_desc_endpoint_t),
 	.bDescriptorType = TUSB_DESC_ENDPOINT,
 	.bEndpointAddress = 0x08,
-	// bmAttributes 0x05: isochronous (01b) + asynchronous sync (01b)
-	.bmAttributes = { .xfer = TUSB_XFER_ISOCHRONOUS, .sync = 1, .usage = 0 },
+	// bmAttributes 0x09: isochronous (01b) + adaptive sync (10b)
+	.bmAttributes = { .xfer = TUSB_XFER_ISOCHRONOUS, .sync = 2, .usage = 0 },
 	.wMaxPacketSize = UAC1_ISO_EP_BUFSIZE,
 	.bInterval = 1,
 };
@@ -614,7 +626,7 @@ static bool uac1_control_xfer_cb(uint8_t rhport, uint8_t stage,
 			// A transfer left queued by an earlier alt 1 keeps the silence loop running on its own.
 			if (alt == 1 && !usbd_edpt_busy(rhport, g_uac1EpIn))
 				usbd_edpt_xfer(rhport, g_uac1EpIn, g_isoInBuf,
-					       UAC1_ISO_IN_EP_BUFSIZE);
+					       UAC1_ISO_IN_PACKET);
 		}
 		return tud_control_status(rhport, request);
 	}
@@ -634,55 +646,45 @@ static bool uac1_control_xfer_cb(uint8_t rhport, uint8_t stage,
 		return tud_control_xfer(rhport, request, s_freq, sizeof s_freq);
 	}
 
-	// Interface-directed: mute / volume on the Feature Unit
-	static uint8_t s_cur_mute = 0;
-	static int16_t s_cur_vol[2] = { 0, 0 }; // 0 dB default
+	// Interface-directed: master mute / volume on Feature Unit 2 (speaker) or 5 (mic), never applied.
+	// Volumes are 16-bit signed 1/256 dB. The ranges give what Linux shows for a real pad: speaker
+	// -100..0 dB in 1 dB steps, mic 0..+48 dB in 101 steps.
+	static const int16_t s_volRange[2][3] = {
+		{ -100 * 256, 0, 256 }, // speaker: min, max, res
+		{ 0, 48 * 256, 121 }, // mic
+	};
+	static uint8_t s_curMute[2] = { 0, 0 };
+	static int16_t s_curVol[2] = { 0, 0 };
 	uint8_t cs = tu_u16_high(request->wValue);
+	uint8_t u = tu_u16_high(request->wIndex) == 0x05 ? 1 : 0;
 
 	if (request->bRequest == 0x01) { // SET_CUR
-		if (cs == 0x01) { // Mute
-			return tud_control_xfer(rhport, request, &s_cur_mute,
+		if (cs == 0x01)
+			return tud_control_xfer(rhport, request, &s_curMute[u],
 						1);
-		}
-		if (cs == 0x02) { // Volume
-			uint8_t cn = tu_u16_low(request->wValue);
-			uint8_t ch = (cn > 0 && cn <= 2) ? (cn - 1) : 0;
-			return tud_control_xfer(rhport, request, &s_cur_vol[ch],
+		if (cs == 0x02)
+			return tud_control_xfer(rhport, request, &s_curVol[u],
 						sizeof(int16_t));
-		}
 		return tud_control_xfer(rhport, request, s_ctrlScratch,
 					tu_min16(request->wLength,
 						 sizeof s_ctrlScratch));
 	}
 
-	if (cs == 0x01) {
-		// Mute: 1-byte boolean
-		return tud_control_xfer(rhport, request, &s_cur_mute, 1);
-	}
+	if (cs == 0x01)
+		return tud_control_xfer(rhport, request, &s_curMute[u], 1);
 
 	if (cs == 0x02) {
-		// Volume: 16-bit signed 1/256-dB, little-endian
-		uint8_t cn = tu_u16_low(request->wValue);
-		uint8_t ch = (cn > 0 && cn <= 2) ? (cn - 1) : 0;
 		switch (request->bRequest) {
 		case 0x81: // GET_CUR
-			return tud_control_xfer(rhport, request, &s_cur_vol[ch],
+			return tud_control_xfer(rhport, request, &s_curVol[u],
 						sizeof(int16_t));
-		case 0x82: { // GET_MIN: -46 dB (0xD200 LE)
-			static const int16_t s_min = (int16_t)0xD200;
-			return tud_control_xfer(rhport, request, (void *)&s_min,
-						sizeof s_min);
-		}
-		case 0x83: { // GET_MAX: 0 dB
-			static const int16_t s_max = 0;
-			return tud_control_xfer(rhport, request, (void *)&s_max,
-						sizeof s_max);
-		}
-		case 0x84: { // GET_RES: 1 dB (0x0100 LE)
-			static const int16_t s_res = (int16_t)0x0100;
-			return tud_control_xfer(rhport, request, (void *)&s_res,
-						sizeof s_res);
-		}
+		case 0x82: // GET_MIN
+		case 0x83: // GET_MAX
+		case 0x84: // GET_RES
+			return tud_control_xfer(
+				rhport, request,
+				(void *)&s_volRange[u][request->bRequest - 0x82],
+				sizeof(int16_t));
 		default:
 			return false;
 		}
@@ -704,7 +706,7 @@ static bool uac1_xfer_cb(uint8_t rhport, uint8_t ep_addr, xfer_result_t result,
 	if (ep_addr == g_uac1EpIn) {
 		if (g_uac1AltSettingIn == 1)
 			usbd_edpt_xfer(rhport, g_uac1EpIn, g_isoInBuf,
-				       UAC1_ISO_IN_EP_BUFSIZE);
+				       UAC1_ISO_IN_PACKET);
 		return true;
 	}
 	return false;
