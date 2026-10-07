@@ -126,6 +126,8 @@ struct Cfg {
 	uint8_t audioStyle;
 	// grip PCM soft-limit knee, percent (50..100); anything else -> HAPTIC_LIMIT_KNEE_DEFAULT
 	uint8_t hapticKnee;
+	// Switch Pro HD rumble trackpad strength pct/2 (0..500%); 0xFF (short pre-tail file) -> 100%
+	uint8_t hdPadScale2;
 }; // rsvd0 = ex-padSmooth, now the one-shot debug-CDC arm
 
 // Shortest cfg.bin we still accept: the layout as of CFG_MAGIC 0xCF, i.e. everything before the appended tail.
@@ -158,7 +160,8 @@ void saveCfg()
 		  g_audioHaptics,
 		  1,
 		  g_audioHapticStyle,
-		  g_hapticLimitKnee };
+		  g_hapticLimitKnee,
+		  (uint8_t)(g_hdPadScale / 2) };
 	for (int i = 0; i < ET_COUNT; i++) {
 		c.type[i] = g_type[i];
 		c.padStick[i][0] = g_padStickCfg[i][0];
@@ -277,6 +280,8 @@ void loadCfg()
 				g_audioHapticStyle = c.audioStyle;
 			if (c.hapticKnee >= 50 && c.hapticKnee <= 100)
 				g_hapticLimitKnee = c.hapticKnee;
+			if (c.hdPadScale2 <= 250)
+				g_hdPadScale = (uint16_t)c.hdPadScale2 * 2;
 			// The poll RX window is now FIXED (g_rxWin is const) -- any persisted rxWin10 is ignored.
 		}
 		f.close();

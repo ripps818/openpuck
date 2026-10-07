@@ -54,6 +54,8 @@
 #define RUMBLE_STYLE_MAX 6
 extern uint16_t g_rumbleScale; // percent, RUMBLE_SCALE_MIN..RUMBLE_SCALE_MAX
 extern uint8_t g_rumbleStyle; // RUMBLE_STYLE_*
+// Switch Pro HD rumble: trackpad tone strength, percent (0..500, 100 default). The grips follow g_rumbleScale.
+extern uint16_t g_hdPadScale;
 // Test buzz for the panel/console: a fixed mid-scale amplitude pushed through the SAME shaping path host
 // rumble takes, so what you feel is what a game at that amplitude would feel like. Auto-stops in hapticTask()
 // -- the controller's haptic LATCHES, so the stop is not optional.
@@ -212,6 +214,14 @@ static inline float hapticSoftLimit(float y)
 	return y < 0 ? -a : a;
 }
 
+// Switch Pro HD rumble: the latest decoded bands per side (left low/high, right low/high) and, for
+// hapticSwitchPitch, their frequencies in Hz. Called from the USB callback; hapticTask renders each side's two
+// bands as PCM on that side's grip and the high band as a 0x83 tone on that side's trackpad.
+void hapticSwitchHd(uint8_t slot, uint16_t leftLow, uint16_t leftHigh,
+		    uint16_t rightLow, uint16_t rightHigh);
+void hapticSwitchPitch(uint8_t slot, uint16_t ll, uint16_t lh, uint16_t rl,
+		       uint16_t rh, uint16_t lf, uint16_t hf, uint16_t rf,
+		       uint16_t rhf);
 // queue + flush the pending host/test/stop relay inside the poll cadence (called from rf_link).
 // rfConnFlushRelay's s1 must carry a PID distinct from the GET poll that follows it. g_relayPid
 // is initialised 2 ahead of g_pollPid and both increment once per cycle, so the 2-bit PIDs stay
