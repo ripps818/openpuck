@@ -158,6 +158,18 @@ bool hapticAudioRumble(uint16_t lowFreq, uint16_t highFreq, uint8_t slot = 0);
 // a stream that stops refreshing it ends on its own; gainDb -128 cuts a playing tone within ~25-50 ms.
 bool hapticAudioTone(uint8_t side, int8_t gainDb, uint16_t freqHz,
 		     uint16_t durMs, uint8_t slot = 0);
+// Actuator select byte of OUTPUT 0x82 / 0x83 (as the controller firmware routes it): trackpads 0 left, 1 right,
+// 2 both; grips 3 left, 4 right, 5 both. 0x81 swaps 0 and 1. 0x80 rumble always plays on both grips.
+#define HSIDE_LPAD 0
+#define HSIDE_RPAD 1
+#define HSIDE_PADS 2
+#define HSIDE_LGRIP 3
+#define HSIDE_RGRIP 4
+#define HSIDE_GRIPS 5
+static inline uint8_t hsidePads(bool left, bool right)
+{
+	return (left && right) ? HSIDE_PADS : right ? HSIDE_RPAD : HSIDE_LPAD;
+}
 
 // queue + flush the pending host/test/stop relay inside the poll cadence (called from rf_link).
 // rfConnFlushRelay's s1 must carry a PID distinct from the GET poll that follows it. g_relayPid
