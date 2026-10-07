@@ -14,6 +14,7 @@
 // controller (captured), so an unconditional burst on each link-up edge is itself a buzz source on a flapping
 // link. The g_hapLog ring captures recent OUTPUT reports for the 'H' dump.
 #pragma once
+#include <math.h>
 #include <stdint.h>
 #include "config.h" // OPK_LOG
 #include "bonds.h" // NSLOT
@@ -172,6 +173,43 @@ bool hapticAudioTone(uint8_t side, int8_t gainDb, uint16_t freqHz,
 static inline uint8_t hsidePads(bool left, bool right)
 {
 	return (left && right) ? HSIDE_PADS : right ? HSIDE_RPAD : HSIDE_LPAD;
+}
+
+// PCM haptic stream (OUTPUT 0x86 mode, 0x88 stereo frame; measured on the controller's IMU). Each frame
+// carries PCM_SAMPLES u-law samples per side at PCM_RATE_HZ; L/R drive the left/right grip actuators. The
+// controller buffers ~40 ms before playing, rides out 120 ms of jitter, and falls silent on its own when
+// frames stop. hapticPcmStart sets the format (it persists, so it is re-sent periodically, not torn down).
+#define PCM_SAMPLES 31u
+#define PCM_RATE_HZ 4000u
+void hapticPcmStart(uint8_t slot);
+// Sends the first n samples of each side (n <= PCM_SAMPLES).
+bool hapticPcmSend(uint8_t slot, const uint8_t *left, const uint8_t *right,
+		   uint8_t n);
+// Samples in the next frame of a new stream at `rate` Hz, `queued` samples into it (callers stop counting past
+// the threshold). The controller starts playing on the first frame to arrive once it holds more than 16 ms
+// (rate * 2 / 125: 64 samples at 4 kHz), and that fill stays buffered for the rest of the stream. One short
+// frame lands the crossing on threshold + 1, so playback starts 31 samples later: at 4 kHz 31, 31, 3 start it
+// at 96 (24 ms) instead of 124 with full frames.
+static inline uint8_t hapticPcmFrameLen(uint16_t queued, uint16_t rate)
+{
+	uint16_t threshold = (uint16_t)(rate * 2u / 125u);
+	if (queued > threshold)
+		return PCM_SAMPLES;
+	uint16_t need = (uint16_t)(threshold + 1u - queued);
+	return need < PCM_SAMPLES ? (uint8_t)need : PCM_SAMPLES;
+}
+// G.711 u-law byte for x in [-1, 1] (clamped).
+uint8_t hapticUlaw(float x);
+// PCM soft limit: linear up to the knee (g_hapticLimitKnee), then eases toward full scale, so peaks past it round
+// off instead of clipping. A clipped peak plays on the grips as a pop. Knee 100 passes y through to the clamp.
+static inline float hapticSoftLimit(float y)
+{
+	float k = g_hapticLimitKnee * 0.01f, a = fabsf(y);
+	if (a <= k || k >= 1.0f)
+		return y;
+	float o = (a - k) / (1.0f - k);
+	a = k + (1.0f - k) * o / (1.0f + o);
+	return y < 0 ? -a : a;
 }
 
 // queue + flush the pending host/test/stop relay inside the poll cadence (called from rf_link).

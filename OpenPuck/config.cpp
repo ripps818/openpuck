@@ -53,7 +53,8 @@ uint8_t g_padHaptics = 1;
 uint8_t g_rumble = 1;
 uint8_t g_audioHaptics = 1;
 uint16_t g_audioHapticGain = 0;
-uint8_t g_audioHapticStyle = AUDIO_STYLE_TONE;
+uint8_t g_audioHapticStyle = AUDIO_STYLE_WAVE;
+uint8_t g_hapticLimitKnee = HAPTIC_LIMIT_KNEE_DEFAULT;
 uint8_t g_ledBright = 0;
 
 void applyActiveType()
@@ -123,6 +124,8 @@ struct Cfg {
 	uint8_t audioGainLinear;
 	// AUDIO_STYLE_*; 0xFF (short pre-tail file) -> compiled default
 	uint8_t audioStyle;
+	// grip PCM soft-limit knee, percent (50..100); anything else -> HAPTIC_LIMIT_KNEE_DEFAULT
+	uint8_t hapticKnee;
 }; // rsvd0 = ex-padSmooth, now the one-shot debug-CDC arm
 
 // Shortest cfg.bin we still accept: the layout as of CFG_MAGIC 0xCF, i.e. everything before the appended tail.
@@ -154,7 +157,8 @@ void saveCfg()
 		  (uint8_t)(g_audioHapticGain / 2),
 		  g_audioHaptics,
 		  1,
-		  g_audioHapticStyle };
+		  g_audioHapticStyle,
+		  g_hapticLimitKnee };
 	for (int i = 0; i < ET_COUNT; i++) {
 		c.type[i] = g_type[i];
 		c.padStick[i][0] = g_padStickCfg[i][0];
@@ -266,8 +270,13 @@ void loadCfg()
 			}
 			if (c.audioHaptics <= 1)
 				g_audioHaptics = c.audioHaptics;
-			if (c.audioStyle <= AUDIO_STYLE_SPLIT)
+			// A file without the grip-limiter byte was saved by a build that predates the wave style, so its
+			// style is that build's default (tone) rather than a choice: skip it once and land on wave.
+			if (c.hapticKnee >= 50 && c.hapticKnee <= 100 &&
+			    c.audioStyle <= AUDIO_STYLE_WAVE)
 				g_audioHapticStyle = c.audioStyle;
+			if (c.hapticKnee >= 50 && c.hapticKnee <= 100)
+				g_hapticLimitKnee = c.hapticKnee;
 			// The poll RX window is now FIXED (g_rxWin is const) -- any persisted rxWin10 is ignored.
 		}
 		f.close();

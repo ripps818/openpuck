@@ -206,6 +206,44 @@ static inline float splitLow(Biquad *f, float x)
 	return y;
 }
 
+// Wave style filter: 2nd-order Butterworth sections (RBJ cookbook, Q 0.7071), -6 dB at the corner.
+struct BiquadCoef {
+	float b0, b1, b2, a1, a2;
+};
+
+// RBJ low-pass at f0 Hz for a stream at fs Hz, Q 0.7071.
+static BiquadCoef lowPass(float f0, float fs)
+{
+	float w = 6.2831853f * f0 / fs, c = cosf(w), a = sinf(w) * 0.70710678f,
+	      a0 = 1.0f + a;
+	return { (1.0f - c) / 2.0f / a0, (1.0f - c) / a0,
+		 (1.0f - c) / 2.0f / a0, -2.0f * c / a0, (1.0f - a) / a0 };
+}
+
+// Wave style: the haptic channels low-passed at OPK_HAPTIC_LP_HZ (two sections at 48 kHz, which is also the
+// anti-alias ahead of the decimation). The grip actuators turn content above a few hundred Hz into clicks and
+// buzz, so sharp effects felt harsh through the old 1.6 kHz anti-alias alone. In a feel test (Stellar Blade)
+// 300 Hz was smooth on strong hits and 500 Hz still a little harsh.
+#ifndef OPK_HAPTIC_LP_HZ
+#define OPK_HAPTIC_LP_HZ 300
+#endif
+static const BiquadCoef HAP_LP = lowPass(OPK_HAPTIC_LP_HZ, 48000.0f);
+
+static inline float biquad(Biquad *f, const BiquadCoef &c, float x)
+{
+	float y = c.b0 * x + c.b1 * f->x1 + c.b2 * f->x2 - c.a1 * f->y1 -
+		  c.a2 * f->y2;
+	f->x2 = f->x1;
+	f->x1 = x;
+	f->y2 = f->y1;
+	f->y1 = y;
+	return y;
+}
+
+// Wave style grip stream, set by ps5AudioTask: bond slots streaming (bit per slot) and the sample scale.
+static volatile uint8_t s_waveMask = 0;
+static volatile float s_waveScale = 0;
+
 // Frequency is crossings per frame with signal, not per tick: a step starting late in a tick, or silence
 // after one, otherwise reads far too low. Stellar Blade's running steps then played at 40 Hz, where the
 // controller's IMU measured a quarter of the 125 Hz response.
@@ -231,6 +269,17 @@ static void processAudioSamples(const uint8_t *data, uint32_t len)
 	static int8_t s_signL = 1, s_signR = 1;
 	static Biquad s_lpL = {}, s_lpR = {};
 	bool split = g_audioHapticStyle == AUDIO_STYLE_SPLIT;
+	// grip stream: decimation phase, fill of the frame being built, samples sent, and that frame
+	static Biquad s_aaL[2] = {}, s_aaR[2] = {};
+	static uint8_t s_dec = 0, s_fill = 0;
+	static uint16_t s_queued = 0;
+	static uint8_t s_pcmL[PCM_SAMPLES], s_pcmR[PCM_SAMPLES];
+	uint8_t waveMask = s_waveMask;
+	float waveScale = s_waveScale;
+	if (!waveMask) {
+		s_fill = 0;
+		s_queued = 0;
+	}
 
 	uint32_t num_frames = len / 8;
 	uint64_t sq_l = 0, sq_r = 0;
@@ -248,6 +297,27 @@ static void processAudioSamples(const uint8_t *data, uint32_t len)
 		hi_r += hr * hr;
 		zeroCross(split ? (int32_t)hl : s[2], &s_signL, &zc_l, &act_l);
 		zeroCross(split ? (int32_t)hr : s[3], &s_signR, &zc_r, &act_r);
+		if (!waveMask)
+			continue;
+		float al = biquad(&s_aaL[1], HAP_LP,
+				  biquad(&s_aaL[0], HAP_LP, s[2])),
+		      ar = biquad(&s_aaR[1], HAP_LP,
+				  biquad(&s_aaR[0], HAP_LP, s[3]));
+		if (++s_dec < 48000u / PCM_RATE_HZ)
+			continue;
+		s_dec = 0;
+		// soft limit, not hapticUlaw's clamp: a sharp hit peaks above the 20 ms envelope the haptic gain
+		// follows, and a clipped peak plays as a pop
+		s_pcmL[s_fill] = hapticUlaw(hapticSoftLimit(al * waveScale));
+		s_pcmR[s_fill] = hapticUlaw(hapticSoftLimit(ar * waveScale));
+		if (++s_fill < hapticPcmFrameLen(s_queued, PCM_RATE_HZ))
+			continue;
+		for (uint8_t b = 0; b < NSLOT; b++)
+			if (waveMask & (1u << b))
+				hapticPcmSend(b, s_pcmL, s_pcmR, s_fill);
+		if (s_queued < 1000u)
+			s_queued += s_fill;
+		s_fill = 0;
 	}
 
 	uint32_t pm = __get_PRIMASK();
@@ -464,6 +534,41 @@ static void toneUpdate(ToneSide *t, uint8_t side, uint16_t env, uint16_t ref,
 	t->sentMs = now;
 }
 
+// Wave style grip stream: stream while the haptic channels are above the gate and for WAVE_HANG_MS after, so a
+// short pause does not pay the controller's pre-buffer again. The format is re-sent every WAVE_FMT_MS: it
+// persists on the controller, but one that power-cycled mid-stream comes back without it.
+#define WAVE_HANG_MS 300u
+#define WAVE_FMT_MS 1000u
+
+static void waveUpdate(bool active, float waveScale, uint32_t now)
+{
+	static bool s_on = false;
+	static uint32_t s_lastActive = 0, s_fmtMs[NSLOT] = {};
+	if (active) {
+		s_on = true;
+		s_lastActive = now;
+	} else if (s_on && now - s_lastActive >= WAVE_HANG_MS) {
+		s_on = false;
+	}
+	uint8_t mask = 0;
+	for (uint8_t u = 0; s_on && u < g_usbMountCount; u++) {
+		int bond = audioBond(u);
+		if (bond >= 0)
+			mask |= (uint8_t)(1u << bond);
+	}
+	for (uint8_t b = 0; b < NSLOT; b++) {
+		if (!(mask & (1u << b)))
+			continue;
+		if (!(s_waveMask & (1u << b)) ||
+		    now - s_fmtMs[b] >= WAVE_FMT_MS) {
+			hapticPcmStart(b);
+			s_fmtMs[b] = now;
+		}
+	}
+	s_waveScale = waveScale;
+	s_waveMask = mask;
+}
+
 void ps5AudioTask(void)
 {
 	static uint16_t s_envL = 0, s_envR = 0;
@@ -494,7 +599,8 @@ void ps5AudioTask(void)
 
 	bool tone = g_audioHapticStyle == AUDIO_STYLE_TONE;
 	bool split = g_audioHapticStyle == AUDIO_STYLE_SPLIT;
-	uint16_t gate = tone ? TONE_GATE : HAPTIC_GATE;
+	bool wave = g_audioHapticStyle == AUDIO_STYLE_WAVE;
+	uint16_t gate = (tone || wave) ? TONE_GATE : HAPTIC_GATE;
 	uint16_t envL = hapticEnvelope(hapticLevel(sqL, frames), &s_envL, gate);
 	uint16_t envR = hapticEnvelope(hapticLevel(sqR, frames), &s_envR, gate);
 	// Split style: below SPLIT_HZ drives the rumble, the rest the tones, each with that output's gate.
@@ -517,8 +623,16 @@ void ps5AudioTask(void)
 		envL = envR = loL = loR = hiL = hiR = 0;
 	uint16_t toneL = tone ? envL : split ? hiL : 0;
 	uint16_t toneR = tone ? envR : split ? hiR : 0;
-	uint16_t rumL = tone ? 0 : split ? loL : envL;
-	uint16_t rumR = tone ? 0 : split ? loR : envR;
+	uint16_t rumL = (tone || wave) ? 0 : split ? loL : envL;
+	uint16_t rumR = (tone || wave) ? 0 : split ? loR : envR;
+	// wave plays the haptic channels as sent, like a real DualSense, so it skips the auto gain. 100% (and Auto)
+	// is 40% of full scale: half matched a real pad in FFXIV, but felt too strong across other games (2026-10-05).
+	waveUpdate(wave && (envL || envR),
+		   (wave && g_audioHaptics) ?
+			   (g_audioHapticGain ? g_audioHapticGain : 100) /
+				   (250.0f * 32768.0f) :
+			   0.0f,
+		   now);
 
 	// A style that stops using an output stops whatever it left playing (a tone cuts once; a rumble stops below).
 	toneUpdate(&s_toneL, 0, toneL, ref, gain, zcL, actL, now);

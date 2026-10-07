@@ -558,6 +558,42 @@ void hapticStabTask()
 	}
 }
 
+// 0x86 {op 2 = enable, channel 2 = both grips, format 9 = 4 kHz u-law}.
+void hapticPcmStart(uint8_t slot)
+{
+	if (slot >= NSLOT || haptic82Blocked(slot) || !hapticLinkUp(slot))
+		return;
+	static const uint8_t p[3] = { 2, 2, 9 };
+	relayEnqueue(0x86, p, sizeof p, true, slot);
+}
+
+bool hapticPcmSend(uint8_t slot, const uint8_t *left, const uint8_t *right,
+		   uint8_t n)
+{
+	if (slot >= NSLOT || haptic82Blocked(slot) || !hapticLinkUp(slot))
+		return false;
+	uint8_t p[1 + 2 * PCM_SAMPLES];
+	p[0] = n;
+	memcpy(p + 1, left, PCM_SAMPLES);
+	memcpy(p + 1 + PCM_SAMPLES, right, PCM_SAMPLES);
+	return relayEnqueue(0x88, p, sizeof p, true, slot);
+}
+
+uint8_t hapticUlaw(float x)
+{
+	if (x > 1.0f)
+		x = 1.0f;
+	else if (x < -1.0f)
+		x = -1.0f;
+	int s = (int)(x * 32635.0f);
+	uint8_t sign = s < 0 ? 0x80 : 0;
+	s = (s < 0 ? -s : s) + 0x84;
+	uint8_t exp = 7;
+	while (exp && !(s & (1 << (exp + 7))))
+		exp--;
+	return (uint8_t) ~(sign | (exp << 4) | ((s >> (exp + 3)) & 0x0F));
+}
+
 void rfConnQueueHapticRelay()
 {
 	if (relayPending())

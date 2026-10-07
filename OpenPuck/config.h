@@ -200,7 +200,13 @@ extern uint16_t g_audioHapticGain;
 #define AUDIO_STYLE_TONE 1
 // below ~80 Hz as rumble, the rest as tones
 #define AUDIO_STYLE_SPLIT 2
+// the haptic channels themselves, streamed to the grip actuators as 4 kHz PCM (0x88)
+#define AUDIO_STYLE_WAVE 3
 extern uint8_t g_audioHapticStyle;
+// Grip PCM soft-limit knee (DualSense wave style, Switch Pro HD grips), percent of full scale: 50..100, 70 default.
+// Peaks above it are rounded off toward full scale; 100 leaves only the hard clip at full scale.
+#define HAPTIC_LIMIT_KNEE_DEFAULT 70u
+extern uint8_t g_hapticLimitKnee;
 // LED brightness for the active emulated type (0 = no override, 1-100 = brightness %)
 extern uint8_t g_ledBright;
 // Live mirror of g_padStickCfg[g_etype]: {left pad, right pad} -> stick (PS_*).

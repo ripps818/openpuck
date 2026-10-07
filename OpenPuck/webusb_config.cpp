@@ -101,8 +101,9 @@ static bool boardCommand(uint8_t op)
 //                [v21: p[53] rumble strength as PERCENT/2 (field 22, revived); p[195] rumble style
 //                 (field 39, RUMBLE_STYLE_* in haptics.h); p[196] audioHapticGain (field 30);
 //                 p[197] audioHaptics (field 31, DualSense audio-driven haptics: 0=off, 1=on)]
-//                [v22: p[198] audioHapticStyle (field 88, AUDIO_STYLE_* in config.h)]
-#define WB_PAYLEN 197
+//                [v22: p[198] audioHapticStyle (field 88, AUDIO_STYLE_* in config.h); p[199] grip PCM
+//                 soft-limit knee percent (field 115)]
+#define WB_PAYLEN 198
 // The blob send is drop-on-full (never blocks loop), so the vendor TX FIFO MUST be able to hold a whole blob
 // -- otherwise tud_vendor_write_available() never reaches the frame size and EVERY frame is dropped (blank
 // panel / stale mappings). The Makefile sets -DCFG_TUD_VENDOR_TX_BUFSIZE=256; guard it here so a build without
@@ -129,7 +130,7 @@ static void webusbSendBlob()
 
 	// clang-format off
 	// protocol version
-	// (22 = +DualSense audio haptics style (field 88, blob p[198]);
+	// (22 = +DualSense audio haptics style (field 88, blob p[198]) and grip limiter knee (field 115, p[199]);
 	// 21 = +rumble style (field 39, blob p[195]) and the REVIVED rumble-strength field 22 at blob p[53], 
 	// now carrying percent/2; 
 	// 20 = +per-type trackpad->stick mapping (fields 80..87, blob p[187..194]); 
@@ -337,6 +338,7 @@ static void webusbSendBlob()
 	p[196] = (uint8_t)(g_audioHapticGain / 2);
 	p[197] = g_audioHaptics;
 	p[198] = g_audioHapticStyle;
+	p[199] = g_hapticLimitKnee;
 	// CRITICAL: usb_web.write() SPINS (`while (remain && _connected) yield();`) until the IN FIFO drains or the
 	// panel disconnects. If the panel holds the WebUSB interface open but stops reading its IN endpoint -- a
 	// backgrounded tab, or the host briefly not servicing transferIn under load -- the FIFO never empties and
@@ -1110,9 +1112,15 @@ void webusbPoll()
 				// the per-type cfg range (40..75) and the pad->stick fields (80..87).
 				case 88:
 					g_audioHapticStyle =
-						v > AUDIO_STYLE_SPLIT ?
-							AUDIO_STYLE_TONE :
+						v > AUDIO_STYLE_WAVE ?
+							AUDIO_STYLE_WAVE :
 							v;
+					break;
+
+				// Grip PCM soft-limit knee, percent (50..100; 100 = off). Protocol v22.
+				case 115:
+					if (v >= 50 && v <= 100)
+						g_hapticLimitKnee = v;
 					break;
 
 				// DualSense audio-driven haptic gain (percent / 2, 10-500%; 0 = auto)
