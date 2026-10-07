@@ -305,8 +305,10 @@ Note on the serial method: puck (Steam/Lizard) mode drops the CDC console by def
 
 WebUSB requires a secure context. `http://localhost` qualifies.
 
-The panel is `docs/index.html` plus ES modules in `docs/js/` (entry point `app.js`, no build step). Browsers don't
-load modules from `file://`, so serve the folder over HTTP as below rather than opening the file directly.
+The panel's code lives in `panel/*.js` (ES modules, entry point `app.js`). `make panel` (or
+`python3 tools/build_panel.py`) bundles them into the inline script of `docs/index.html`, so after editing a module,
+rebuild before testing or committing; `make check` and the PR check fail when the bundle is out of date. The built
+`docs/index.html` is self-contained: open it from disk, or serve the folder as below.
 
 ### macOS / Linux
 

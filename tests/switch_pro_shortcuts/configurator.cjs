@@ -1,10 +1,10 @@
 const fs=require('fs'),path=require('path'),assert=require('assert'),{pathToFileURL}=require('url');
 const {JSDOM}=require('jsdom');
-const js=path.join(__dirname,'../../docs/js');
+const js=path.join(__dirname,'../../panel');
 const html=fs.readFileSync(path.join(__dirname,'../../docs/index.html'),'utf8');
 let cleanup=()=>{};
 (async()=>{
-// The panel is ES modules under docs/js: load the page (scripts off), expose the browser globals they use, import them.
+// The panel source is ES modules under panel/: load the page (scripts off), expose the browser globals they use, import them.
 const dom=new JSDOM(html,{url:'http://localhost/'}),w=dom.window;
 const timers=[],setIntervalNode=setInterval;globalThis.setInterval=(...a)=>{const t=setIntervalNode(...a);timers.push(t);return t;};
 cleanup=()=>{timers.forEach(clearInterval);w.close();};

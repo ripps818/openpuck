@@ -15,7 +15,6 @@ on:
       - 'gen_version.sh'
       - 'gen_uf2.sh'
       - 'docs/*.html'
-      - 'docs/js/**'
   workflow_dispatch:
 
 # a newer push supersedes a nightly still building
@@ -60,7 +59,7 @@ jobs:
           else
             echo "firmware=false" >> "$GITHUB_OUTPUT"
           fi
-          if echo "$FILES" | grep -Eq '^docs/([^/]*\.html|js/.+)$'; then
+          if echo "$FILES" | grep -Eq '^docs/[^/]*\.html$'; then
             echo "panel=true" >> "$GITHUB_OUTPUT"
           else
             echo "panel=false" >> "$GITHUB_OUTPUT"

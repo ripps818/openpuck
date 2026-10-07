@@ -1,8 +1,8 @@
 name: PR check
 
-# ripps818/openpuck only: gate pull requests that change code on formatting and a firmware compile. Upstream's
-# format.yml and build.yml run only in safijari/openpuck. Documentation-only PRs don't match the paths below and
-# skip this workflow.
+# ripps818/openpuck only: gate pull requests that change code on formatting, an up-to-date panel bundle and a
+# firmware compile. Upstream's format.yml and build.yml run only in safijari/openpuck. Documentation-only PRs
+# don't match the paths below and skip this workflow.
 on:
   pull_request:
     paths:
@@ -14,6 +14,9 @@ on:
       - 'Makefile'
       - 'gen_version.sh'
       - 'gen_uf2.sh'
+      - 'panel/**'
+      - 'docs/index.html'
+      - 'tools/build_panel.py'
       - '.github/workflows/pr-check.yml'
 
 # a new push to the PR supersedes a check still running
@@ -36,8 +39,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y clang-format-18
 
-      - name: Check formatting
-        # Run `make format` locally to fix.
+      - name: Check formatting and the panel bundle
+        # Run `make format` / `make panel` locally to fix.
         run: make check
 
   build:

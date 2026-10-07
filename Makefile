@@ -64,7 +64,7 @@ UF2_OUTPUT_DIR ?= build/openpuck
 # (No auto-detect -- uploading to a guessed serial port risks writing to the wrong device. List with
 # `arduino-cli board list`.) FLASH_PORT = whatever goal isn't one of our real targets; the catch-all rule at
 # the bottom swallows it so make doesn't try to build the port path as a target.
-FLASH_PORT := $(filter-out format format-check check build build-raytac \
+FLASH_PORT := $(filter-out format format-check check panel panel-check build build-raytac \
 	package-raytac flash-raytac deploy-raytac provision-raytac-softdevice \
 	build-recovery reversepuck reversepuck-flash reversepuck-deploy flash deploy,$(MAKECMDGOALS))
 UPLOAD = arduino-cli upload -b $(FQBN) -p "$(FLASH_PORT)" OpenPuck
@@ -75,7 +75,7 @@ UPLOAD = arduino-cli upload -b $(FQBN) -p "$(FLASH_PORT)" OpenPuck
 RP_USB_FLAGS = -DNRF52840_XXAA {build.flags.usb} -DCFG_TUD_TASK_QUEUE_SZ=$(CFG_TUD_TASK_QUEUE_SZ) -DCFG_TUD_VENDOR_TX_BUFSIZE=$(CFG_TUD_VENDOR_TX_BUFSIZE) $(EXTRA_FLAGS)
 RP_UPLOAD = arduino-cli upload -b $(FQBN) -p "$(FLASH_PORT)" ReversePuckFirmware
 
-.PHONY: format format-check check build build-raytac uf2 package-raytac \
+.PHONY: format format-check check panel panel-check build build-raytac uf2 package-raytac \
 	flash-raytac deploy-raytac provision-raytac-softdevice build-recovery \
 	reversepuck reversepuck-flash reversepuck-deploy flash deploy \
 	install-wireplumber uninstall-wireplumber
@@ -189,7 +189,15 @@ format-check:
 	$(CLANG_FORMAT) --dry-run --Werror $(FORMAT_FILES)
 
 ## Everything CI gates on.
-check: format-check
+check: format-check panel-check
+
+## Rebuild the config panel's inline script in docs/index.html from panel/*.js.
+panel:
+	python3 tools/build_panel.py
+
+## Fail if docs/index.html is out of date with panel/*.js.
+panel-check:
+	python3 tools/build_panel.py --check
 
 WIREPLUMBER_CONF_DIR ?= $(HOME)/.config/wireplumber/wireplumber.conf.d
 
