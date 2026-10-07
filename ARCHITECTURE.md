@@ -84,9 +84,9 @@ just points at the `OpenPuck` directory). Modules are layered low → high:
 | `mode_xinput.{h,cpp}` | **Xbox** personality: a custom TinyUSB XInput class driver + right-pad mouse + rumble relay. |
 | `mode_switch_hori.{h,cpp}` | **Switch HORIPAD** personality (console-friendly, no handshake). |
 | `mode_switch_pro.{h,cpp}` | **Switch Pro** personality: the full Nintendo USB handshake/subcommand state machine + SPI calibration + gyro. |
-| `mode_ps5.{h,cpp}` | **PS5 DualSense** personality (normal and game/clean): gyro + split trackpad, real-DualSense feature reports. |
+| `mode_ps5.{h,cpp}` | **PS5 DualSense** personality (normal and single-HID): gyro + split trackpad, real-DualSense feature reports. |
 | `mode_ps5_audio.{h,cpp}` | The DualSense **USB audio function** (UAC1, 4-channel out + silent mic): turns the haptic channels into grip PCM / rumble / tones and the speaker channels into grip audio. See docs/DUALSENSE_HAPTICS.md. |
-| `mode_hidgyro.{h,cpp}` | **DS4-layout** generic HID gyro personality (normal and game/clean; motion-aware PC games). |
+| `mode_hidgyro.{h,cpp}` | **DS4-layout** generic HID gyro personality (normal and single-HID; motion-aware PC games). |
 | `mode_ps3.{h,cpp}` | **PS3 DualShock 3 / Sixaxis** personality, built to enumerate on a real PS3 (static mount, console handshake). |
 | `mode_xbox_og.{h,cpp}` | **Original Xbox Controller S** personality: XID class driver for a real Original Xbox. |
 | `mode_dinput.{h,cpp}` | **DirectInput** personality: two joystick collections so every analog input (sticks, triggers, both trackpads, gyro) is bindable at once in flight/space sims. |
@@ -217,7 +217,7 @@ interface set. By default every cold boot returns to Steam mode unless "persist 
 
 ## Config & debug surfaces
 
-- **WebUSB** (`webusb_config.cpp`): present in every mode except the game/clean PlayStation modes and PS3; the browser panel reads a status blob and sets
+- **WebUSB** (`webusb_config.cpp`): present in every mode except the single-HID PlayStation modes and PS3; the browser panel reads a status blob and sets
   one-byte tunable fields or requests a mode switch.
 - **CDC console** (`serial_console.cpp`): present only in puck modes. Single-letter commands toggle RF diag
   modes, poke radio registers live, switch USB mode, edit tunables, inject test haptics, and dump capture

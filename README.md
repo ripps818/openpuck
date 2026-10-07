@@ -56,9 +56,9 @@ Hold the modifier and press a button. The modifier is all four back buttons by d
 | X | Xbox 360 | Configurable |
 | Y | Switch Pro | Configurable |
 | D-pad Left | PS3 | Configurable |
-| D-pad Up | DS4 (game/clean) | Configurable |
-| D-pad Right | PS5 (game/clean) | Configurable |
-| D-pad Down | Switch (HORIPAD) | Configurable |
+| D-pad Up | PS4 DualShock (single HID) | Configurable |
+| D-pad Right | PS5 DualSense (single HID) | Configurable |
+| D-pad Down | Switch HORIPAD | Configurable |
 | Trackpad click (L/R) | Toggle touchpad | High buzz = on, low buzz = off |
 
 Also in every mode: **Steam + Y held for 2 seconds** turns the controller off. In Switch Pro mode, **Quick Access + Minus** can take a screenshot (turn on "Quick Access + Select action" in the Mode shortcuts card).
@@ -66,21 +66,21 @@ Also in every mode: **Steam + Y held for 2 seconds** turns the controller off. I
 ### Modes
 | Mode (configurator name) | What it is |
 |---|---|
-| Steam (puck) | Steam Controller mode |
-| Lizard (always) | Lizard mode, even if Steam is open |
+| Steam | Steam Controller mode |
+| Lizard | Lizard mode, even if Steam is open |
 | Xbox 360 | Xbox 360 controller |
 | Original Xbox | Original Xbox Controller S; enumerates on a real Original Xbox |
-| Switch Pro + gyro | Switch Pro Controller + gyro + HD rumble |
-| Switch (HORIPAD) | Switch mode with no gyro or haptics |
+| Switch Pro | Switch Pro Controller + gyro + HD rumble |
+| Switch HORIPAD | Switch mode with no gyro or haptics |
+| PS3 DualShock | DualShock 3 / Sixaxis; enumerates on a real PS3 (+ gyro/haptics) |
+| PS4 DualShock | DS4 + gyro + trackpad (PC) |
+| PS4 DualShock (single HID) | Same DS4 as a bare single-HID device; one controller |
 | PS5 DualSense | DualSense + gyro + trackpad + 4-channel audio haptics (PC) |
-| PS5 (game/clean) | Same DualSense as a bare single-HID device, for PC games that refuse composite devices (e.g. Fortnite); one controller |
-| HID gyro (DS4) | DS4 + gyro + trackpad (PC) |
-| DS4 (game/clean) | Same DS4 as a bare single-HID device; one controller |
-| PS3 (DualShock 3) | DualShock 3 / Sixaxis; enumerates on a real PS3 (+ gyro/haptics) |
-| DirectInput (sims) | Every axis at once, as two DirectInput joysticks |
-| SInput (SDL native) | Sticks + analog triggers + gyro + both trackpads + battery |
+| PS5 DualSense (single HID) | Same DualSense as a bare single-HID device, for PC games that refuse composite devices (e.g. Fortnite); one controller |
+| DirectInput | Every axis at once, as two DirectInput joysticks |
+| SInput | Sticks + analog triggers + gyro + both trackpads + battery |
 
-The two game/clean modes aren't in the configurator's mode list, so reach them with a shortcut. They and PS3 drop the configurator's WebUSB connection; use modifier + A to get back to Steam.
+The two single-HID modes and PS3 drop the configurator's WebUSB connection; use modifier + A to get back to Steam.
 
 **DirectInput mode** exists because Steam Input funnels everything through XInput, so only a handful of the
 controller's analog inputs can be live at once — a problem for flight and space sims, which bind axes through

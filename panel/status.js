@@ -4,12 +4,33 @@ import { LIZARD_TAB, RUMBLE_SCALES, TYPE_DEFS, currentType, etypeForMode, setTab
 import { refreshRfStatus } from './rf.js';
 import { renderCtlrChips, renderSlotTabs } from './slots.js';
 import { renderHangLog, trailAdd } from './diag.js';
-import { lzV2Load } from './lizard.js';
 import { checkUpdateNotice, updateFwGate, updateVersionUI } from './firmware.js';
 import { syncMapNav, syncNav } from './nav.js';
 import { syncMotionCap } from './motion.js';
 
-export const MODE_NAMES = ["Steam (puck)","Xbox 360","Switch (HORIPAD)","Lizard (always)","Switch Pro + gyro","PS5 DualSense","HID gyro (DS4)","PS5 (game/clean)","DS4 (game/clean)","PS3 (DualShock 3)","Original Xbox","DirectInput (sims)","SInput (SDL native)"];
+export const MODE_NAMES = ["Steam","Xbox 360","Switch HORIPAD","Lizard","Switch Pro","PS5 DualSense","PS4 DualShock","PS5 DualSense (single HID)","PS4 DualShock (single HID)","PS3 DualShock","Original Xbox","DirectInput","SInput"];
+// display order for mode lists (MODE_NAMES is indexed by the firmware's mode number); single-HID after their base
+export const MODE_ORDER = [0, 3, 1, 10, 4, 2, 9, 6, 8, 5, 7, 11, 12];
+// one line per mode for the Mode page (shown for the running mode, or the mode button under the pointer/focus)
+const MODE_DESC = [
+  "The Steam Controller puck: Steam Input sees a genuine Steam Controller. Without Steam running it works as a keyboard and mouse.",
+  "Xbox 360 controller (XInput), the most widely supported. Back buttons and trackpads follow the Xbox mapping tab.",
+  "Basic Switch pad: buttons and sticks, no gyro or rumble.",
+  "Keyboard and mouse only, even while Steam is running. Bindings are on the Lizard mapping tab.",
+  "Switch Pro Controller with gyro and HD rumble, for a Switch console or PC.",
+  "DualSense with gyro, touchpad and 4-channel audio haptics (PC).",
+  "DualShock 4 with gyro and touchpad (PC).",
+  "The DualSense as a bare single-HID device, for PC games that refuse composite devices (e.g. Fortnite). One controller; the panel can't connect in this mode.",
+  "The DualShock 4 as a bare single-HID device. One controller; the panel can't connect in this mode.",
+  "DualShock 3 / Sixaxis with motion and rumble, for a real PS3. The panel can't connect in this mode.",
+  "Controller S for a real Original Xbox console (a PC needs a driver for it). Uses the Xbox mapping tab; LB/RB become White/Black.",
+  "For flight and space sims: every analog input live at once, split over two joysticks (sticks, triggers and buttons; trackpads and gyro). Trackpad axes hold their position until a pad click re-centres them.",
+  "The open SDL-native protocol: SDL3 and Steam Input read sticks, analog triggers, gyro, both trackpads and battery, with rumble back from the host.",
+];
+export function showModeDesc(m){
+  const el = $("#modeDesc"); if(!MODE_NAMES[m]){ el.textContent = ""; return; }
+  el.innerHTML = `<b>${MODE_NAMES[m]}</b>: ${MODE_DESC[m]}`;
+}
 export const CHORD_FIELD = [17, 18, 19];          // back4 + B/X/Y
 export const CHORD_DPAD_FIELD = [34, 35, 36, 37]; // back4 + D-pad left/up/right/down (firmware protocol >= 18)
 const CHORD_DPAD_DEF = [9, 8, 7, 2];       // firmware defaults: PS3, DS4 game, PS5 game, Switch HORIPAD
@@ -33,8 +54,9 @@ export function applyBlob(p){
   window._lastBlobTs=Date.now(); // feeds the host-side heartbeat watchdog (hard-wedge detection)
   // Lazy, capability-gated lizard-map load: only after a blob proves the puck speaks v16+ (the op-0x11 dump).
   // On older firmware 0x11 is dropped silently and readLizard() would block the endpoint forever, so we must
-  // NEVER send it blind at connect. One-shot per connection (reset in openDevice).
-  if(!S.lizardLoaded && p[0]>=16){ S.lizardLoaded=true; lzV2Load(); }
+  // NEVER send it blind at connect. One-shot per connection (reset in openDevice). Run by the poll loop once this
+  // poll is done (startPolling): started from here it raced this poll's own reads on the shared IN pipe.
+  if(!S.lizardLoaded && p[0]>=16){ S.lizardLoaded=true; S.lizardLoadDue=true; }
   const mode=p[1], mDiv=p[2], mFric=p[3]; // p[4..11] mirror the active type (per-type block below is authoritative)
   const slot=p[10], up=p[11], f1=(p[12]|(p[13]<<8));
   const newps=(p.length>16?(p[15]|(p[16]<<8)):0), persistMode=(p.length>22?p[22]:0);
@@ -51,9 +73,10 @@ export function applyBlob(p){
   const logEnabled=(p.length>35?p[35]:0);
   for(const el of document.querySelectorAll(".logonly")) el.style.display = logEnabled ? "" : "none";
   for(const b of document.querySelectorAll(".modebtn")) b.classList.toggle("active", +b.dataset.mode===mode);
+  if(!document.querySelector(".modebtn:hover, .modebtn:focus-visible")) showModeDesc(mode);
   $("#hdrMode").textContent = MODE_NAMES[mode] || ("mode "+mode);
   $("#mouseCard").style.opacity = (mode===1||mode===3)?1:0.5;
-  // The custom map applies ONLY to pure Lizard (always) mode. Firmware v28+ edits the saved map from any mode;
+  // The custom map applies ONLY to pure Lizard mode. Firmware v28+ edits the saved map from any mode;
   // before that the map ops hit the running map, which outside Lizard mode is the built-in defaults, so a save
   // there would overwrite the saved map with them. Older firmware gets a switch-mode note instead of the editor.
   const lizCap=p[0]>=16, lizAnyMode=p[0]>=28, lizEdit=mode===3||lizAnyMode;

@@ -191,12 +191,15 @@ async function tick(){
   if($("#pgInput").classList.contains("hide") || document.visibilityState !== "visible") return;
   // same pipe owners the status poll yields to; holding inflight makes the status poll wait for us
   if(S.inflight || S.capturing || S.backupBusy || S.flightBusy || S.lizardBusy || S.rfBusy || S.fieldBusy) return;
+  // the status poll comes first: a missed motion reply holds the pipe for the whole read timeout, and back to back
+  // those starved the status poll (stale status, "no heartbeat"), so stand aside whenever a status blob is overdue
+  if(Date.now() - (window._lastBlobTs || 0) > 1000) return;
   // a different controller: start over from its measured tilt
   if(S.g_activeSlot !== lastSlot){ lastSlot = S.g_activeSlot; needRecenter = true; }
   polling = true; S.inflight = true;
   try{
     await send([0x2A, S.g_activeSlot & 0xff]);
-    const f = await readFrame(0xAF, 23, 64, 300);
+    const f = await readFrame(0xAF, 23, 256, 300); // same read size as the status poll, which can inherit a pending read
     if(f){ misses = 0; update(decode(f)); } else misses++;
   } finally { S.inflight = false; polling = false; }
 }

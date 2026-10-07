@@ -1,6 +1,6 @@
 import { S } from './state.js';
 import { log } from './util.js';
-import { send } from './protocol.js';
+import { readIn, send, waitIdle } from './protocol.js';
 
 // ===================== Lizard (desktop) binding map =====================
 // Mirrors firmware lizard_map.h. A binding is {outType, od:[7], trig, hold}. Output types and the
@@ -41,12 +41,13 @@ const LZ_CONSUMER = [[1,"Volume +"],[2,"Volume −"]];
 
 function lzBtnLabel(mask){ const v=Number(mask)||0; const m=LZ_BTNS.find(b=>Number(b[0])===v); return m?m[1]:(v?("0x"+v.toString(16)):""); }
 // Read one [0xAA][count][count*16] frame, accumulating transferIn packets until complete.
+// Gives up after 3 s (null): an unanswered 0x11 must never block the IN pipe for good.
 export async function readLizard(){
   let acc=new Uint8Array(0);
+  const deadline=Date.now()+3000;
   for(let guard=0; guard<64; guard++){
-    const r=await S.dev.transferIn(S.epIn,128);
-    if(r.status!=="ok") break;
-    const d=new Uint8Array(r.data.buffer);
+    const d=await readIn(256, deadline-Date.now());
+    if(!d) break;
     const m=new Uint8Array(acc.length+d.length); m.set(acc); m.set(d,acc.length); acc=m;
     let i=0; while(i<acc.length && acc[i]!==0xAA) i++;
     if(i>0) acc=acc.slice(i);
@@ -215,10 +216,12 @@ async function lzV2ReadMap(op){
 	const recSize=lzPanelV2()?24:16;
 	let buf=[];
 	let expected=0;
+	// through the shared reader, with a deadline: a reply cut short used to leave this waiting forever with
+	// lizardBusy set, which stopped the status poll (NO HEARTBEAT) until stray bytes happened to complete it
+	const deadline=Date.now()+3000;
 	for(;;){
-		const r=await S.dev.transferIn(S.epIn,256);
-		if(r.status!=="ok") throw new Error("lizard-map read failed");
-		const d=new Uint8Array(r.data.buffer);
+		const d=await readIn(256, deadline-Date.now());
+		if(!d) throw new Error("lizard-map read timed out");
 		for(const x of d) buf.push(x);
 		if(!expected){
 			let start=-1;
@@ -245,6 +248,8 @@ export async function lzV2Load(){
 	if(S.lizardBusy||!S.dev)return;
 	S.lizardBusy=true;
 	try{
+		// runs from the first status blob, while that poll is still reading its Switch frame: wait for the pipe
+		await waitIdle();
 		const ops=lzV2Ops();
 		S.lizardBindings=await lzV2ReadMap(lzPanelV2()?ops.dump:0x11);
 		lzV2Render(); lzSetDirty(false);
@@ -280,6 +285,8 @@ export async function lzV2Reset(){
 	if(!confirm("Reset the lizard map to the built-in defaults? This saves to the puck immediately; your bindings are lost.")) return;
 	S.lizardBusy=true;
 	try{
+		// runs from the first status blob, while that poll is still reading its Switch frame: wait for the pipe
+		await waitIdle();
 		const ops=lzV2Ops();
 		S.lizardBindings=await lzV2ReadMap(lzPanelV2()?ops.reset:0x15);
 		lzV2Render(); lzSetDirty(false);

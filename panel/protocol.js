@@ -4,6 +4,7 @@ import { applyBlob, applySw } from './status.js';
 import { applyDeviceProfile, applyDongleStatus } from './dongle.js';
 import { loadFlightTrail, onWedge, renderHangLog, trailAdd, updateStabUI } from './diag.js';
 import { checkUpdateNotice, loadReleases } from './firmware.js';
+import { lzV2Load } from './lizard.js';
 
 let ifNum=0;
 
@@ -46,7 +47,7 @@ async function openDevice(d){
     // applyBlob). Older firmware (every pre-lizard build, including the v15 updater builds) silently drops
     // 0x11, and readLizard()'s blocking transferIn would then hang forever -- wedging the status poll the
     // firmware-update gate depends on. So we never send 0x11 until a status blob proves the puck speaks v16.
-    S.lizardLoaded=false;
+    S.lizardLoaded=false; S.lizardLoadDue=false;
     startPolling();
     // GitHub releases are PUCK firmware; skip the fetch for a dongle (it flashes via the local-file card).
     if(!S.isDongle) loadReleases(false); // background, cached: feeds the update-available notice + pre-warms the update tab
@@ -104,37 +105,55 @@ export async function send(bytes){
   catch(e){ log("write err: "+e.message); }
 }
 let pendingInRead = null;
+// One transferIn at a time, shared by every reader of the IN pipe: a read that times out stays pending and is
+// handed to the next caller, so the reply it eventually gets is never lost to an orphaned transfer. Returns the
+// bytes, or null on timeout; throws on a USB error.
+export async function readIn(readLen, timeoutMs){
+  if(!pendingInRead) pendingInRead = S.dev.transferIn(S.epIn, readLen||256);
+  const pr = pendingInRead;
+  let timer;
+  try{
+    const r = await Promise.race([pr, new Promise(res=>{ timer=setTimeout(()=>res(null), timeoutMs); })]);
+    if(r===null) return null;
+    if(pendingInRead===pr) pendingInRead = null;
+    return r.status==="ok" ? new Uint8Array(r.data.buffer) : new Uint8Array(0);
+  }catch(e){
+    if(pendingInRead===pr) pendingInRead = null;
+    throw e;
+  }finally{ clearTimeout(timer); }
+}
 // Read one framed reply and return its payload (with the 2-byte [marker][len] header stripped). The blob and
 // the bond-export dump share the same framing, distinguished by the marker byte (0xA5 status, 0xA7 bonds).
 export async function readFrame(marker, minLen, readLen, timeoutMs=1500){
+  // A frame for a different marker is a late reply to an earlier request that timed out: skip it and keep reading
+  // until the deadline. Returning on it instead left every later read one reply behind -- the status poll reading
+  // motion frames while the motion poll read status blobs -- for as long as both kept polling.
+  const deadline=Date.now()+timeoutMs;
   try{
-    // largest frame (status blob) spans multiple USB-FS packets; read generously to capture it in one call.
-    // readLen is overridable: the dongle's 0xAC paired-pucks list reaches 213 B (8 pucks) and needs 256.
-    if(!pendingInRead) pendingInRead = S.dev.transferIn(S.epIn, readLen||256);
-    const r = await Promise.race([
-      pendingInRead,
-      new Promise((_, rej)=>setTimeout(()=>rej(new Error("timeout")), timeoutMs))
-    ]);
-    pendingInRead = null;
-    if(r.status!=="ok"||r.data.byteLength<2) return null;
-    const d=new Uint8Array(r.data.buffer);
-    // Live wedge reporter (0xA9): emitted from the firmware's SOF callback (usbd task) while loop() is stalled --
-    // the ONLY signal that survives a loop wedge on boards that wipe retained RAM across the reset. Scan for it
-    // in every read so it surfaces regardless of which frame we were after. Payload: [stage][stallMs u16].
-    for(let w=0; w+4<d.length; w++){
-      if(d[w]===0xA9 && d[w+1]===3){ onWedge(d[w+2], d[w+3]|(d[w+4]<<8)); break; }
+    for(;;){
+      const left=deadline-Date.now();
+      if(left<=0) return null;
+      // largest frame (status blob) spans multiple USB-FS packets; read generously to capture it in one call.
+      // readLen is overridable: the dongle's 0xAC paired-pucks list reaches 213 B (8 pucks) and needs 256.
+      const d = await readIn(readLen, left);
+      if(!d) return null;
+      if(d.length<2) return null;
+      // Live wedge reporter (0xA9): emitted from the firmware's SOF callback (usbd task) while loop() is stalled --
+      // the ONLY signal that survives a loop wedge on boards that wipe retained RAM across the reset. Scan for it
+      // in every read so it surfaces regardless of which frame we were after. Payload: [stage][stallMs u16].
+      for(let w=0; w+4<d.length; w++){
+        if(d[w]===0xA9 && d[w+1]===3){ onWedge(d[w+2], d[w+3]|(d[w+4]<<8)); break; }
+      }
+      let i=0; while(i<d.length && d[i]!==marker) i++;
+      if(i+2>d.length) continue;
+      const len=d[i+1];
+      // truncated read (transfer ended mid-frame): applying a half blob silently skips every late field --
+      // reset cause, pendingHang classification, stack stats -- so drop the whole frame and retry next poll.
+      if(i+2+len>d.length) return null;
+      const p=d.slice(i+2, i+2+len);
+      return p.length>=(minLen||0) ? p : null;
     }
-    let i=0; while(i<d.length && d[i]!==marker) i++;
-    if(i+2>d.length) return null;
-    const len=d[i+1];
-    // truncated read (transfer ended mid-frame): applying a half blob silently skips every late field --
-    // reset cause, pendingHang classification, stack stats -- so drop the whole frame and retry next poll.
-    if(i+2+len>d.length) return null;
-    const p=d.slice(i+2, i+2+len);
-    return p.length>=(minLen||0) ? p : null;
   }catch(e){
-    if(e.message === "timeout") return null;
-    pendingInRead = null;
     if(S.dev) log("read err: "+e.message);
     return null;
   }
@@ -179,6 +198,7 @@ export async function startPolling(){
   S.polling=true; await refresh();
   while(S.polling && S.dev){
     await new Promise(r=>setTimeout(r,600)); await refresh();
+    if(S.lizardLoadDue){ S.lizardLoadDue=false; await lzV2Load(); }
     if(window._autoFlight){ window._autoFlight=false; await loadFlightTrail(); }
   }
 }

@@ -73,7 +73,7 @@ const limSel=lim[1].querySelector('select');limSel.value='100';assert.deepEqual(
 p=p.slice(0,204);p[0]=23;await apply();
 // Button mapping: one tab per profile plus the lizard map; header shows the mode and controllers.
 assert.deepEqual([...document.querySelectorAll('#mapTabs .slot-tab')].map(e=>e.firstChild.textContent),['Xbox','Switch','DS4','DS5','Lizard (desktop)']);
-assert.equal($('#hdrMode').textContent,'Steam (puck)');const chips=document.querySelectorAll('#hdrCtlrs .ctlr-chip');assert.equal(chips.length,1);assert(chips[0].classList.contains('off')); // one bonded, offline
+assert.equal($('#hdrMode').textContent,'Steam');const chips=document.querySelectorAll('#hdrCtlrs .ctlr-chip');assert.equal(chips.length,1);assert(chips[0].classList.contains('off')); // one bonded, offline
 // Original per-type mapping and mode controls remain present.
 assert(document.querySelectorAll('.modebtn').length>=11);assert($('#lizardList'));
 s[46]=57;await apply();

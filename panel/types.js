@@ -1,7 +1,7 @@
 import { S } from './state.js';
 import { $ } from './util.js';
 import { setField } from './protocol.js';
-import { MODE_NAMES } from './status.js';
+import { MODE_NAMES, MODE_ORDER } from './status.js';
 import { openNav } from './nav.js';
 
 // Per-emulated-type config (must match firmware ET_* order: Xbox=0, Switch=1, DS4=2, DS5=3). Each type lists
@@ -180,15 +180,11 @@ export function initTypes(){
     mkTab("Lizard (desktop)",LIZARD_TAB).id="mapTabLizard";
     setTab(0);
   })();
-  for(const sel of document.querySelectorAll("select.chord")){
-    MODE_NAMES.forEach((n,i)=>{ if(i===7||i===8) return;
-      const o=document.createElement("option"); o.value=i; o.textContent=n; sel.appendChild(o); });
-  }
-  // D-pad chords offer EVERY mode, including the game/clean ones the face selects skip: those modes drop WebUSB,
-  // so a chord is the only way into them, and back4+A still gets you back to Steam.
-  for(const sel of document.querySelectorAll("select.chordD")){
-    MODE_NAMES.forEach((n,i)=>{
-      const o=document.createElement("option"); o.value=i; o.textContent=n; sel.appendChild(o); });
+  // The single-HID modes and PS3 drop WebUSB, so once in them a chord is the only way to switch; back4+A still
+  // gets you back to Steam.
+  for(const sel of document.querySelectorAll("select.chord, select.chordD")){
+    MODE_ORDER.forEach(i=>{
+      const o=document.createElement("option"); o.value=i; o.textContent=MODE_NAMES[i]; sel.appendChild(o); });
   }
   { const sel=document.getElementById("swGyroMap");
     for(const [lbl,v] of [["Corrected (default)",0],["Legacy (untrimmed)",1]]){

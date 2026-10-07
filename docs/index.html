@@ -66,6 +66,8 @@
   .lz-mods label{display:flex;align-items:center;gap:4px}
   #maintCard .row button{flex:0 0 150px}
   /* motion view: canvas left, readouts right; stacks on a narrow card */
+  .mode-desc{min-height:3em;padding:8px 10px;border:1px solid #232a3a;border-radius:8px;color:var(--fg)}
+  .mode-desc:empty{display:none}
   .imu-view:not(.hide){display:grid;grid-template-columns:minmax(0,1fr) 220px;gap:14px;margin:0 0 12px}
   #imuCanvas{width:100%;height:280px;background:radial-gradient(ellipse at 50% 60%,#1d2433,#0e1017 70%);border:1px solid #232a3a;border-radius:10px}
   .imu-side{display:flex;flex-direction:column;gap:8px}
@@ -285,20 +287,22 @@
     <div class="card">
       <h2>USB mode</h2>
       <div class="modes" style="flex-wrap:wrap">
-        <button data-mode="0" class="modebtn">Steam (puck)</button>
+        <button data-mode="0" class="modebtn">Steam</button>
+        <button data-mode="3" class="modebtn">Lizard</button>
         <button data-mode="1" class="modebtn">Xbox 360</button>
-        <button data-mode="2" class="modebtn">Switch (HORIPAD)</button>
-        <button data-mode="3" class="modebtn">Lizard (always)</button>
-        <button data-mode="4" class="modebtn">Switch Pro + gyro</button>
-        <button data-mode="5" class="modebtn">PS5 DualSense</button>
-        <button data-mode="6" class="modebtn">HID gyro (DS4)</button>
-        <button data-mode="9" class="modebtn">PS3 (DualShock 3)</button>
         <button data-mode="10" class="modebtn">Original Xbox</button>
-        <button data-mode="11" class="modebtn">DirectInput (sims)</button>
-        <button data-mode="12" class="modebtn">SInput (SDL native)</button>
+        <button data-mode="4" class="modebtn">Switch Pro</button>
+        <button data-mode="2" class="modebtn">Switch HORIPAD</button>
+        <button data-mode="9" class="modebtn">PS3 DualShock</button>
+        <button data-mode="6" class="modebtn">PS4 DualShock</button>
+        <button data-mode="8" class="modebtn">PS4 DualShock (single HID)</button>
+        <button data-mode="5" class="modebtn">PS5 DualSense</button>
+        <button data-mode="7" class="modebtn">PS5 DualSense (single HID)</button>
+        <button data-mode="11" class="modebtn">DirectInput</button>
+        <button data-mode="12" class="modebtn">SInput</button>
       </div>
-      <p class="note">Switching reboots the copycat and re-enumerates USB (~2 s). WebUSB works in every mode, including Steam/Lizard with Steam running (Chrome claims the vendor interface; Steam keeps the HID slots). Switch HORIPAD + WebUSB is PC-only. Original Xbox emulates one Microsoft Controller S and uses the Xbox mapping tab; LB/RB become White/Black. It's for a real Original Xbox console — a PC needs a driver for the original Xbox controller to see it as a gamepad.</p>
-      <p class="note"><b>DirectInput</b> is for flight/space sims: every analog input is live at once, split over two joysticks (#1 sticks + triggers + 26 buttons, #2 trackpads + gyro). Trackpad axes hold their last position and re-centre on a pad click. <b>SInput</b> is the open SDL-native protocol — SDL3 / Steam Input read sticks, both analog triggers, gyro, both trackpads and battery from it natively, with rumble back from the host.</p>
+      <p class="note mode-desc" id="modeDesc"></p>
+      <p class="note">Switching reboots the puck and re-enumerates USB (~2 s). WebUSB works in every mode except PS3 and the single-HID PlayStation modes; in Steam and Lizard it works even with Steam running (Chrome claims the vendor interface; Steam keeps the HID slots). Switch HORIPAD + WebUSB is PC-only.</p>
     </div>
 
     <div class="card">
@@ -329,9 +333,7 @@
           <div class="row"><label>back4 + X</label><select class="chord" data-i="1"></select></div>
           <div class="row"><label>back4 + Y</label><select class="chord" data-i="2"></select></div>
         </div>
-        <!-- D-pad chords (firmware >= v18). Unlike the face selects these offer the game/clean modes too: those
-             modes have no WebUSB interface, so a chord is the only way IN, and back4+A is always the way out.
-             Older firmware has no D-pad chords at all -> the whole column hides (see #dpadChords in applyBlob). -->
+        <!-- D-pad chords (firmware >= v18). Older firmware has no D-pad chords at all -> the whole column hides (see #dpadChords in applyBlob). -->
         <div id="dpadChords" class="hide">
           <div class="colhead">D-pad</div>
           <div class="row"><label>back4 + Left</label><select class="chordD" data-i="0"></select></div>
@@ -355,13 +357,13 @@
     <div id="mapLizardPane" class="hide">
     <div class="card wide" id="lizardCard">
       <h2>Lizard (desktop) profile</h2>
-      <p class="note" style="margin-top:0">Keyboard, mouse &amp; media bindings for <strong>Lizard (always)</strong> mode: each binding maps a controller input to a desktop action, checked top to bottom. Steam-mode seamless lizard (Steam closed) keeps the built-in default behavior and is not affected by this map. Pointer speed and glide are in <em>Trackpad mouse</em> below. Edits apply after <strong>Save to device</strong>.</p>
+      <p class="note" style="margin-top:0">Keyboard, mouse &amp; media bindings for <strong>Lizard</strong> mode: each binding maps a controller input to a desktop action, checked top to bottom. Steam-mode seamless lizard (Steam closed) keeps the built-in default behavior and is not affected by this map. Pointer speed and glide are in <em>Trackpad mouse</em> below. Edits apply after <strong>Save to device</strong>.</p>
       <div id="lzModeNote" class="lz-note hide">
-        <p style="margin:0 0 10px">This puck is in <b id="lzCurMode">—</b>. Its firmware can edit the lizard map only in Lizard (always) mode; update the firmware to edit it from any mode.</p>
-        <button id="lzGoMode" class="primary">Switch to Lizard (always)</button>
+        <p style="margin:0 0 10px">This puck is in <b id="lzCurMode">—</b>. Its firmware can edit the lizard map only in Lizard mode; update the firmware to edit it from any mode.</p>
+        <button id="lzGoMode" class="primary">Switch to Lizard</button>
       </div>
       <div id="lzEditor">
-        <p class="note hide" id="lzOtherMode" style="margin:0 0 8px">The puck isn't in Lizard (always) mode right now. Saved changes take effect the next time it is.</p>
+        <p class="note hide" id="lzOtherMode" style="margin:0 0 8px">The puck isn't in Lizard mode right now. Saved changes take effect the next time it is.</p>
         <div class="row" style="margin:0 0 4px"><span class="note" id="lzCount" style="margin:0">—</span><span class="pill pre hide" id="lzDirty">unsaved changes</span></div>
         <div id="lizardList"></div>
         <div class="row" style="margin:12px 0 0;flex-wrap:wrap;gap:8px">
@@ -684,6 +686,7 @@ const S = {
   hangLog:[], pendingHang:null,
   lizardBindings:[],   // [{outType, od:[7], trig, hold}]
   lizardLoaded:false,  // one-shot: the lizard map is fetched lazily, only once the connected puck proves it speaks v16+
+  lizardLoadDue:false, // set by applyBlob, run by startPolling between polls
   tabInited:false,
   // RF recovery / journal status
   rfCapable:false, rfLastRefresh:0, rfHopPending:false, rfHandoffActive:false, rfBuilderActive:false,
@@ -1453,15 +1456,11 @@ function initTypes(){
     mkTab("Lizard (desktop)",LIZARD_TAB).id="mapTabLizard";
     setTab(0);
   })();
-  for(const sel of document.querySelectorAll("select.chord")){
-    MODE_NAMES.forEach((n,i)=>{ if(i===7||i===8) return;
-      const o=document.createElement("option"); o.value=i; o.textContent=n; sel.appendChild(o); });
-  }
-  // D-pad chords offer EVERY mode, including the game/clean ones the face selects skip: those modes drop WebUSB,
-  // so a chord is the only way into them, and back4+A still gets you back to Steam.
-  for(const sel of document.querySelectorAll("select.chordD")){
-    MODE_NAMES.forEach((n,i)=>{
-      const o=document.createElement("option"); o.value=i; o.textContent=n; sel.appendChild(o); });
+  // The single-HID modes and PS3 drop WebUSB, so once in them a chord is the only way to switch; back4+A still
+  // gets you back to Steam.
+  for(const sel of document.querySelectorAll("select.chord, select.chordD")){
+    MODE_ORDER.forEach(i=>{
+      const o=document.createElement("option"); o.value=i; o.textContent=MODE_NAMES[i]; sel.appendChild(o); });
   }
   { const sel=document.getElementById("swGyroMap");
     for(const [lbl,v] of [["Corrected (default)",0],["Legacy (untrimmed)",1]]){
@@ -1506,6 +1505,7 @@ function applyRfStatus(p){
   const writes=p[6], generation=p[7]|(p[8]<<8);
   const seq=((p[9]|(p[10]<<8)|(p[11]<<16)|(p[12]<<24))>>>0);
   $("#rfActiveCh").textContent=rfChLabel(current);
+  $("#stTopChannel").textContent=rfChLabel(current); // Status page
   $("#rfTargetCh").textContent=target?rfChLabel(target):"none";
   $("#rfStartupCh").textContent=rfChLabel(startup || 18);
   $("#rfJournalSeq").textContent=String(seq);
@@ -2120,302 +2120,6 @@ function initDiag(){
   }, 1000);
 }
 
-// ---- panel/lizard.js ----
-// ===================== Lizard (desktop) binding map =====================
-// Mirrors firmware lizard_map.h. A binding is {outType, od:[7], trig, hold}. Output types and the
-// per-type payload (od[]) layout must match the constants in lizard_map.h exactly.
-const LZ_MAX = 32;
-const LZO = {NONE:0, KBD:1, MBTN:2, AXIS:3, SCROLL:4, CONSUMER:5};
-const LZ_OUT_LABELS = {0:"(disabled)", 1:"Keyboard key", 2:"Mouse button", 3:"Mouse move", 4:"Scroll wheel", 5:"Media key"};
-// Controller input bits (triton.h TB_* + virtual left-stick deflection bits). Single-bit triggers only.
-const LZ_BTNS = [
-  [0x1,"A"],[0x2,"B"],[0x4,"X"],[0x8,"Y"],
-  [0x10,"QAM (• • •)"],[0x40,"View"],[0x4000,"Menu"],[0x10000,"Steam"],
-  [0x20,"R3 (stick click)"],[0x8000,"L3 (stick click)"],
-  [0x80,"R4 (back upper-right)"],[0x100,"R5 (back lower-right)"],
-  [0x20000,"L4 (back upper-left)"],[0x40000,"L5 (back lower-left)"],
-  [0x200,"RB (bumper)"],[0x80000,"LB (bumper)"],
-  [0x800000,"R2 (trigger pull)"],[0x8000000,"L2 (trigger pull)"],
-  [0x2000,"D-pad Up"],[0x400,"D-pad Down"],[0x1000,"D-pad Left"],[0x800,"D-pad Right"],
-  [0x400000,"Right pad click"],[0x4000000,"Left pad click"],
-  [0x200000,"Right pad touch"],[0x2000000,"Left pad touch"],
-  [Math.pow(2,32),"L-stick → right"],[Math.pow(2,33),"L-stick → left"],[Math.pow(2,34),"L-stick → down"],[Math.pow(2,35),"L-stick → up"],
-[Math.pow(2,36),"R-stick → right"],[Math.pow(2,37),"R-stick → left"],[Math.pow(2,38),"R-stick → down"],[Math.pow(2,39),"R-stick → up"],
-];
-// Keyboard modifier bits (od[0] for KBD output).
-const LZ_MODS = [[0x01,"Ctrl"],[0x02,"Shift"],[0x04,"Alt"],[0x08,"Win/⌘"]];
-// Curated HID keycodes (od[1] for KBD output). Value 0 = no key (modifier-only).
-const LZ_KEYS = [[0,"— none —"]];
-"ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("").forEach((c,i)=>LZ_KEYS.push([0x04+i,c]));
-"1234567890".split("").forEach((c,i)=>LZ_KEYS.push([0x1e+i,c]));
-[[0x28,"Enter"],[0x29,"Esc"],[0x2a,"Backspace"],[0x2b,"Tab"],[0x2c,"Space"],
- [0x4f,"Arrow Right"],[0x50,"Arrow Left"],[0x51,"Arrow Down"],[0x52,"Arrow Up"],
- [0x4a,"Home"],[0x4d,"End"],[0x4b,"Page Up"],[0x4e,"Page Down"],[0x49,"Insert"],[0x4c,"Delete"],
- [0x2d,"- _"],[0x2e,"= +"],[0x46,"Print Screen"]].forEach(k=>LZ_KEYS.push(k));
-for(let i=0;i<12;i++) LZ_KEYS.push([0x3a+i,"F"+(i+1)]);
-const LZ_MBTNS = [[1,"Left click"],[2,"Right click"],[4,"Middle click"]];
-const LZ_AXIS_SRC = [[0,"Right trackpad"],[1,"Left stick"],[2,"Gyro"]];
-const LZ_GYRO_ACT = [[0,"Always"],[1,"While right pad touched"],[2,"While left stick deflected"],[3,"While hold-button held"]];
-const LZ_CONSUMER = [[1,"Volume +"],[2,"Volume −"]];
-
-function lzBtnLabel(mask){ const v=Number(mask)||0; const m=LZ_BTNS.find(b=>Number(b[0])===v); return m?m[1]:(v?("0x"+v.toString(16)):""); }
-// Read one [0xAA][count][count*16] frame, accumulating transferIn packets until complete.
-async function readLizard(){
-  let acc=new Uint8Array(0);
-  for(let guard=0; guard<64; guard++){
-    const r=await S.dev.transferIn(S.epIn,128);
-    if(r.status!=="ok") break;
-    const d=new Uint8Array(r.data.buffer);
-    const m=new Uint8Array(acc.length+d.length); m.set(acc); m.set(d,acc.length); acc=m;
-    let i=0; while(i<acc.length && acc[i]!==0xAA) i++;
-    if(i>0) acc=acc.slice(i);
-    if(acc.length<2) continue;
-    const count=acc[1], total=2+count*16;
-    if(acc.length>=total){
-      const out=[];
-      for(let b=0;b<count;b++){
-        const q=2+b*16;
-        out.push({
-          outType:acc[q],
-          od:[...acc.slice(q+1,q+8)],
-          trig:((acc[q+8])|(acc[q+9]<<8)|(acc[q+10]<<16)|(acc[q+11]<<24))>>>0,
-          hold:((acc[q+12])|(acc[q+13]<<8)|(acc[q+14]<<16)|(acc[q+15]<<24))>>>0,
-        });
-      }
-      return out;
-    }
-  }
-  return null;
-}
-// Every lizard op sends 0x11..0x15 and then does a BLOCKING readLizard(). If the firmware doesn't implement
-// the op (any pre-v16 build) it drops the byte and never replies, and the read hangs the shared endpoint. So
-// every entry point bails unless a status blob has proven the puck speaks v16+.
-function lizardCapable(){ return !!(S.lastP && S.lastP[0]>=16); }
-
-// OPENPUCK_LIZARD_MAP_V2_R_STICK
-// Binding-v2 format appeared at protocol 20. Protocol 21 (upstream #224)
-// claimed 0x16 for rumble-test, so the v2 map transport shifts one slot.
-const LZ_MAP_V2_PROTOCOL = 20;
-const LZ_MAP_V2_SHIFTED_OPS_PROTOCOL = 21;
-const LZ_V1_LOW_MASK = 0x0fffffff;
-const lzPow2 = bit => Math.pow(2, bit);
-
-function lzReadLE(d,o,n){
-	let v=0;
-	for(let i=n-1;i>=0;i--) v=v*256+d[o+i];
-	return v;
-}
-function lzWriteLE(out,v,n){
-	v=Number(v)||0;
-	for(let i=0;i<n;i++) out.push(Math.floor(v/Math.pow(2,8*i))&0xff);
-}
-function lzLegacyMaskToV2(v){
-	v=Number(v)>>>0;
-	let out=v&LZ_V1_LOW_MASK;
-	if(v&0x10000000) out+=lzPow2(32);
-	if(v&0x20000000) out+=lzPow2(33);
-	if(v&0x40000000) out+=lzPow2(34);
-	if(v&0x80000000) out+=lzPow2(35);
-	return out;
-}
-function lzV2MaskToLegacy(v){
-	v=Number(v)||0;
-	let out=(v%lzPow2(28))>>>0;
-	if(Math.floor(v/lzPow2(32))&1) out|=0x10000000;
-	if(Math.floor(v/lzPow2(33))&1) out|=0x20000000;
-	if(Math.floor(v/lzPow2(34))&1) out|=0x40000000;
-	if(Math.floor(v/lzPow2(35))&1) out|=0x80000000;
-	return out>>>0;
-}
-function lzPanelV2(){ return !!(S.lastP&&S.lastP[0]>=LZ_MAP_V2_PROTOCOL); }
-function lzV2Ops(){
-	const shifted=!!(S.lastP&&S.lastP[0]>=LZ_MAP_V2_SHIFTED_OPS_PROTOCOL);
-	return shifted
-		? {dump:0x17,set:0x18,save:0x19,reset:0x1A}
-		: {dump:0x16,set:0x17,save:0x18,reset:0x19};
-}
-function lzHasRStickVirtual(v){ return Number(v||0)>=lzPow2(36); }
-
-function lzV2Select(options,value,onchange,noneLabel){
-	const s=document.createElement("select");
-	if(noneLabel!==undefined){
-		const o=document.createElement("option"); o.value="0"; o.textContent=noneLabel; s.appendChild(o);
-	}
-	for(const [v,label] of options){
-		const o=document.createElement("option"); o.value=String(v); o.textContent=label; s.appendChild(o);
-	}
-	s.value=String(Number(value)||0);
-	s.onchange=()=>onchange(Number(s.value));
-	return s;
-}
-// ---- lizard editor: one block per binding, a readable summary line on top, labelled fields below ----
-let lzDirty=false;
-function lzSetDirty(on){ lzDirty=on; const d=document.getElementById("lzDirty"); if(d) d.classList.toggle("hide",!on); }
-const lzName=(list,v)=>{ const m=list.find(x=>Number(x[0])===Number(v)); return m?m[1]:""; };
-function lzSummary(b){
-	const od=b.od, src=lzName(LZ_AXIS_SRC,od[0]);
-	if(b.outType===LZO.AXIS) return src+" → mouse pointer"+(od[0]===2?", "+lzName(LZ_GYRO_ACT,od[1]).toLowerCase()+(od[1]===3&&b.hold?" ("+lzBtnLabel(b.hold)+")":""):"");
-	if(b.outType===LZO.SCROLL) return "Left trackpad → scroll wheel";
-	let out;
-	if(b.outType===LZO.KBD) out=[...LZ_MODS.filter(([bit])=>od[0]&bit).map(m=>m[1]),...od.slice(1).filter(Boolean).map(k=>lzName(LZ_KEYS,k)||"key 0x"+k.toString(16))].join(" + ")||"(no key)";
-	else if(b.outType===LZO.MBTN) out=lzName(LZ_MBTNS,od[0])||"mouse button";
-	else if(b.outType===LZO.CONSUMER) out=lzName(LZ_CONSUMER,od[0])||"media key";
-	else return "Disabled";
-	const input=[b.trig?lzBtnLabel(b.trig):"",b.hold?"holding "+lzBtnLabel(b.hold):""].filter(Boolean).join(" while ");
-	return (input||"no input chosen")+" → "+out;
-}
-function lzField(label,el){
-	const f=document.createElement("div"); f.className="lz-f";
-	const s=document.createElement("span"); s.textContent=label; f.append(s,el); return f;
-}
-function lzV2Render(){
-	const host=document.getElementById("lizardList");
-	if(!host) return;
-	host.innerHTML="";
-	const n=S.lizardBindings.length;
-	const cnt=document.getElementById("lzCount"); if(cnt) cnt.textContent=n+" / "+LZ_MAX+" bindings";
-	const add=document.getElementById("lzAdd"); if(add) add.disabled=n>=LZ_MAX;
-	// every edit marks the map unsaved and redraws (summary + which fields apply)
-	const edit=fn=>v=>{ fn(v); lzSetDirty(true); lzV2Render(); };
-	S.lizardBindings.forEach((b,idx)=>{
-		if(!b.od) b.od=[0,0,0,0,0,0,0];
-		while(b.od.length<7) b.od.push(0);
-		const box=document.createElement("div"); box.className="lz-row";
-		const head=document.createElement("div"); head.className="lz-head";
-		const num=document.createElement("span"); num.className="lz-idx"; num.textContent="#"+(idx+1);
-		const sum=document.createElement("span"); sum.className="lz-sum"; sum.textContent=lzSummary(b);
-		// a key/click/media binding with no input never fires as intended
-		const digital=b.outType===LZO.KBD||b.outType===LZO.MBTN||b.outType===LZO.CONSUMER;
-		if(digital&&!b.trig&&!b.hold){ sum.classList.add("warn"); sum.textContent="⚠ "+sum.textContent; }
-		const del=document.createElement("button"); del.textContent="Remove";
-		del.onclick=()=>{ S.lizardBindings.splice(idx,1); lzSetDirty(true); lzV2Render(); };
-		head.append(num,sum,del); box.appendChild(head);
-
-		const fields=document.createElement("div"); fields.className="lz-fields";
-		const types=Object.keys(LZ_OUT_LABELS).map(Number).map(v=>[v,LZ_OUT_LABELS[v]]);
-		fields.appendChild(lzField("Action",lzV2Select(types,b.outType,edit(v=>{b.outType=v;}))));
-		// analog outputs are driven by their source; only gyro "while hold-button held" reads the hold buttons
-		const analog=b.outType===LZO.AXIS||b.outType===LZO.SCROLL;
-		const gyroHold=b.outType===LZO.AXIS&&b.od[0]===2&&b.od[1]===3;
-		if(!analog) fields.appendChild(lzField("When pressed",lzV2Select(LZ_BTNS,b.trig,edit(v=>{b.trig=v;}),"— pick input —")));
-		if(!analog||gyroHold) fields.appendChild(lzField(gyroHold?"Hold button":"While holding",lzV2Select(LZ_BTNS,b.hold,edit(v=>{b.hold=v;}),"— nothing —")));
-		if(b.outType===LZO.KBD){
-			const mods=document.createElement("div"); mods.className="lz-mods";
-			for(const [bit,label] of LZ_MODS){
-				const c=document.createElement("input"); c.type="checkbox"; c.checked=!!(b.od[0]&bit);
-				c.onchange=edit(()=>{ if(c.checked)b.od[0]|=bit;else b.od[0]&=~bit; });
-				const l=document.createElement("label"); l.append(c,label); mods.appendChild(l);
-			}
-			fields.appendChild(lzField("Modifiers",mods));
-			// key 1 always; each further key slot appears once the one before it is set (up to 6)
-			for(let k=1;k<7;k++){
-				if(k>1&&!b.od[k-1]&&!b.od[k]) break;
-				fields.appendChild(lzField(k===1?"Key":"Key "+k,lzV2Select(LZ_KEYS,b.od[k],edit(v=>{b.od[k]=v;}))));
-			}
-		}else if(b.outType===LZO.MBTN){
-			fields.appendChild(lzField("Mouse button",lzV2Select(LZ_MBTNS,b.od[0],edit(v=>{b.od[0]=v;}))));
-		}else if(b.outType===LZO.AXIS){
-			fields.appendChild(lzField("Source",lzV2Select(LZ_AXIS_SRC,b.od[0],edit(v=>{b.od[0]=v;}))));
-			if(b.od[0]===2) fields.appendChild(lzField("Gyro active",lzV2Select(LZ_GYRO_ACT,b.od[1],edit(v=>{b.od[1]=v;}))));
-		}else if(b.outType===LZO.SCROLL){
-			b.od[0]=0;
-			const s=document.createElement("span"); s.style.cssText="color:var(--fg);font-size:13px;padding-top:6px"; s.textContent="Left trackpad";
-			fields.appendChild(lzField("Source",s));
-		}else if(b.outType===LZO.CONSUMER){
-			fields.appendChild(lzField("Media key",lzV2Select(LZ_CONSUMER,b.od[0],edit(v=>{b.od[0]=v;}))));
-		}
-		box.appendChild(fields); host.appendChild(box);
-	});
-	if(!n) host.innerHTML='<p class="note">No bindings. Add one, or reset to the defaults.</p>';
-}
-
-async function lzV2ReadMap(op){
-	await send([op]);
-	const recSize=lzPanelV2()?24:16;
-	let buf=[];
-	let expected=0;
-	for(;;){
-		const r=await S.dev.transferIn(S.epIn,256);
-		if(r.status!=="ok") throw new Error("lizard-map read failed");
-		const d=new Uint8Array(r.data.buffer);
-		for(const x of d) buf.push(x);
-		if(!expected){
-			let start=-1;
-			for(let i=0;i+1<buf.length;i++){
-				if(buf[i]===0xAA && buf[i+1]<=LZ_MAX){ start=i; break; }
-			}
-			if(start<0){ if(buf.length>1024)buf=[]; continue; }
-			if(start) buf=buf.slice(start);
-			expected=2+buf[1]*recSize;
-		}
-		if(buf.length>=expected) break;
-	}
-	const count=buf[1], out=[];
-	for(let i=0;i<count;i++){
-		const q=2+i*recSize, od=[];
-		for(let k=0;k<7;k++) od.push(buf[q+1+k]||0);
-		const trig=recSize===24?lzReadLE(buf,q+8,8):lzLegacyMaskToV2(lzReadLE(buf,q+8,4));
-		const hold=recSize===24?lzReadLE(buf,q+16,8):lzLegacyMaskToV2(lzReadLE(buf,q+12,4));
-		out.push({outType:buf[q]||0,od,trig,hold});
-	}
-	return out;
-}
-async function lzV2Load(){
-	if(S.lizardBusy||!S.dev)return;
-	S.lizardBusy=true;
-	try{
-		const ops=lzV2Ops();
-		S.lizardBindings=await lzV2ReadMap(lzPanelV2()?ops.dump:0x11);
-		lzV2Render(); lzSetDirty(false);
-		const st=document.getElementById("lzStatus");
-		if(st)st.textContent="loaded "+S.lizardBindings.length+" binding(s)"+(lzPanelV2()?" · map v2":" · legacy map");
-	}catch(e){ log("lizard load failed: "+e.message); }
-	finally{S.lizardBusy=false;}
-}
-async function lzV2Save(){
-	if(S.lizardBusy||!S.dev)return;
-	S.lizardBusy=true;
-	try{
-		const v2=lzPanelV2(), ops=lzV2Ops();
-		if(!v2&&S.lizardBindings.some(b=>lzHasRStickVirtual(b.trig)||lzHasRStickVirtual(b.hold)))
-			throw new Error("R-stick directions require firmware protocol v20+");
-		const count=Math.min(LZ_MAX,S.lizardBindings.length);
-		await send([0x13,count]);
-		for(let i=0;i<count;i++){
-			const b=S.lizardBindings[i], cmd=[v2?ops.set:0x12,i,b.outType||0];
-			for(let k=0;k<7;k++)cmd.push((b.od&&b.od[k])||0);
-			if(v2){lzWriteLE(cmd,b.trig,8);lzWriteLE(cmd,b.hold,8);}
-			else{lzWriteLE(cmd,lzV2MaskToLegacy(b.trig),4);lzWriteLE(cmd,lzV2MaskToLegacy(b.hold),4);}
-			await send(cmd);
-		}
-		S.lizardBindings=await lzV2ReadMap(v2?ops.save:0x14);
-		lzV2Render(); lzSetDirty(false);
-		const st=document.getElementById("lzStatus"); if(st)st.textContent="saved "+count+" binding(s)";
-	}catch(e){const st=document.getElementById("lzStatus");if(st)st.textContent="save failed: "+e.message;log("lizard save failed: "+e.message);}
-	finally{S.lizardBusy=false;}
-}
-async function lzV2Reset(){
-	if(S.lizardBusy||!S.dev)return;
-	if(!confirm("Reset the lizard map to the built-in defaults? This saves to the puck immediately; your bindings are lost.")) return;
-	S.lizardBusy=true;
-	try{
-		const ops=lzV2Ops();
-		S.lizardBindings=await lzV2ReadMap(lzPanelV2()?ops.reset:0x15);
-		lzV2Render(); lzSetDirty(false);
-		const st=document.getElementById("lzStatus");if(st)st.textContent="reset to defaults";
-	}catch(e){log("lizard reset failed: "+e.message);}
-	finally{S.lizardBusy=false;}
-}
-function lzV2Add(){
-	if(S.lizardBindings.length>=LZ_MAX) return;
-	S.lizardBindings.push({outType:1,od:[0,0,0,0,0,0,0],trig:0,hold:0});
-	lzSetDirty(true); lzV2Render();
-}
-function lzV2Reload(){
-	if(lzDirty && !confirm("Discard your unsaved lizard map changes and reload it from the puck?")) return;
-	lzV2Load();
-}
-
 // ---- panel/sc2_mesh.js ----
 // GENERATED by tools/sc2_mesh.py -- Steam Controller shell, decimated.
 // Model: Valve Corporation, https://gitlab.steamos.cloud/SteamHardware/SteamController
@@ -2616,12 +2320,15 @@ async function tick(){
   if($("#pgInput").classList.contains("hide") || document.visibilityState !== "visible") return;
   // same pipe owners the status poll yields to; holding inflight makes the status poll wait for us
   if(S.inflight || S.capturing || S.backupBusy || S.flightBusy || S.lizardBusy || S.rfBusy || S.fieldBusy) return;
+  // the status poll comes first: a missed motion reply holds the pipe for the whole read timeout, and back to back
+  // those starved the status poll (stale status, "no heartbeat"), so stand aside whenever a status blob is overdue
+  if(Date.now() - (window._lastBlobTs || 0) > 1000) return;
   // a different controller: start over from its measured tilt
   if(S.g_activeSlot !== lastSlot){ lastSlot = S.g_activeSlot; needRecenter = true; }
   polling = true; S.inflight = true;
   try{
     await send([0x2A, S.g_activeSlot & 0xff]);
-    const f = await readFrame(0xAF, 23, 64, 300);
+    const f = await readFrame(0xAF, 23, 256, 300); // same read size as the status poll, which can inherit a pending read
     if(f){ misses = 0; update(decode(f)); } else misses++;
   } finally { S.inflight = false; polling = false; }
 }
@@ -2645,7 +2352,29 @@ function syncMotionCap(p){
 }
 
 // ---- panel/status.js ----
-const MODE_NAMES = ["Steam (puck)","Xbox 360","Switch (HORIPAD)","Lizard (always)","Switch Pro + gyro","PS5 DualSense","HID gyro (DS4)","PS5 (game/clean)","DS4 (game/clean)","PS3 (DualShock 3)","Original Xbox","DirectInput (sims)","SInput (SDL native)"];
+const MODE_NAMES = ["Steam","Xbox 360","Switch HORIPAD","Lizard","Switch Pro","PS5 DualSense","PS4 DualShock","PS5 DualSense (single HID)","PS4 DualShock (single HID)","PS3 DualShock","Original Xbox","DirectInput","SInput"];
+// display order for mode lists (MODE_NAMES is indexed by the firmware's mode number); single-HID after their base
+const MODE_ORDER = [0, 3, 1, 10, 4, 2, 9, 6, 8, 5, 7, 11, 12];
+// one line per mode for the Mode page (shown for the running mode, or the mode button under the pointer/focus)
+const MODE_DESC = [
+  "The Steam Controller puck: Steam Input sees a genuine Steam Controller. Without Steam running it works as a keyboard and mouse.",
+  "Xbox 360 controller (XInput), the most widely supported. Back buttons and trackpads follow the Xbox mapping tab.",
+  "Basic Switch pad: buttons and sticks, no gyro or rumble.",
+  "Keyboard and mouse only, even while Steam is running. Bindings are on the Lizard mapping tab.",
+  "Switch Pro Controller with gyro and HD rumble, for a Switch console or PC.",
+  "DualSense with gyro, touchpad and 4-channel audio haptics (PC).",
+  "DualShock 4 with gyro and touchpad (PC).",
+  "The DualSense as a bare single-HID device, for PC games that refuse composite devices (e.g. Fortnite). One controller; the panel can't connect in this mode.",
+  "The DualShock 4 as a bare single-HID device. One controller; the panel can't connect in this mode.",
+  "DualShock 3 / Sixaxis with motion and rumble, for a real PS3. The panel can't connect in this mode.",
+  "Controller S for a real Original Xbox console (a PC needs a driver for it). Uses the Xbox mapping tab; LB/RB become White/Black.",
+  "For flight and space sims: every analog input live at once, split over two joysticks (sticks, triggers and buttons; trackpads and gyro). Trackpad axes hold their position until a pad click re-centres them.",
+  "The open SDL-native protocol: SDL3 and Steam Input read sticks, analog triggers, gyro, both trackpads and battery, with rumble back from the host.",
+];
+function showModeDesc(m){
+  const el = $("#modeDesc"); if(!MODE_NAMES[m]){ el.textContent = ""; return; }
+  el.innerHTML = `<b>${MODE_NAMES[m]}</b>: ${MODE_DESC[m]}`;
+}
 const CHORD_FIELD = [17, 18, 19];          // back4 + B/X/Y
 const CHORD_DPAD_FIELD = [34, 35, 36, 37]; // back4 + D-pad left/up/right/down (firmware protocol >= 18)
 const CHORD_DPAD_DEF = [9, 8, 7, 2];       // firmware defaults: PS3, DS4 game, PS5 game, Switch HORIPAD
@@ -2669,8 +2398,9 @@ function applyBlob(p){
   window._lastBlobTs=Date.now(); // feeds the host-side heartbeat watchdog (hard-wedge detection)
   // Lazy, capability-gated lizard-map load: only after a blob proves the puck speaks v16+ (the op-0x11 dump).
   // On older firmware 0x11 is dropped silently and readLizard() would block the endpoint forever, so we must
-  // NEVER send it blind at connect. One-shot per connection (reset in openDevice).
-  if(!S.lizardLoaded && p[0]>=16){ S.lizardLoaded=true; lzV2Load(); }
+  // NEVER send it blind at connect. One-shot per connection (reset in openDevice). Run by the poll loop once this
+  // poll is done (startPolling): started from here it raced this poll's own reads on the shared IN pipe.
+  if(!S.lizardLoaded && p[0]>=16){ S.lizardLoaded=true; S.lizardLoadDue=true; }
   const mode=p[1], mDiv=p[2], mFric=p[3]; // p[4..11] mirror the active type (per-type block below is authoritative)
   const slot=p[10], up=p[11], f1=(p[12]|(p[13]<<8));
   const newps=(p.length>16?(p[15]|(p[16]<<8)):0), persistMode=(p.length>22?p[22]:0);
@@ -2687,9 +2417,10 @@ function applyBlob(p){
   const logEnabled=(p.length>35?p[35]:0);
   for(const el of document.querySelectorAll(".logonly")) el.style.display = logEnabled ? "" : "none";
   for(const b of document.querySelectorAll(".modebtn")) b.classList.toggle("active", +b.dataset.mode===mode);
+  if(!document.querySelector(".modebtn:hover, .modebtn:focus-visible")) showModeDesc(mode);
   $("#hdrMode").textContent = MODE_NAMES[mode] || ("mode "+mode);
   $("#mouseCard").style.opacity = (mode===1||mode===3)?1:0.5;
-  // The custom map applies ONLY to pure Lizard (always) mode. Firmware v28+ edits the saved map from any mode;
+  // The custom map applies ONLY to pure Lizard mode. Firmware v28+ edits the saved map from any mode;
   // before that the map ops hit the running map, which outside Lizard mode is the built-in defaults, so a save
   // there would overwrite the saved map with them. Older firmware gets a switch-mode note instead of the editor.
   const lizCap=p[0]>=16, lizAnyMode=p[0]>=28, lizEdit=mode===3||lizAnyMode;
@@ -3091,6 +2822,309 @@ function applyDeviceProfile(){
   syncNav(); // the sidebar drops the pages this device has no cards for
 }
 
+// ---- panel/lizard.js ----
+// ===================== Lizard (desktop) binding map =====================
+// Mirrors firmware lizard_map.h. A binding is {outType, od:[7], trig, hold}. Output types and the
+// per-type payload (od[]) layout must match the constants in lizard_map.h exactly.
+const LZ_MAX = 32;
+const LZO = {NONE:0, KBD:1, MBTN:2, AXIS:3, SCROLL:4, CONSUMER:5};
+const LZ_OUT_LABELS = {0:"(disabled)", 1:"Keyboard key", 2:"Mouse button", 3:"Mouse move", 4:"Scroll wheel", 5:"Media key"};
+// Controller input bits (triton.h TB_* + virtual left-stick deflection bits). Single-bit triggers only.
+const LZ_BTNS = [
+  [0x1,"A"],[0x2,"B"],[0x4,"X"],[0x8,"Y"],
+  [0x10,"QAM (• • •)"],[0x40,"View"],[0x4000,"Menu"],[0x10000,"Steam"],
+  [0x20,"R3 (stick click)"],[0x8000,"L3 (stick click)"],
+  [0x80,"R4 (back upper-right)"],[0x100,"R5 (back lower-right)"],
+  [0x20000,"L4 (back upper-left)"],[0x40000,"L5 (back lower-left)"],
+  [0x200,"RB (bumper)"],[0x80000,"LB (bumper)"],
+  [0x800000,"R2 (trigger pull)"],[0x8000000,"L2 (trigger pull)"],
+  [0x2000,"D-pad Up"],[0x400,"D-pad Down"],[0x1000,"D-pad Left"],[0x800,"D-pad Right"],
+  [0x400000,"Right pad click"],[0x4000000,"Left pad click"],
+  [0x200000,"Right pad touch"],[0x2000000,"Left pad touch"],
+  [Math.pow(2,32),"L-stick → right"],[Math.pow(2,33),"L-stick → left"],[Math.pow(2,34),"L-stick → down"],[Math.pow(2,35),"L-stick → up"],
+[Math.pow(2,36),"R-stick → right"],[Math.pow(2,37),"R-stick → left"],[Math.pow(2,38),"R-stick → down"],[Math.pow(2,39),"R-stick → up"],
+];
+// Keyboard modifier bits (od[0] for KBD output).
+const LZ_MODS = [[0x01,"Ctrl"],[0x02,"Shift"],[0x04,"Alt"],[0x08,"Win/⌘"]];
+// Curated HID keycodes (od[1] for KBD output). Value 0 = no key (modifier-only).
+const LZ_KEYS = [[0,"— none —"]];
+"ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("").forEach((c,i)=>LZ_KEYS.push([0x04+i,c]));
+"1234567890".split("").forEach((c,i)=>LZ_KEYS.push([0x1e+i,c]));
+[[0x28,"Enter"],[0x29,"Esc"],[0x2a,"Backspace"],[0x2b,"Tab"],[0x2c,"Space"],
+ [0x4f,"Arrow Right"],[0x50,"Arrow Left"],[0x51,"Arrow Down"],[0x52,"Arrow Up"],
+ [0x4a,"Home"],[0x4d,"End"],[0x4b,"Page Up"],[0x4e,"Page Down"],[0x49,"Insert"],[0x4c,"Delete"],
+ [0x2d,"- _"],[0x2e,"= +"],[0x46,"Print Screen"]].forEach(k=>LZ_KEYS.push(k));
+for(let i=0;i<12;i++) LZ_KEYS.push([0x3a+i,"F"+(i+1)]);
+const LZ_MBTNS = [[1,"Left click"],[2,"Right click"],[4,"Middle click"]];
+const LZ_AXIS_SRC = [[0,"Right trackpad"],[1,"Left stick"],[2,"Gyro"]];
+const LZ_GYRO_ACT = [[0,"Always"],[1,"While right pad touched"],[2,"While left stick deflected"],[3,"While hold-button held"]];
+const LZ_CONSUMER = [[1,"Volume +"],[2,"Volume −"]];
+
+function lzBtnLabel(mask){ const v=Number(mask)||0; const m=LZ_BTNS.find(b=>Number(b[0])===v); return m?m[1]:(v?("0x"+v.toString(16)):""); }
+// Read one [0xAA][count][count*16] frame, accumulating transferIn packets until complete.
+// Gives up after 3 s (null): an unanswered 0x11 must never block the IN pipe for good.
+async function readLizard(){
+  let acc=new Uint8Array(0);
+  const deadline=Date.now()+3000;
+  for(let guard=0; guard<64; guard++){
+    const d=await readIn(256, deadline-Date.now());
+    if(!d) break;
+    const m=new Uint8Array(acc.length+d.length); m.set(acc); m.set(d,acc.length); acc=m;
+    let i=0; while(i<acc.length && acc[i]!==0xAA) i++;
+    if(i>0) acc=acc.slice(i);
+    if(acc.length<2) continue;
+    const count=acc[1], total=2+count*16;
+    if(acc.length>=total){
+      const out=[];
+      for(let b=0;b<count;b++){
+        const q=2+b*16;
+        out.push({
+          outType:acc[q],
+          od:[...acc.slice(q+1,q+8)],
+          trig:((acc[q+8])|(acc[q+9]<<8)|(acc[q+10]<<16)|(acc[q+11]<<24))>>>0,
+          hold:((acc[q+12])|(acc[q+13]<<8)|(acc[q+14]<<16)|(acc[q+15]<<24))>>>0,
+        });
+      }
+      return out;
+    }
+  }
+  return null;
+}
+// Every lizard op sends 0x11..0x15 and then does a BLOCKING readLizard(). If the firmware doesn't implement
+// the op (any pre-v16 build) it drops the byte and never replies, and the read hangs the shared endpoint. So
+// every entry point bails unless a status blob has proven the puck speaks v16+.
+function lizardCapable(){ return !!(S.lastP && S.lastP[0]>=16); }
+
+// OPENPUCK_LIZARD_MAP_V2_R_STICK
+// Binding-v2 format appeared at protocol 20. Protocol 21 (upstream #224)
+// claimed 0x16 for rumble-test, so the v2 map transport shifts one slot.
+const LZ_MAP_V2_PROTOCOL = 20;
+const LZ_MAP_V2_SHIFTED_OPS_PROTOCOL = 21;
+const LZ_V1_LOW_MASK = 0x0fffffff;
+const lzPow2 = bit => Math.pow(2, bit);
+
+function lzReadLE(d,o,n){
+	let v=0;
+	for(let i=n-1;i>=0;i--) v=v*256+d[o+i];
+	return v;
+}
+function lzWriteLE(out,v,n){
+	v=Number(v)||0;
+	for(let i=0;i<n;i++) out.push(Math.floor(v/Math.pow(2,8*i))&0xff);
+}
+function lzLegacyMaskToV2(v){
+	v=Number(v)>>>0;
+	let out=v&LZ_V1_LOW_MASK;
+	if(v&0x10000000) out+=lzPow2(32);
+	if(v&0x20000000) out+=lzPow2(33);
+	if(v&0x40000000) out+=lzPow2(34);
+	if(v&0x80000000) out+=lzPow2(35);
+	return out;
+}
+function lzV2MaskToLegacy(v){
+	v=Number(v)||0;
+	let out=(v%lzPow2(28))>>>0;
+	if(Math.floor(v/lzPow2(32))&1) out|=0x10000000;
+	if(Math.floor(v/lzPow2(33))&1) out|=0x20000000;
+	if(Math.floor(v/lzPow2(34))&1) out|=0x40000000;
+	if(Math.floor(v/lzPow2(35))&1) out|=0x80000000;
+	return out>>>0;
+}
+function lzPanelV2(){ return !!(S.lastP&&S.lastP[0]>=LZ_MAP_V2_PROTOCOL); }
+function lzV2Ops(){
+	const shifted=!!(S.lastP&&S.lastP[0]>=LZ_MAP_V2_SHIFTED_OPS_PROTOCOL);
+	return shifted
+		? {dump:0x17,set:0x18,save:0x19,reset:0x1A}
+		: {dump:0x16,set:0x17,save:0x18,reset:0x19};
+}
+function lzHasRStickVirtual(v){ return Number(v||0)>=lzPow2(36); }
+
+function lzV2Select(options,value,onchange,noneLabel){
+	const s=document.createElement("select");
+	if(noneLabel!==undefined){
+		const o=document.createElement("option"); o.value="0"; o.textContent=noneLabel; s.appendChild(o);
+	}
+	for(const [v,label] of options){
+		const o=document.createElement("option"); o.value=String(v); o.textContent=label; s.appendChild(o);
+	}
+	s.value=String(Number(value)||0);
+	s.onchange=()=>onchange(Number(s.value));
+	return s;
+}
+// ---- lizard editor: one block per binding, a readable summary line on top, labelled fields below ----
+let lzDirty=false;
+function lzSetDirty(on){ lzDirty=on; const d=document.getElementById("lzDirty"); if(d) d.classList.toggle("hide",!on); }
+const lzName=(list,v)=>{ const m=list.find(x=>Number(x[0])===Number(v)); return m?m[1]:""; };
+function lzSummary(b){
+	const od=b.od, src=lzName(LZ_AXIS_SRC,od[0]);
+	if(b.outType===LZO.AXIS) return src+" → mouse pointer"+(od[0]===2?", "+lzName(LZ_GYRO_ACT,od[1]).toLowerCase()+(od[1]===3&&b.hold?" ("+lzBtnLabel(b.hold)+")":""):"");
+	if(b.outType===LZO.SCROLL) return "Left trackpad → scroll wheel";
+	let out;
+	if(b.outType===LZO.KBD) out=[...LZ_MODS.filter(([bit])=>od[0]&bit).map(m=>m[1]),...od.slice(1).filter(Boolean).map(k=>lzName(LZ_KEYS,k)||"key 0x"+k.toString(16))].join(" + ")||"(no key)";
+	else if(b.outType===LZO.MBTN) out=lzName(LZ_MBTNS,od[0])||"mouse button";
+	else if(b.outType===LZO.CONSUMER) out=lzName(LZ_CONSUMER,od[0])||"media key";
+	else return "Disabled";
+	const input=[b.trig?lzBtnLabel(b.trig):"",b.hold?"holding "+lzBtnLabel(b.hold):""].filter(Boolean).join(" while ");
+	return (input||"no input chosen")+" → "+out;
+}
+function lzField(label,el){
+	const f=document.createElement("div"); f.className="lz-f";
+	const s=document.createElement("span"); s.textContent=label; f.append(s,el); return f;
+}
+function lzV2Render(){
+	const host=document.getElementById("lizardList");
+	if(!host) return;
+	host.innerHTML="";
+	const n=S.lizardBindings.length;
+	const cnt=document.getElementById("lzCount"); if(cnt) cnt.textContent=n+" / "+LZ_MAX+" bindings";
+	const add=document.getElementById("lzAdd"); if(add) add.disabled=n>=LZ_MAX;
+	// every edit marks the map unsaved and redraws (summary + which fields apply)
+	const edit=fn=>v=>{ fn(v); lzSetDirty(true); lzV2Render(); };
+	S.lizardBindings.forEach((b,idx)=>{
+		if(!b.od) b.od=[0,0,0,0,0,0,0];
+		while(b.od.length<7) b.od.push(0);
+		const box=document.createElement("div"); box.className="lz-row";
+		const head=document.createElement("div"); head.className="lz-head";
+		const num=document.createElement("span"); num.className="lz-idx"; num.textContent="#"+(idx+1);
+		const sum=document.createElement("span"); sum.className="lz-sum"; sum.textContent=lzSummary(b);
+		// a key/click/media binding with no input never fires as intended
+		const digital=b.outType===LZO.KBD||b.outType===LZO.MBTN||b.outType===LZO.CONSUMER;
+		if(digital&&!b.trig&&!b.hold){ sum.classList.add("warn"); sum.textContent="⚠ "+sum.textContent; }
+		const del=document.createElement("button"); del.textContent="Remove";
+		del.onclick=()=>{ S.lizardBindings.splice(idx,1); lzSetDirty(true); lzV2Render(); };
+		head.append(num,sum,del); box.appendChild(head);
+
+		const fields=document.createElement("div"); fields.className="lz-fields";
+		const types=Object.keys(LZ_OUT_LABELS).map(Number).map(v=>[v,LZ_OUT_LABELS[v]]);
+		fields.appendChild(lzField("Action",lzV2Select(types,b.outType,edit(v=>{b.outType=v;}))));
+		// analog outputs are driven by their source; only gyro "while hold-button held" reads the hold buttons
+		const analog=b.outType===LZO.AXIS||b.outType===LZO.SCROLL;
+		const gyroHold=b.outType===LZO.AXIS&&b.od[0]===2&&b.od[1]===3;
+		if(!analog) fields.appendChild(lzField("When pressed",lzV2Select(LZ_BTNS,b.trig,edit(v=>{b.trig=v;}),"— pick input —")));
+		if(!analog||gyroHold) fields.appendChild(lzField(gyroHold?"Hold button":"While holding",lzV2Select(LZ_BTNS,b.hold,edit(v=>{b.hold=v;}),"— nothing —")));
+		if(b.outType===LZO.KBD){
+			const mods=document.createElement("div"); mods.className="lz-mods";
+			for(const [bit,label] of LZ_MODS){
+				const c=document.createElement("input"); c.type="checkbox"; c.checked=!!(b.od[0]&bit);
+				c.onchange=edit(()=>{ if(c.checked)b.od[0]|=bit;else b.od[0]&=~bit; });
+				const l=document.createElement("label"); l.append(c,label); mods.appendChild(l);
+			}
+			fields.appendChild(lzField("Modifiers",mods));
+			// key 1 always; each further key slot appears once the one before it is set (up to 6)
+			for(let k=1;k<7;k++){
+				if(k>1&&!b.od[k-1]&&!b.od[k]) break;
+				fields.appendChild(lzField(k===1?"Key":"Key "+k,lzV2Select(LZ_KEYS,b.od[k],edit(v=>{b.od[k]=v;}))));
+			}
+		}else if(b.outType===LZO.MBTN){
+			fields.appendChild(lzField("Mouse button",lzV2Select(LZ_MBTNS,b.od[0],edit(v=>{b.od[0]=v;}))));
+		}else if(b.outType===LZO.AXIS){
+			fields.appendChild(lzField("Source",lzV2Select(LZ_AXIS_SRC,b.od[0],edit(v=>{b.od[0]=v;}))));
+			if(b.od[0]===2) fields.appendChild(lzField("Gyro active",lzV2Select(LZ_GYRO_ACT,b.od[1],edit(v=>{b.od[1]=v;}))));
+		}else if(b.outType===LZO.SCROLL){
+			b.od[0]=0;
+			const s=document.createElement("span"); s.style.cssText="color:var(--fg);font-size:13px;padding-top:6px"; s.textContent="Left trackpad";
+			fields.appendChild(lzField("Source",s));
+		}else if(b.outType===LZO.CONSUMER){
+			fields.appendChild(lzField("Media key",lzV2Select(LZ_CONSUMER,b.od[0],edit(v=>{b.od[0]=v;}))));
+		}
+		box.appendChild(fields); host.appendChild(box);
+	});
+	if(!n) host.innerHTML='<p class="note">No bindings. Add one, or reset to the defaults.</p>';
+}
+
+async function lzV2ReadMap(op){
+	await send([op]);
+	const recSize=lzPanelV2()?24:16;
+	let buf=[];
+	let expected=0;
+	// through the shared reader, with a deadline: a reply cut short used to leave this waiting forever with
+	// lizardBusy set, which stopped the status poll (NO HEARTBEAT) until stray bytes happened to complete it
+	const deadline=Date.now()+3000;
+	for(;;){
+		const d=await readIn(256, deadline-Date.now());
+		if(!d) throw new Error("lizard-map read timed out");
+		for(const x of d) buf.push(x);
+		if(!expected){
+			let start=-1;
+			for(let i=0;i+1<buf.length;i++){
+				if(buf[i]===0xAA && buf[i+1]<=LZ_MAX){ start=i; break; }
+			}
+			if(start<0){ if(buf.length>1024)buf=[]; continue; }
+			if(start) buf=buf.slice(start);
+			expected=2+buf[1]*recSize;
+		}
+		if(buf.length>=expected) break;
+	}
+	const count=buf[1], out=[];
+	for(let i=0;i<count;i++){
+		const q=2+i*recSize, od=[];
+		for(let k=0;k<7;k++) od.push(buf[q+1+k]||0);
+		const trig=recSize===24?lzReadLE(buf,q+8,8):lzLegacyMaskToV2(lzReadLE(buf,q+8,4));
+		const hold=recSize===24?lzReadLE(buf,q+16,8):lzLegacyMaskToV2(lzReadLE(buf,q+12,4));
+		out.push({outType:buf[q]||0,od,trig,hold});
+	}
+	return out;
+}
+async function lzV2Load(){
+	if(S.lizardBusy||!S.dev)return;
+	S.lizardBusy=true;
+	try{
+		// runs from the first status blob, while that poll is still reading its Switch frame: wait for the pipe
+		await waitIdle();
+		const ops=lzV2Ops();
+		S.lizardBindings=await lzV2ReadMap(lzPanelV2()?ops.dump:0x11);
+		lzV2Render(); lzSetDirty(false);
+		const st=document.getElementById("lzStatus");
+		if(st)st.textContent="loaded "+S.lizardBindings.length+" binding(s)"+(lzPanelV2()?" · map v2":" · legacy map");
+	}catch(e){ log("lizard load failed: "+e.message); }
+	finally{S.lizardBusy=false;}
+}
+async function lzV2Save(){
+	if(S.lizardBusy||!S.dev)return;
+	S.lizardBusy=true;
+	try{
+		const v2=lzPanelV2(), ops=lzV2Ops();
+		if(!v2&&S.lizardBindings.some(b=>lzHasRStickVirtual(b.trig)||lzHasRStickVirtual(b.hold)))
+			throw new Error("R-stick directions require firmware protocol v20+");
+		const count=Math.min(LZ_MAX,S.lizardBindings.length);
+		await send([0x13,count]);
+		for(let i=0;i<count;i++){
+			const b=S.lizardBindings[i], cmd=[v2?ops.set:0x12,i,b.outType||0];
+			for(let k=0;k<7;k++)cmd.push((b.od&&b.od[k])||0);
+			if(v2){lzWriteLE(cmd,b.trig,8);lzWriteLE(cmd,b.hold,8);}
+			else{lzWriteLE(cmd,lzV2MaskToLegacy(b.trig),4);lzWriteLE(cmd,lzV2MaskToLegacy(b.hold),4);}
+			await send(cmd);
+		}
+		S.lizardBindings=await lzV2ReadMap(v2?ops.save:0x14);
+		lzV2Render(); lzSetDirty(false);
+		const st=document.getElementById("lzStatus"); if(st)st.textContent="saved "+count+" binding(s)";
+	}catch(e){const st=document.getElementById("lzStatus");if(st)st.textContent="save failed: "+e.message;log("lizard save failed: "+e.message);}
+	finally{S.lizardBusy=false;}
+}
+async function lzV2Reset(){
+	if(S.lizardBusy||!S.dev)return;
+	if(!confirm("Reset the lizard map to the built-in defaults? This saves to the puck immediately; your bindings are lost.")) return;
+	S.lizardBusy=true;
+	try{
+		// runs from the first status blob, while that poll is still reading its Switch frame: wait for the pipe
+		await waitIdle();
+		const ops=lzV2Ops();
+		S.lizardBindings=await lzV2ReadMap(lzPanelV2()?ops.reset:0x15);
+		lzV2Render(); lzSetDirty(false);
+		const st=document.getElementById("lzStatus");if(st)st.textContent="reset to defaults";
+	}catch(e){log("lizard reset failed: "+e.message);}
+	finally{S.lizardBusy=false;}
+}
+function lzV2Add(){
+	if(S.lizardBindings.length>=LZ_MAX) return;
+	S.lizardBindings.push({outType:1,od:[0,0,0,0,0,0,0],trig:0,hold:0});
+	lzSetDirty(true); lzV2Render();
+}
+function lzV2Reload(){
+	if(lzDirty && !confirm("Discard your unsaved lizard map changes and reload it from the puck?")) return;
+	lzV2Load();
+}
+
 // ---- panel/protocol.js ----
 let ifNum=0;
 
@@ -3133,7 +3167,7 @@ async function openDevice(d){
     // applyBlob). Older firmware (every pre-lizard build, including the v15 updater builds) silently drops
     // 0x11, and readLizard()'s blocking transferIn would then hang forever -- wedging the status poll the
     // firmware-update gate depends on. So we never send 0x11 until a status blob proves the puck speaks v16.
-    S.lizardLoaded=false;
+    S.lizardLoaded=false; S.lizardLoadDue=false;
     startPolling();
     // GitHub releases are PUCK firmware; skip the fetch for a dongle (it flashes via the local-file card).
     if(!S.isDongle) loadReleases(false); // background, cached: feeds the update-available notice + pre-warms the update tab
@@ -3191,37 +3225,55 @@ async function send(bytes){
   catch(e){ log("write err: "+e.message); }
 }
 let pendingInRead = null;
+// One transferIn at a time, shared by every reader of the IN pipe: a read that times out stays pending and is
+// handed to the next caller, so the reply it eventually gets is never lost to an orphaned transfer. Returns the
+// bytes, or null on timeout; throws on a USB error.
+async function readIn(readLen, timeoutMs){
+  if(!pendingInRead) pendingInRead = S.dev.transferIn(S.epIn, readLen||256);
+  const pr = pendingInRead;
+  let timer;
+  try{
+    const r = await Promise.race([pr, new Promise(res=>{ timer=setTimeout(()=>res(null), timeoutMs); })]);
+    if(r===null) return null;
+    if(pendingInRead===pr) pendingInRead = null;
+    return r.status==="ok" ? new Uint8Array(r.data.buffer) : new Uint8Array(0);
+  }catch(e){
+    if(pendingInRead===pr) pendingInRead = null;
+    throw e;
+  }finally{ clearTimeout(timer); }
+}
 // Read one framed reply and return its payload (with the 2-byte [marker][len] header stripped). The blob and
 // the bond-export dump share the same framing, distinguished by the marker byte (0xA5 status, 0xA7 bonds).
 async function readFrame(marker, minLen, readLen, timeoutMs=1500){
+  // A frame for a different marker is a late reply to an earlier request that timed out: skip it and keep reading
+  // until the deadline. Returning on it instead left every later read one reply behind -- the status poll reading
+  // motion frames while the motion poll read status blobs -- for as long as both kept polling.
+  const deadline=Date.now()+timeoutMs;
   try{
-    // largest frame (status blob) spans multiple USB-FS packets; read generously to capture it in one call.
-    // readLen is overridable: the dongle's 0xAC paired-pucks list reaches 213 B (8 pucks) and needs 256.
-    if(!pendingInRead) pendingInRead = S.dev.transferIn(S.epIn, readLen||256);
-    const r = await Promise.race([
-      pendingInRead,
-      new Promise((_, rej)=>setTimeout(()=>rej(new Error("timeout")), timeoutMs))
-    ]);
-    pendingInRead = null;
-    if(r.status!=="ok"||r.data.byteLength<2) return null;
-    const d=new Uint8Array(r.data.buffer);
-    // Live wedge reporter (0xA9): emitted from the firmware's SOF callback (usbd task) while loop() is stalled --
-    // the ONLY signal that survives a loop wedge on boards that wipe retained RAM across the reset. Scan for it
-    // in every read so it surfaces regardless of which frame we were after. Payload: [stage][stallMs u16].
-    for(let w=0; w+4<d.length; w++){
-      if(d[w]===0xA9 && d[w+1]===3){ onWedge(d[w+2], d[w+3]|(d[w+4]<<8)); break; }
+    for(;;){
+      const left=deadline-Date.now();
+      if(left<=0) return null;
+      // largest frame (status blob) spans multiple USB-FS packets; read generously to capture it in one call.
+      // readLen is overridable: the dongle's 0xAC paired-pucks list reaches 213 B (8 pucks) and needs 256.
+      const d = await readIn(readLen, left);
+      if(!d) return null;
+      if(d.length<2) return null;
+      // Live wedge reporter (0xA9): emitted from the firmware's SOF callback (usbd task) while loop() is stalled --
+      // the ONLY signal that survives a loop wedge on boards that wipe retained RAM across the reset. Scan for it
+      // in every read so it surfaces regardless of which frame we were after. Payload: [stage][stallMs u16].
+      for(let w=0; w+4<d.length; w++){
+        if(d[w]===0xA9 && d[w+1]===3){ onWedge(d[w+2], d[w+3]|(d[w+4]<<8)); break; }
+      }
+      let i=0; while(i<d.length && d[i]!==marker) i++;
+      if(i+2>d.length) continue;
+      const len=d[i+1];
+      // truncated read (transfer ended mid-frame): applying a half blob silently skips every late field --
+      // reset cause, pendingHang classification, stack stats -- so drop the whole frame and retry next poll.
+      if(i+2+len>d.length) return null;
+      const p=d.slice(i+2, i+2+len);
+      return p.length>=(minLen||0) ? p : null;
     }
-    let i=0; while(i<d.length && d[i]!==marker) i++;
-    if(i+2>d.length) return null;
-    const len=d[i+1];
-    // truncated read (transfer ended mid-frame): applying a half blob silently skips every late field --
-    // reset cause, pendingHang classification, stack stats -- so drop the whole frame and retry next poll.
-    if(i+2+len>d.length) return null;
-    const p=d.slice(i+2, i+2+len);
-    return p.length>=(minLen||0) ? p : null;
   }catch(e){
-    if(e.message === "timeout") return null;
-    pendingInRead = null;
     if(S.dev) log("read err: "+e.message);
     return null;
   }
@@ -3266,6 +3318,7 @@ async function startPolling(){
   S.polling=true; await refresh();
   while(S.polling && S.dev){
     await new Promise(r=>setTimeout(r,600)); await refresh();
+    if(S.lizardLoadDue){ S.lizardLoadDue=false; await lzV2Load(); }
     if(window._autoFlight){ window._autoFlight=false; await loadFlightTrail(); }
   }
 }
@@ -3706,8 +3759,11 @@ for(const sel of document.querySelectorAll("select.chordD")){
 for(const b of document.querySelectorAll(".modebtn")){
   b.onclick=()=>{ const m=+b.dataset.mode;
     const clean=(m===7||m===8||m===9);
-    const msg="Switch to "+MODE_NAMES[m]+"? The copycat will reboot."+(clean?"\n\nNOTE: the game/clean PlayStation modes (and PS3) drop WebUSB + host-wake, so THIS PANEL WILL DISCONNECT and can't reach the device while it's in this mode. To get back, chord on the controller: hold "+(S.lastSw && (S.lastSw[46]&1)?"Quick Access":"all four back paddles")+" + A to return to Steam mode. The back4+D-pad chords are how you get back INTO these modes without the panel — check their assignments in the chords card first.":"");
+    const msg="Switch to "+MODE_NAMES[m]+"? The copycat will reboot."+(clean?"\n\nNOTE: the single-HID PlayStation modes (and PS3) drop WebUSB + host-wake, so THIS PANEL WILL DISCONNECT and can't reach the device while it's in this mode. To get back, chord on the controller: hold "+(S.lastSw && (S.lastSw[46]&1)?"Quick Access":"all four back paddles")+" + A to return to Steam mode. The back4+D-pad chords are how you get back INTO these modes without the panel — check their assignments in the chords card first.":"");
     if(confirm(msg)){ send([0x03, m]); log("mode switch requested — device will reboot"); } };
+  const back=()=>{ if(S.lastP) showModeDesc(S.lastP[1]); };
+  b.onmouseenter=b.onfocus=()=>showModeDesc(+b.dataset.mode);
+  b.onmouseleave=b.onblur=back;
 }
 updateUf2UI();
 updateFwGate(); // start gated: stays inert until the first status blob proves the firmware speaks v15+

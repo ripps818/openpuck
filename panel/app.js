@@ -1,7 +1,7 @@
 import { S } from './state.js';
 import { $, DEBUG_UI, fmtSlider, log } from './util.js';
 import { autoConnect, connect, initProtocol, refresh, send, setField } from './protocol.js';
-import { CHORD_DPAD_FIELD, CHORD_FIELD, MODE_NAMES, SC_BITS } from './status.js';
+import { CHORD_DPAD_FIELD, CHORD_FIELD, MODE_NAMES, SC_BITS, showModeDesc } from './status.js';
 import { clearJournalRf, manualJournalBuilderRf, manualSurveyRf } from './rf.js';
 import { exportBackup, importBackup } from './backup.js';
 import { downloadCap, startCapture, stopCapture } from './capture.js';
@@ -172,8 +172,11 @@ for(const sel of document.querySelectorAll("select.chordD")){
 for(const b of document.querySelectorAll(".modebtn")){
   b.onclick=()=>{ const m=+b.dataset.mode;
     const clean=(m===7||m===8||m===9);
-    const msg="Switch to "+MODE_NAMES[m]+"? The copycat will reboot."+(clean?"\n\nNOTE: the game/clean PlayStation modes (and PS3) drop WebUSB + host-wake, so THIS PANEL WILL DISCONNECT and can't reach the device while it's in this mode. To get back, chord on the controller: hold "+(S.lastSw && (S.lastSw[46]&1)?"Quick Access":"all four back paddles")+" + A to return to Steam mode. The back4+D-pad chords are how you get back INTO these modes without the panel — check their assignments in the chords card first.":"");
+    const msg="Switch to "+MODE_NAMES[m]+"? The copycat will reboot."+(clean?"\n\nNOTE: the single-HID PlayStation modes (and PS3) drop WebUSB + host-wake, so THIS PANEL WILL DISCONNECT and can't reach the device while it's in this mode. To get back, chord on the controller: hold "+(S.lastSw && (S.lastSw[46]&1)?"Quick Access":"all four back paddles")+" + A to return to Steam mode. The back4+D-pad chords are how you get back INTO these modes without the panel — check their assignments in the chords card first.":"");
     if(confirm(msg)){ send([0x03, m]); log("mode switch requested — device will reboot"); } };
+  const back=()=>{ if(S.lastP) showModeDesc(S.lastP[1]); };
+  b.onmouseenter=b.onfocus=()=>showModeDesc(+b.dataset.mode);
+  b.onmouseleave=b.onblur=back;
 }
 updateUf2UI();
 updateFwGate(); // start gated: stays inert until the first status blob proves the firmware speaks v15+

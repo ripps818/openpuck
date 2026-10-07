@@ -26,6 +26,7 @@ function applyRfStatus(p){
   const writes=p[6], generation=p[7]|(p[8]<<8);
   const seq=((p[9]|(p[10]<<8)|(p[11]<<16)|(p[12]<<24))>>>0);
   $("#rfActiveCh").textContent=rfChLabel(current);
+  $("#stTopChannel").textContent=rfChLabel(current); // Status page
   $("#rfTargetCh").textContent=target?rfChLabel(target):"none";
   $("#rfStartupCh").textContent=rfChLabel(startup || 18);
   $("#rfJournalSeq").textContent=String(seq);

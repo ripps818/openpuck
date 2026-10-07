@@ -20,6 +20,7 @@ export const S = {
   hangLog:[], pendingHang:null,
   lizardBindings:[],   // [{outType, od:[7], trig, hold}]
   lizardLoaded:false,  // one-shot: the lizard map is fetched lazily, only once the connected puck proves it speaks v16+
+  lizardLoadDue:false, // set by applyBlob, run by startPolling between polls
   tabInited:false,
   // RF recovery / journal status
   rfCapable:false, rfLastRefresh:0, rfHopPending:false, rfHandoffActive:false, rfBuilderActive:false,
