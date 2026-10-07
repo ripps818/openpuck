@@ -293,6 +293,12 @@
       <div id="rumbleBlock">
         <div class="row"><label>Style</label><select id="rumbleStyle"></select></div>
         <div class="row"><label>Strength</label><select id="rumbleScale"></select></div>
+        <!-- firmware >= v22: grip limiter (field 115) and Switch Pro HD trackpad strength (field 141) -->
+        <div id="hapticPcmBlock" class="hide">
+          <div class="row"><label>Grip limiter</label><select id="hapticKnee"></select></div>
+          <div class="row"><label>HD trackpad strength</label><select id="hdPadScale"></select></div>
+          <p class="note">Switch Pro mode plays the console's HD rumble instead of a style: each side's two bands stream to that side's grip (at the strength above) and the high band plays as a tone on that side's trackpad (at the HD trackpad strength). The grip limiter rounds off loud peaks on the grips, in Switch Pro HD rumble and the DualSense wave haptics style, so they don't clip into pops.</p>
+        </div>
         <div class="row" style="margin:10px 0 0"><button id="rumbleTest">Test rumble</button>
           <span class="note" style="flex:1">Buzzes every connected controller for half a second at the settings above, so you can compare styles without launching a game.</span></div>
         <p class="note">Strength is a percentage of the amplitude the game asked for; 200% is the shipped default, so leave it there for stock feel. Style reshapes the two motors before that scale: <strong>mono</strong> drives both at the stronger value, <strong>heavy</strong> and <strong>light</strong> mute one motor each, <strong>punchy</strong> softens weak effects while leaving strong ones alone, and <strong>soft</strong> lifts weak ones so subtle rumble is felt.</p>
@@ -672,12 +678,13 @@ function setTab(et){
       const aud=document.createElement("button"); aud.textContent="on"; tog.appendChild(aud);
       rec.audioHaptics=aud;
       aud.onclick=()=>{ const on=aud.classList.contains("active"); setField(31, on?0:1); };
-      // Haptics style (protocol v22): 0 rumble = the motor-style rumble, 1 tone = smooth per-actuator tones (default),
-      // 2 split = below ~80 Hz as rumble, the rest as tones. Clicking cycles tone -> split -> rumble.
+      // Haptics style (protocol v22): 0 rumble = the motor-style rumble, 1 tone = smooth per-actuator tones,
+      // 2 split = below ~80 Hz as rumble, the rest as tones, 3 wave = the haptic channels streamed to the grips
+      // (default). Clicking cycles rumble -> tone -> split -> wave.
       const styLbl=document.createElement("label"); styLbl.textContent="Haptics style"; styLbl.style.cssText="flex:0 0 auto;margin:0 0 0 6px"; tog.appendChild(styLbl);
-      const sty=document.createElement("button"); sty.textContent="tone"; sty.dataset.v="1"; tog.appendChild(sty);
+      const sty=document.createElement("button"); sty.textContent="wave"; sty.dataset.v="3"; tog.appendChild(sty);
       rec.audioStyle=sty;
-      sty.onclick=()=>{ setField(88, ((+sty.dataset.v)+1)%3); };
+      sty.onclick=()=>{ setField(88, ((+sty.dataset.v)+1)%4); };
     }
     sec.appendChild(tog);
     rec.abSwap=ab; rec.pad=pad; rec.rumble=rumble;
@@ -760,6 +767,18 @@ const RUMBLE_SCALES=[50,75,100,150,200,250,300,400,500];
 { const sel=document.getElementById("rumbleScale");
   for(const v of RUMBLE_SCALES){
     const o=document.createElement("option"); o.value=v; o.textContent=v+"%"+(v===200?" (default)":""); sel.appendChild(o); }
+}
+// Grip limiter knee, percent of full scale (field 115, 50..100; 100 = off)
+const HAPTIC_KNEES=[50,60,70,80,90,100];
+{ const sel=document.getElementById("hapticKnee");
+  for(const v of HAPTIC_KNEES){
+    const o=document.createElement("option"); o.value=v; o.textContent=v===100?"off":v+"%"+(v===70?" (default)":""); sel.appendChild(o); }
+}
+// HD trackpad strength, sent as percent/2 (field 141); 0 = grips only
+const HD_PAD_SCALES=[0,50,75,100,150,200,300,400,500];
+{ const sel=document.getElementById("hdPadScale");
+  for(const v of HD_PAD_SCALES){
+    const o=document.createElement("option"); o.value=v; o.textContent=v===0?"off (grips only)":v+"%"+(v===100?" (default)":""); sel.appendChild(o); }
 }
 
 // ---- per-slot tab state ----
@@ -962,6 +981,8 @@ function applyBlob(p){
   // Rumble shaping (protocol v21): firmware p[53]/p[195] = payload p[51]/p[193]. Strength is percent/2.
   const rumbleCap=(p[0]>=21 && p.length>193);
   const rumbleScale=rumbleCap?p[51]*2:200, rumbleStyle=rumbleCap?p[193]:0;
+  // Grip limiter + HD trackpad strength (protocol v22): firmware p[199]/p[200] = payload p[197]/p[198].
+  const pcmCap=(p[0]>=22 && p.length>198);
   const rssi=(p.length>37?p[37]:0);
 
   // per-slot link status (protocol v8, p.length >= 73)
@@ -1164,9 +1185,9 @@ function applyBlob(p){
         rec.audioHaptics.classList.toggle("active",audOn);
       }
       if(rec.audioStyle){
-        const v = (p.length>196 && p[196]<=2)?p[196]:1;
+        const v = (p.length>196 && p[196]<=3)?p[196]:3;
         rec.audioStyle.dataset.v=v;
-        rec.audioStyle.textContent=["rumble","tone","split"][v];
+        rec.audioStyle.textContent=["rumble","tone","split","wave"][v];
         rec.audioStyle.classList.toggle("active",v!==0);
       }
       if(rec.audioGain && p.length>194){
@@ -1204,6 +1225,12 @@ function applyBlob(p){
       if(document.activeElement!==sty) sty.value=rumbleStyle;
       // a strength set from the console can land between the presets -- show the nearest one
       if(document.activeElement!==scl) scl.value=RUMBLE_SCALES.reduce((a,b)=>Math.abs(b-rumbleScale)<Math.abs(a-rumbleScale)?b:a);
+    } }
+  { const knee=$("#hapticKnee"), hd=$("#hdPadScale");
+    $("#hapticPcmBlock").classList.toggle("hide", !pcmCap);
+    if(pcmCap){
+      if(document.activeElement!==knee) knee.value=HAPTIC_KNEES.reduce((a,b)=>Math.abs(b-p[197])<Math.abs(a-p[197])?b:a);
+      if(document.activeElement!==hd) hd.value=HD_PAD_SCALES.reduce((a,b)=>Math.abs(b-p[198]*2)<Math.abs(a-p[198]*2)?b:a);
     } }
   for(const sel of document.querySelectorAll("select.chord")){ if(document.activeElement!==sel) sel.value=chord[+sel.dataset.i]; }
   $("#dpadChords").classList.toggle("hide", !dpadCap);
@@ -2357,6 +2384,8 @@ for(const id of ["mDiv","mFric"]){
 $("#rumbleTest").onclick=async()=>{ if(dev){ await send([0x16]); log("test rumble sent (style "+$("#rumbleStyle").value+", "+$("#rumbleScale").value+"%)"); } };
 $("#rumbleStyle").addEventListener("change", ()=>setField(39, +$("#rumbleStyle").value));
 $("#rumbleScale").addEventListener("change", ()=>setField(22, (+$("#rumbleScale").value)/2));
+$("#hapticKnee").addEventListener("change", ()=>setField(115, +$("#hapticKnee").value));
+$("#hdPadScale").addEventListener("change", ()=>setField(141, (+$("#hdPadScale").value)/2));
 $("#swGyroMap").addEventListener("change", ()=>setField(38, +$("#swGyroMap").value));
 for(const sel of document.querySelectorAll("select.chord")){
   sel.addEventListener("change", ()=>setField(CHORD_FIELD[+sel.dataset.i], +sel.value));
