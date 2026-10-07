@@ -51,6 +51,9 @@ uint8_t g_back[4] = { 5, 6, 7, 8 };
 uint8_t g_qamMap = 0;
 uint8_t g_padHaptics = 1;
 uint8_t g_rumble = 1;
+uint8_t g_audioHaptics = 1;
+uint16_t g_audioHapticGain = 0;
+uint8_t g_audioHapticStyle = AUDIO_STYLE_TONE;
 uint8_t g_ledBright = 0;
 
 void applyActiveType()
@@ -111,6 +114,15 @@ struct Cfg {
 	// autonomous controller power-off on host sleep (see haptics.h g_suspendOff). 0/1; 0xFF (short
 	// pre-tail file) -> compiled default (on)
 	uint8_t suspendOff;
+	// DualSense audio haptic gain pct/2 (10..500%); 0 = auto
+	uint8_t audioGain2;
+	// DualSense audio-driven haptics enable. 0/1; 0xFF (short pre-tail file) -> compiled default (on)
+	uint8_t audioHaptics;
+	// 1 = audioGain2 was saved by a build that has this field. Anything else (0xFF: an older file) drops the saved
+	// gain to auto once; the field was added while the drive was linear.
+	uint8_t audioGainLinear;
+	// AUDIO_STYLE_*; 0xFF (short pre-tail file) -> compiled default
+	uint8_t audioStyle;
 }; // rsvd0 = ex-padSmooth, now the one-shot debug-CDC arm
 
 // Shortest cfg.bin we still accept: the layout as of CFG_MAGIC 0xCF, i.e. everything before the appended tail.
@@ -138,7 +150,11 @@ void saveCfg()
 		    g_chordDpad[3] },
 		  {},
 		  g_rumbleStyle,
-		  g_suspendOff };
+		  g_suspendOff,
+		  (uint8_t)(g_audioHapticGain / 2),
+		  g_audioHaptics,
+		  1,
+		  g_audioHapticStyle };
 	for (int i = 0; i < ET_COUNT; i++) {
 		c.type[i] = g_type[i];
 		c.padStick[i][0] = g_padStickCfg[i][0];
@@ -239,6 +255,19 @@ void loadCfg()
 			// suspend power-off enable (0xFF = a cfg.bin predating this tail field -> keep the on default)
 			if (c.suspendOff <= 1)
 				g_suspendOff = c.suspendOff;
+			if (c.audioGainLinear == 1 && c.audioGain2 &&
+			    c.audioGain2 != 0xFF) {
+				uint16_t pct = (uint16_t)c.audioGain2 * 2;
+				if (pct < 10)
+					pct = 10;
+				else if (pct > 500)
+					pct = 500;
+				g_audioHapticGain = pct;
+			}
+			if (c.audioHaptics <= 1)
+				g_audioHaptics = c.audioHaptics;
+			if (c.audioStyle <= AUDIO_STYLE_SPLIT)
+				g_audioHapticStyle = c.audioStyle;
 			// The poll RX window is now FIXED (g_rxWin is const) -- any persisted rxWin10 is ignored.
 		}
 		f.close();
