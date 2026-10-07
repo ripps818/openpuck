@@ -1,11 +1,13 @@
 import { S } from './state.js';
 import { $, fmtDur, log, setSlider } from './util.js';
-import { RUMBLE_SCALES, TYPE_DEFS, etypeForMode, setTab, swStatusApply, typeEls } from './types.js';
+import { LIZARD_TAB, RUMBLE_SCALES, TYPE_DEFS, currentType, etypeForMode, setTab, swStatusApply, typeEls } from './types.js';
 import { refreshRfStatus } from './rf.js';
-import { renderSlotTabs } from './slots.js';
+import { renderCtlrChips, renderSlotTabs } from './slots.js';
 import { renderHangLog, trailAdd } from './diag.js';
 import { lzV2Load } from './lizard.js';
 import { checkUpdateNotice, updateFwGate, updateVersionUI } from './firmware.js';
+import { syncMapNav, syncNav } from './nav.js';
+import { syncMotionCap } from './motion.js';
 
 export const MODE_NAMES = ["Steam (puck)","Xbox 360","Switch (HORIPAD)","Lizard (always)","Switch Pro + gyro","PS5 DualSense","HID gyro (DS4)","PS5 (game/clean)","DS4 (game/clean)","PS3 (DualShock 3)","Original Xbox","DirectInput (sims)","SInput (SDL native)"];
 export const CHORD_FIELD = [17, 18, 19];          // back4 + B/X/Y
@@ -49,10 +51,19 @@ export function applyBlob(p){
   const logEnabled=(p.length>35?p[35]:0);
   for(const el of document.querySelectorAll(".logonly")) el.style.display = logEnabled ? "" : "none";
   for(const b of document.querySelectorAll(".modebtn")) b.classList.toggle("active", +b.dataset.mode===mode);
+  $("#hdrMode").textContent = MODE_NAMES[mode] || ("mode "+mode);
   $("#mouseCard").style.opacity = (mode===1||mode===3)?1:0.5;
-  // The custom map applies ONLY to pure Lizard (always) mode. Steam-mode seamless lizard keeps
-  // the built-in default behavior, so the editor is shown only when the device is in Lizard mode.
-  $("#lizardCard").style.display = (mode===3 && p[0]>=16)?"":"none";
+  // The custom map applies ONLY to pure Lizard (always) mode. Firmware v28+ edits the saved map from any mode;
+  // before that the map ops hit the running map, which outside Lizard mode is the built-in defaults, so a save
+  // there would overwrite the saved map with them. Older firmware gets a switch-mode note instead of the editor.
+  const lizCap=p[0]>=16, lizAnyMode=p[0]>=28, lizEdit=mode===3||lizAnyMode;
+  $("#mapTabLizard").classList.toggle("hide", !lizCap);
+  $("#mapTabLizard .active-dot").style.display = mode===3 ? "" : "none";
+  if(!lizCap && currentType()===LIZARD_TAB) setTab(0);
+  $("#lzEditor").classList.toggle("hide", !lizEdit);
+  $("#lzModeNote").classList.toggle("hide", lizEdit);
+  $("#lzOtherMode").classList.toggle("hide", mode===3);
+  $("#lzCurMode").textContent = MODE_NAMES[mode] || ("mode "+mode);
   const battery=(p.length>36?p[36]:0);
   // Switch Pro gyro mapping (protocol v19, firmware p[186] = payload p[184]). Older firmware has no such
   // setting at all -> the select hides (see #swGyroMap below). p[51..53] are the reserved bytes that used to
@@ -128,6 +139,7 @@ export function applyBlob(p){
     $("#stLink").innerHTML = up? '<span class="pill up">connected</span>' : '<span class="pill dn">idle / asleep</span>';
     $("#stBatt").textContent = (up && battery)? battery+"%" : (battery ? battery+"% (saved)" : "—");
     $("#stRssi").textContent = (up && rssi)? ("-"+rssi+" dBm") : "offline";
+    renderCtlrChips([{slot:0, up:!!up, battery, rssi}]);
   }
 
   // global stats
@@ -301,9 +313,13 @@ export function applyBlob(p){
       rec.activeDot.style.display = (et===activeEt) ? "" : "none";
     });
     // open the tab for the current mode's type on first load (then leave the user's choice alone)
-    if(!S.tabInited){ S.tabInited=true; setTab(activeEt>=0?activeEt:0); }
+    if(!S.tabInited){ S.tabInited=true; setTab(mode===3 && lizCap ? LIZARD_TAB : (activeEt>=0?activeEt:0)); syncMapNav(); }
   }
-  if(p.length>=60){ const s16=(o)=>{ let v=p[o]|(p[o+1]<<8); return v>32767?v-65536:v; };
+  $("#imuOnRow").classList.toggle("hide", p[0]<28); // op 0x29 (status v28+)
+  syncMotionCap(p); // op 0x2A (status v28+)
+  // v28+: the motion view writes this line from the selected controller; the blob's copy is whichever slot was
+  // polled last, so with a second controller bonded it would keep flipping to that one's (offline) zeros
+  if(p.length>=60 && p[0]<28){ const s16=(o)=>{ let v=p[o]|(p[o+1]<<8); return v>32767?v-65536:v; };
     const ax=s16(54),ay=s16(56),az=s16(58);
     const amag=Math.round(Math.sqrt(ax*ax+ay*ay+az*az));
     $("#stImu").textContent = `a=(${ax}, ${ay}, ${az})  |a|=${amag}`;
@@ -373,5 +389,6 @@ export function applyBlob(p){
   $("#dpadChords").classList.toggle("hide", !dpadCap);
   $("#dpadOld").classList.toggle("hide", dpadCap);
   if(dpadCap) for(const sel of document.querySelectorAll("select.chordD")){ if(document.activeElement!==sel) sel.value=chordD[+sel.dataset.i]; }
+  syncNav(); // cards above may have appeared or hidden (lizard, triggers, RF, logging build)
 }
 export const SC_BITS=[['scQam',1],['scFeedback',8],['scCapture',16],['scEnabled',32]];

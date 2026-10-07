@@ -6,37 +6,16 @@ export const $ = s=>document.querySelector(s);
 // Everything still RUNS regardless (the trail keeps recording to localStorage, stability auto-resume works)
 // -- only the UI is hidden, so adding ?debug=true after an unattended incident still shows the history.
 export const DEBUG_UI = new URLSearchParams(location.search).get("debug")==="true";
-// Firmware-update tab gate: beta enables tested-but-not-yet-default surfaces.
-export const BETA_UI = new URLSearchParams(location.search).get("beta")==="true";
-function escHtml(s){
-  return String(s).replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
+// Firmware updates are beta: the Firmware update page stays locked until the user accepts the risks there, and
+// the choice is kept in this browser. ?beta=true (the old beta-mode link) also unlocks it.
+const FWUP_KEY="opk_fwup_enabled";
+export function fwupEnabled(){
+  if(new URLSearchParams(location.search).get("beta")==="true") return true;
+  try{ return localStorage.getItem(FWUP_KEY)==="1"; }catch(e){ return false; }
 }
-export function betaPopup({title, body, okText="OK", cancelText="Cancel"}){
-  return new Promise(resolve=>{
-    let done=false;
-    const shade=document.createElement("div");
-    shade.style.cssText="position:fixed;inset:0;z-index:90;background:rgba(8,10,16,.55);display:flex;align-items:center;justify-content:center;padding:18px";
-    shade.innerHTML = '<div style="background:var(--card);border:1px solid #80651c;border-radius:12px;padding:20px 22px;width:min(440px,94vw);box-shadow:0 18px 60px rgba(0,0,0,.45)">'
-      +'<h3 style="margin:0 0 10px;font-size:16px">'+escHtml(title)+'</h3>'
-      +body.map(p=>'<p class="note" style="margin:8px 0">'+escHtml(p)+'</p>').join("")
-      +'<div class="row" style="justify-content:flex-end;margin:18px 0 0">'
-      +'<button data-beta-cancel>'+escHtml(cancelText)+'</button>'
-      +'<button class="beta active" data-beta-ok>'+escHtml(okText)+'</button>'
-      +'</div></div>';
-    const finish=ok=>{
-      if(done) return;
-      done=true;
-      shade.remove();
-      resolve(!!ok);
-    };
-    shade.querySelector("[data-beta-cancel]").onclick=()=>finish(false);
-    shade.querySelector("[data-beta-ok]").onclick=()=>finish(true);
-    shade.onclick=e=>{ if(e.target===shade) finish(false); };
-    shade.onkeydown=e=>{ if(e.key==="Escape") finish(false); };
-    document.body.appendChild(shade);
-    shade.tabIndex=-1;
-    shade.focus();
-  });
+export function setFwupEnabled(on){
+  try{ if(on) localStorage.setItem(FWUP_KEY,"1"); else localStorage.removeItem(FWUP_KEY); }catch(e){}
+  if(!on){ const u=new URL(location.href); if(u.searchParams.has("beta")){ u.searchParams.delete("beta"); history.replaceState(null,"",u); } }
 }
 export function log(m){ const l=$("#log"); l.textContent=(new Date().toLocaleTimeString()+"  "+m+"\n"+l.textContent).slice(0,2000); }
 export function fmtSlider(id,v){ return id==="hapBlockS" ? v+" s" : ""+v; }

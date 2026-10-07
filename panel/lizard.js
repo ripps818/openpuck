@@ -129,62 +129,85 @@ function lzV2Select(options,value,onchange,noneLabel){
 	s.onchange=()=>onchange(Number(s.value));
 	return s;
 }
+// ---- lizard editor: one block per binding, a readable summary line on top, labelled fields below ----
+let lzDirty=false;
+function lzSetDirty(on){ lzDirty=on; const d=document.getElementById("lzDirty"); if(d) d.classList.toggle("hide",!on); }
+const lzName=(list,v)=>{ const m=list.find(x=>Number(x[0])===Number(v)); return m?m[1]:""; };
+function lzSummary(b){
+	const od=b.od, src=lzName(LZ_AXIS_SRC,od[0]);
+	if(b.outType===LZO.AXIS) return src+" → mouse pointer"+(od[0]===2?", "+lzName(LZ_GYRO_ACT,od[1]).toLowerCase()+(od[1]===3&&b.hold?" ("+lzBtnLabel(b.hold)+")":""):"");
+	if(b.outType===LZO.SCROLL) return "Left trackpad → scroll wheel";
+	let out;
+	if(b.outType===LZO.KBD) out=[...LZ_MODS.filter(([bit])=>od[0]&bit).map(m=>m[1]),...od.slice(1).filter(Boolean).map(k=>lzName(LZ_KEYS,k)||"key 0x"+k.toString(16))].join(" + ")||"(no key)";
+	else if(b.outType===LZO.MBTN) out=lzName(LZ_MBTNS,od[0])||"mouse button";
+	else if(b.outType===LZO.CONSUMER) out=lzName(LZ_CONSUMER,od[0])||"media key";
+	else return "Disabled";
+	const input=[b.trig?lzBtnLabel(b.trig):"",b.hold?"holding "+lzBtnLabel(b.hold):""].filter(Boolean).join(" while ");
+	return (input||"no input chosen")+" → "+out;
+}
+function lzField(label,el){
+	const f=document.createElement("div"); f.className="lz-f";
+	const s=document.createElement("span"); s.textContent=label; f.append(s,el); return f;
+}
 export function lzV2Render(){
 	const host=document.getElementById("lizardList");
 	if(!host) return;
 	host.innerHTML="";
+	const n=S.lizardBindings.length;
+	const cnt=document.getElementById("lzCount"); if(cnt) cnt.textContent=n+" / "+LZ_MAX+" bindings";
+	const add=document.getElementById("lzAdd"); if(add) add.disabled=n>=LZ_MAX;
+	// every edit marks the map unsaved and redraws (summary + which fields apply)
+	const edit=fn=>v=>{ fn(v); lzSetDirty(true); lzV2Render(); };
 	S.lizardBindings.forEach((b,idx)=>{
 		if(!b.od) b.od=[0,0,0,0,0,0,0];
 		while(b.od.length<7) b.od.push(0);
-		const box=document.createElement("div");
-		box.style.cssText="border:1px solid #232a3a;border-radius:8px;padding:9px;margin:7px 0;background:#0e1017";
-		const top=document.createElement("div");
-		top.className="row"; top.style.flexWrap="wrap";
-
-		const trig=lzV2Select(LZ_BTNS,b.trig,v=>b.trig=v,"— trigger —");
-		const hold=lzV2Select(LZ_BTNS,b.hold,v=>b.hold=v,"— no hold —");
-		const types=Object.keys(LZ_OUT_LABELS).map(Number).map(v=>[v,LZ_OUT_LABELS[v]]);
-		const typ=lzV2Select(types,b.outType,v=>{b.outType=v;lzV2Render();});
-		top.append("Input ",trig," Hold ",hold," → ",typ);
-
+		const box=document.createElement("div"); box.className="lz-row";
+		const head=document.createElement("div"); head.className="lz-head";
+		const num=document.createElement("span"); num.className="lz-idx"; num.textContent="#"+(idx+1);
+		const sum=document.createElement("span"); sum.className="lz-sum"; sum.textContent=lzSummary(b);
+		// a key/click/media binding with no input never fires as intended
+		const digital=b.outType===LZO.KBD||b.outType===LZO.MBTN||b.outType===LZO.CONSUMER;
+		if(digital&&!b.trig&&!b.hold){ sum.classList.add("warn"); sum.textContent="⚠ "+sum.textContent; }
 		const del=document.createElement("button"); del.textContent="Remove";
-		del.style.marginLeft="auto";
-		del.onclick=()=>{S.lizardBindings.splice(idx,1);lzV2Render();};
-		top.appendChild(del); box.appendChild(top);
+		del.onclick=()=>{ S.lizardBindings.splice(idx,1); lzSetDirty(true); lzV2Render(); };
+		head.append(num,sum,del); box.appendChild(head);
 
-		const detail=document.createElement("div");
-		detail.className="row"; detail.style.cssText="margin-top:7px;flex-wrap:wrap";
+		const fields=document.createElement("div"); fields.className="lz-fields";
+		const types=Object.keys(LZ_OUT_LABELS).map(Number).map(v=>[v,LZ_OUT_LABELS[v]]);
+		fields.appendChild(lzField("Action",lzV2Select(types,b.outType,edit(v=>{b.outType=v;}))));
+		// analog outputs are driven by their source; only gyro "while hold-button held" reads the hold buttons
+		const analog=b.outType===LZO.AXIS||b.outType===LZO.SCROLL;
+		const gyroHold=b.outType===LZO.AXIS&&b.od[0]===2&&b.od[1]===3;
+		if(!analog) fields.appendChild(lzField("When pressed",lzV2Select(LZ_BTNS,b.trig,edit(v=>{b.trig=v;}),"— pick input —")));
+		if(!analog||gyroHold) fields.appendChild(lzField(gyroHold?"Hold button":"While holding",lzV2Select(LZ_BTNS,b.hold,edit(v=>{b.hold=v;}),"— nothing —")));
 		if(b.outType===LZO.KBD){
-			detail.append("Modifiers ");
+			const mods=document.createElement("div"); mods.className="lz-mods";
 			for(const [bit,label] of LZ_MODS){
 				const c=document.createElement("input"); c.type="checkbox"; c.checked=!!(b.od[0]&bit);
-				c.onchange=()=>{ if(c.checked)b.od[0]|=bit;else b.od[0]&=~bit; };
-				const l=document.createElement("label"); l.style.marginRight="7px"; l.append(c," "+label); detail.appendChild(l);
+				c.onchange=edit(()=>{ if(c.checked)b.od[0]|=bit;else b.od[0]&=~bit; });
+				const l=document.createElement("label"); l.append(c,label); mods.appendChild(l);
 			}
+			fields.appendChild(lzField("Modifiers",mods));
+			// key 1 always; each further key slot appears once the one before it is set (up to 6)
 			for(let k=1;k<7;k++){
-				detail.append(" Key "+k+" ");
-				detail.appendChild(lzV2Select(LZ_KEYS,b.od[k],v=>b.od[k]=v));
+				if(k>1&&!b.od[k-1]&&!b.od[k]) break;
+				fields.appendChild(lzField(k===1?"Key":"Key "+k,lzV2Select(LZ_KEYS,b.od[k],edit(v=>{b.od[k]=v;}))));
 			}
 		}else if(b.outType===LZO.MBTN){
-			detail.append("Mouse ");
-			detail.appendChild(lzV2Select(LZ_MBTNS,b.od[0],v=>b.od[0]=v));
+			fields.appendChild(lzField("Mouse button",lzV2Select(LZ_MBTNS,b.od[0],edit(v=>{b.od[0]=v;}))));
 		}else if(b.outType===LZO.AXIS){
-			detail.append("Source ");
-			detail.appendChild(lzV2Select(LZ_AXIS_SRC,b.od[0],v=>{b.od[0]=v;lzV2Render();}));
-			if(b.od[0]===2){
-				detail.append(" Gyro activation ");
-				detail.appendChild(lzV2Select(LZ_GYRO_ACT,b.od[1],v=>b.od[1]=v));
-			}
-			trig.disabled=true; hold.disabled=true;
+			fields.appendChild(lzField("Source",lzV2Select(LZ_AXIS_SRC,b.od[0],edit(v=>{b.od[0]=v;}))));
+			if(b.od[0]===2) fields.appendChild(lzField("Gyro active",lzV2Select(LZ_GYRO_ACT,b.od[1],edit(v=>{b.od[1]=v;}))));
 		}else if(b.outType===LZO.SCROLL){
-			detail.append("Source: Left trackpad");
-			b.od[0]=0; trig.disabled=true; hold.disabled=true;
+			b.od[0]=0;
+			const s=document.createElement("span"); s.style.cssText="color:var(--fg);font-size:13px;padding-top:6px"; s.textContent="Left trackpad";
+			fields.appendChild(lzField("Source",s));
 		}else if(b.outType===LZO.CONSUMER){
-			detail.append("Media ");
-			detail.appendChild(lzV2Select(LZ_CONSUMER,b.od[0],v=>b.od[0]=v));
+			fields.appendChild(lzField("Media key",lzV2Select(LZ_CONSUMER,b.od[0],edit(v=>{b.od[0]=v;}))));
 		}
-		box.appendChild(detail); host.appendChild(box);
+		box.appendChild(fields); host.appendChild(box);
 	});
+	if(!n) host.innerHTML='<p class="note">No bindings. Add one, or reset to the defaults.</p>';
 }
 
 async function lzV2ReadMap(op){
@@ -224,7 +247,7 @@ export async function lzV2Load(){
 	try{
 		const ops=lzV2Ops();
 		S.lizardBindings=await lzV2ReadMap(lzPanelV2()?ops.dump:0x11);
-		lzV2Render();
+		lzV2Render(); lzSetDirty(false);
 		const st=document.getElementById("lzStatus");
 		if(st)st.textContent="loaded "+S.lizardBindings.length+" binding(s)"+(lzPanelV2()?" · map v2":" · legacy map");
 	}catch(e){ log("lizard load failed: "+e.message); }
@@ -247,19 +270,29 @@ export async function lzV2Save(){
 			await send(cmd);
 		}
 		S.lizardBindings=await lzV2ReadMap(v2?ops.save:0x14);
-		lzV2Render();
+		lzV2Render(); lzSetDirty(false);
 		const st=document.getElementById("lzStatus"); if(st)st.textContent="saved "+count+" binding(s)";
 	}catch(e){const st=document.getElementById("lzStatus");if(st)st.textContent="save failed: "+e.message;log("lizard save failed: "+e.message);}
 	finally{S.lizardBusy=false;}
 }
 export async function lzV2Reset(){
 	if(S.lizardBusy||!S.dev)return;
+	if(!confirm("Reset the lizard map to the built-in defaults? This saves to the puck immediately; your bindings are lost.")) return;
 	S.lizardBusy=true;
 	try{
 		const ops=lzV2Ops();
 		S.lizardBindings=await lzV2ReadMap(lzPanelV2()?ops.reset:0x15);
-		lzV2Render();
+		lzV2Render(); lzSetDirty(false);
 		const st=document.getElementById("lzStatus");if(st)st.textContent="reset to defaults";
 	}catch(e){log("lizard reset failed: "+e.message);}
 	finally{S.lizardBusy=false;}
+}
+export function lzV2Add(){
+	if(S.lizardBindings.length>=LZ_MAX) return;
+	S.lizardBindings.push({outType:1,od:[0,0,0,0,0,0,0],trig:0,hold:0});
+	lzSetDirty(true); lzV2Render();
+}
+export function lzV2Reload(){
+	if(lzDirty && !confirm("Discard your unsaved lizard map changes and reload it from the puck?")) return;
+	lzV2Load();
 }

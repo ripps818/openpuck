@@ -1,89 +1,39 @@
 import { S } from './state.js';
-import { $, BETA_UI, DEBUG_UI, betaPopup, fmtSlider, log } from './util.js';
+import { $, DEBUG_UI, fmtSlider, log } from './util.js';
 import { autoConnect, connect, initProtocol, refresh, send, setField } from './protocol.js';
 import { CHORD_DPAD_FIELD, CHORD_FIELD, MODE_NAMES, SC_BITS } from './status.js';
 import { clearJournalRf, manualJournalBuilderRf, manualSurveyRf } from './rf.js';
 import { exportBackup, importBackup } from './backup.js';
 import { downloadCap, startCapture, stopCapture } from './capture.js';
 import { initDiag, loadFlightTrail, renderHangLog, trailAdd, updateStabUI } from './diag.js';
-import { LZ_MAX, lzV2Load, lzV2Render, lzV2Reset, lzV2Save } from './lizard.js';
-import { initFirmware, loadReleases, updateFwGate, updateUf2UI } from './firmware.js';
+import { lzV2Add, lzV2Reload, lzV2Reset, lzV2Save } from './lizard.js';
+import { initFirmware, updateFwGate, updateUf2UI } from './firmware.js';
+import { initNav } from './nav.js';
+import { initMotion } from './motion.js';
 import { initTypes } from './types.js';
 
 initDiag();
 if(!DEBUG_UI) for(const el of document.querySelectorAll(".debugonly")) el.style.display="none";
-$("#betaBtn").textContent = BETA_UI ? "Beta on" : "Beta";
-$("#betaBtn").classList.toggle("active", BETA_UI);
-$("#betaBtn").title = BETA_UI
-  ? "Show beta-disable confirmation and return to the standard UI"
-  : "Show beta warning and enable beta UI";
-$('#mainTabs .slot-tab[data-tab="tabUpdate"]').classList.toggle("beta-gated", !BETA_UI);
-$("#betaBtn").onclick=async()=>{
-  const u=new URL(location.href);
-  if(BETA_UI){
-    const ok=await betaPopup({
-      title:"Disable beta mode?",
-      body:["Beta-only tabs and controls will be gated again after the page reloads.",
-        "Let any firmware or config operation already in progress finish before leaving beta mode."],
-      okText:"Disable beta"
-    });
-    if(!ok) return;
-    u.searchParams.delete("beta");
-    location.href=u.toString();
-    return;
-  }
-  const ok=await betaPopup({
-    title:"Enable beta mode?",
-    body:["Beta features are still being tested.",
-      "They may not work correctly, can disconnect the panel or puck, and may write invalid or difficult-to-recover configs.",
-      "Export a backup first if the puck is already paired and configured."],
-    okText:"Enable beta"
-  });
-  if(!ok) return;
-  u.searchParams.set("beta","true");
-  location.href=u.toString();
-};
 initTypes();
+initNav();
 initProtocol();
+initMotion();
 
 // UI wiring
 $("#connectBtn").onclick=connect;
 initFirmware();
 
-// ---- top-level tabs ----
-for(const t of document.querySelectorAll("#mainTabs .slot-tab")){
-  t.onclick=async()=>{
-    if(t.dataset.tab==="tabUpdate" && !BETA_UI){
-      const ok=await betaPopup({
-        title:"Firmware update is beta",
-        body:["Firmware update is still being tested and may not work correctly.",
-          "A bad image or interrupted recovery path can leave you needing UF2 DFU to recover.",
-          "Enable beta mode before using this feature."],
-        okText:"Enable beta"
-      });
-      if(ok){
-        const u=new URL(location.href);
-        u.searchParams.set("beta","true");
-        location.href=u.toString();
-      }
-      return;
-    }
-    for(const x of document.querySelectorAll("#mainTabs .slot-tab")) x.classList.toggle("active",x===t);
-    $("#tabMain").classList.toggle("hide", t.dataset.tab!=="tabMain");
-    $("#tabUpdate").classList.toggle("hide", t.dataset.tab!=="tabUpdate");
-    if(t.dataset.tab==="tabUpdate") loadReleases(false); // lazy: first visit fetches the list
-  };
-}
 $("#backupExport").onclick=exportBackup;
 $("#backupImport").onclick=()=>$("#backupFile").click();
 $("#backupFile").onchange=async(e)=>{ const f=e.target.files[0]; if(f) await importBackup(f); e.target.value=""; };
 $("#capDl").onclick=downloadCap;
 $("#capStart").onclick=startCapture;
 $("#capStop").onclick=stopCapture;
-$("#lzAdd").onclick=()=>{ if(S.lizardBindings.length<LZ_MAX){ S.lizardBindings.push({outType:1,od:[0,0,0,0,0,0,0],trig:0,hold:0}); lzV2Render(); } };
+$("#lzAdd").onclick=lzV2Add;
 $("#lzSave").onclick=lzV2Save;
-$("#lzReload").onclick=lzV2Load;
+$("#lzReload").onclick=lzV2Reload;
 $("#lzReset").onclick=lzV2Reset;
+$("#lzGoMode").onclick=()=>$('.modebtn[data-mode="3"]').click(); // confirms, then the puck reboots into Lizard
 $("#stabBtn").onclick=async()=>{
   if(!S.dev){ log("connect first"); return; }
   S.stabArmed=!S.stabArmed;

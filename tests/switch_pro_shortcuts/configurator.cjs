@@ -8,7 +8,7 @@ let cleanup=()=>{};
 const dom=new JSDOM(html,{url:'http://localhost/'}),w=dom.window;
 const timers=[],setIntervalNode=setInterval;globalThis.setInterval=(...a)=>{const t=setIntervalNode(...a);timers.push(t);return t;};
 cleanup=()=>{timers.forEach(clearInterval);w.close();};
-for(const k of ['window','document','navigator','location','localStorage','prompt'])
+for(const k of ['window','document','navigator','location','localStorage','history','getComputedStyle','prompt'])
   Object.defineProperty(globalThis,k,{value:k==='window'?w:(typeof w[k]==='function'?w[k].bind(w):w[k]),configurable:true,writable:true});
 globalThis.confirm=()=>true;globalThis.fetch=async()=>({ok:false,json:async()=>[]});
 const mod=f=>import(pathToFileURL(path.join(js,f)).href);
@@ -46,7 +46,7 @@ const change=el=>act(()=>el.dispatchEvent(new w.Event('change')));
 const click=$('#swClickFeedback');click.value='0';assert.deepEqual(await change(click),[2,230,0]);
 const capture=$('#qamSelect');capture.value='0';assert.deepEqual(await change(capture),[2,239,0]);
 // v25: grip strength per type in Button mapping (no style row); the global strength row hides.
-const secs=[...$('#typeCfgs').children].slice(1);
+const secs=[...$('#typeCfgs').children];
 const typeRow=(et,label)=>[...secs[et].querySelectorAll('.row')].find(r=>r.querySelector('label') && r.querySelector('label').textContent===label);
 const scl=et=>typeRow(et,'Grip rumble strength').querySelector('select');
 for(let et=0;et<4;et++)assert(!typeRow(et,'Rumble style'));
@@ -71,6 +71,9 @@ const p27=p26.slice();p27[0]=27;p27[207]=80;p=p27;applyBlob(new Uint8Array(p27))
 for(const r of lim){assert(!r.parentElement.classList.contains('hide'));assert.equal(r.querySelector('select').value,'80');}
 const limSel=lim[1].querySelector('select');limSel.value='100';assert.deepEqual(await change(limSel),[2,115,100]);
 p=p.slice(0,204);p[0]=23;await apply();
+// Button mapping: one tab per profile plus the lizard map; header shows the mode and controllers.
+assert.deepEqual([...document.querySelectorAll('#mapTabs .slot-tab')].map(e=>e.firstChild.textContent),['Xbox','Switch','DS4','DS5','Lizard (desktop)']);
+assert.equal($('#hdrMode').textContent,'Steam (puck)');const chips=document.querySelectorAll('#hdrCtlrs .ctlr-chip');assert.equal(chips.length,1);assert(chips[0].classList.contains('off')); // one bonded, offline
 // Original per-type mapping and mode controls remain present.
 assert(document.querySelectorAll('.modebtn').length>=11);assert($('#lizardList'));
 s[46]=57;await apply();

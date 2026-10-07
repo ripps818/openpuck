@@ -1,8 +1,8 @@
 name: PR check
 
-# ripps818/openpuck only: gate pull requests that change code on formatting, an up-to-date panel bundle and a
-# firmware compile. Upstream's format.yml and build.yml run only in safijari/openpuck. Documentation-only PRs
-# don't match the paths below and skip this workflow.
+# ripps818/openpuck only: gate pull requests that change code on formatting, an up-to-date panel bundle, the
+# host tests and a firmware compile. Upstream's format.yml and build.yml run only in safijari/openpuck.
+# Documentation-only PRs don't match the paths below and skip this workflow.
 on:
   pull_request:
     paths:
@@ -17,6 +17,7 @@ on:
       - 'panel/**'
       - 'docs/index.html'
       - 'tools/build_panel.py'
+      - 'tests/**'
       - '.github/workflows/pr-check.yml'
 
 # a new push to the PR supersedes a check still running
@@ -42,6 +43,25 @@ jobs:
       - name: Check formatting and the panel bundle
         # Run `make format` / `make panel` locally to fix.
         run: make check
+
+  tests:
+    if: github.repository == 'ripps818/openpuck'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      # Firmware logic compiled on the host with g++ and AddressSanitizer/UndefinedBehaviorSanitizer.
+      - name: Firmware host tests
+        run: for t in tests/*/run.py; do python3 "$t"; done
+
+      # The panel's ES modules (panel/*.js) driven under jsdom against a fake USB device.
+      - name: Install jsdom
+        run: npm install --prefix "$RUNNER_TEMP/ui-tests" jsdom@26
+
+      - name: Configurator test
+        run: NODE_PATH="$RUNNER_TEMP/ui-tests/node_modules" node tests/switch_pro_shortcuts/configurator.cjs
 
   build:
     if: github.repository == 'ripps818/openpuck'

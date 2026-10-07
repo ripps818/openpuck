@@ -35,7 +35,7 @@ async function openDevice(d){
     $("#connState").textContent="connected"; $("#connState").className="pill up";
     $("#connState").title = S.dev.serialNumber ? (kind+" serial "+S.dev.serialNumber) : "";
     $("#connectBtn").textContent="Reconnect";
-    $("#panel").classList.remove("hide");
+    $("#panel").classList.remove("hide"); $("#hdrInfo").classList.remove("hide");
     applyDeviceProfile(); // show the controller UI + hide puck-only cards (or vice-versa)
     log(`connected — ${kind} ${S.dev.serialNumber||"?"} (VID ${S.dev.vendorId.toString(16)} PID ${S.dev.productId.toString(16)} iface ${ifNum})`);
     // resume a stability test across the reset: re-arm the firmware buzz and start timing the next run
@@ -91,7 +91,7 @@ function onGone(){
   const preSel=$("#ledPreset"); if(preSel) preSel.value="default";
   checkUpdateNotice(); // no device = no notice
   $("#connState").textContent="reconnecting…"; $("#connState").className="pill dn";
-  $("#panel").classList.add("hide");
+  $("#panel").classList.add("hide"); $("#hdrInfo").classList.add("hide");
   log("device disconnected (mode-switch / watchdog reboot) — auto-reconnecting when it returns");
   // The puck re-enumerates after a reboot; retry without the picker. The "connect" event also triggers this,
   // but poll a few times in case the event is missed.

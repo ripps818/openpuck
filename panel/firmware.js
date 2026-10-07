@@ -1,5 +1,5 @@
 import { S } from './state.js';
-import { $, BETA_UI, log } from './util.js';
+import { $, fwupEnabled, log, setFwupEnabled } from './util.js';
 import { USB_FILTERS, startPolling } from './protocol.js';
 
 // Firmware update via the UF2 picker: selectedUf2 = {name, image} (image = the app binary extracted from the
@@ -182,7 +182,7 @@ function verTriple(s){
 }
 export function checkUpdateNotice(){
   const el=$("#updAvail");
-  if(!BETA_UI){ el.classList.add("hide"); return; }
+  if(!fwupEnabled()){ el.classList.add("hide"); return; }
   const inst=verTriple(blobBuildId(S.lastP));
   const rel=(relCache||[]).find(r=>!r.prerelease && relAsset(r,false));
   const latest=rel ? verTriple(rel.tag_name) : null;
@@ -202,9 +202,15 @@ export function updateFwGate(){
   if(!ok) $("#updGateMsg").textContent =
     "This puck is running "+(blobBuildId(S.lastP)||"an unknown build")+" (status v"+(S.lastP?S.lastP[0]:"?")
     +"), which predates panel updates (needs v15+), so updating from this page is disabled. One manual flash "
-    +"gets you back: click “UF2 DFU” in the top bar, then drag a panel-update-capable .uf2 onto the UF2BOOT "
+    +"gets you back: click “UF2 DFU” on the Device page, then drag a panel-update-capable .uf2 onto the UF2BOOT "
     +"drive it mounts. Every update after that happens right here.";
   for(const c of document.querySelectorAll(".fwupcard")) c.classList.toggle("gated", !ok);
+}
+// The Firmware update page shows only the risk card until the user enables updates (beta).
+export function syncFwupLock(){
+  const on=fwupEnabled();
+  $("#pgUpdate").classList.toggle("locked", !on);
+  $("#fwupOn").classList.toggle("hide", !on);
 }
 export function updateVersionUI(){
   const build=blobBuildId(S.lastP), proto=S.lastP ? S.lastP[0] : 0;
@@ -212,6 +218,7 @@ export function updateVersionUI(){
   $("#stVersionBuild").innerHTML = build
     ? (build + (dirty ? ' <span class="pill dn">dirty</span>' : ' <span class="pill up">clean</span>'))
     : "—";
+  $("#hdrFw").textContent = build ? build+(dirty ? " · dirty" : "") : "—";
   $("#stVersionProto").textContent = proto ? ("v"+proto) : "—";
   $("#stVersionUpdate").textContent = proto >= 15 ? "supported" : (proto ? "manual UF2 only" : "—");
 }
@@ -464,7 +471,7 @@ export async function loadReleases(force){
 
 export function initFirmware(){
   $("#updClose").onclick=()=>$("#updModal").classList.add("hide");
-  $("#updAvail").onclick=()=>{ document.querySelector('#mainTabs .slot-tab[data-tab="tabUpdate"]').click(); };
+  $("#updAvail").onclick=()=>$("#navUpdate").click();
   $("#uf2File").onchange=async(e)=>{
     const f=e.target.files && e.target.files[0];
     e.target.value=""; // allow re-picking the same filename after a rebuild
@@ -495,4 +502,7 @@ export function initFirmware(){
       async()=>selectedUf2.image);
   };
   $("#relRefresh").onclick=()=>loadReleases(true);
+  $("#fwupEnable").onclick=()=>{ setFwupEnabled(true); syncFwupLock(); loadReleases(false); checkUpdateNotice(); };
+  $("#fwupDisable").onclick=()=>{ setFwupEnabled(false); syncFwupLock(); checkUpdateNotice(); };
+  syncFwupLock();
 }
