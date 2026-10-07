@@ -56,6 +56,7 @@ python3 tests/switch_pro_shortcuts/run.py
 python3 tests/final_webusb/run.py
 python3 tests/shortcut_modes/run.py
 python3 tests/storage/run.py
+python3 tests/lizard_map/run.py
 npm install --prefix /tmp/openpuck-ui-tests jsdom@26
 NODE_PATH=/tmp/openpuck-ui-tests/node_modules node tests/switch_pro_shortcuts/configurator.cjs
 make check

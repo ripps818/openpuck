@@ -141,6 +141,9 @@ struct PuckInput {
 	int16_t lpx, lpy, rpx, rpy; // left / right trackpad coords (int16)
 	int16_t ax, ay, az; // accelerometer
 	int16_t gx, gy, gz; // gyroscope
+	// controller-computed orientation from report 0x42 (w, x, y, z, Q15, 0x7FFF = 1.0); all zero until a
+	// 0x42 arrives (0x45 has none), and older controller firmware sends identity
+	int16_t qw, qx, qy, qz;
 
 	// Triton 0x42/0x45 IMU source clock, microseconds
 	uint32_t imuTimestampUs;

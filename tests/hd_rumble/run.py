@@ -34,6 +34,7 @@ unsigned long g_rumble80Ms[4]={};bool g_rumble80On[4]={};
 // fork: merged legacy/audio rumble path (hapticUpdateRumble)
 #define RUMBLE_THROTTLE_MS 20u
 uint8_t g_audioHaptics=1;
+uint8_t g_hapticLimitKnee=100; // 100 = limiter off: these checks are about the HD rumble path, not the knee
 uint16_t g_legacyLow[4]={},g_legacyHigh[4]={},g_audioLow[4]={},g_audioHigh[4]={},g_lastSentLow[4]={},g_lastSentHigh[4]={};
 unsigned long g_legacyMs[4]={};
 struct Msg{uint8_t rid,slot;std::vector<uint8_t> p;};
@@ -49,7 +50,7 @@ uint32_t micros(){return now*1000u;}
 void hapticPcmStart(uint8_t slot){if(keepPcm)messages.push_back({0x86,slot,{2,2,9}});}
 ''' + h[h.index('static inline uint8_t hapticPcmFrameLen'):h.index('// G.711')] + '''bool hapticPcmSend(uint8_t slot,const uint8_t *l,const uint8_t *r,uint8_t n){assert(n && n<=31);std::vector<uint8_t> f(1,n);f.insert(f.end(),l,l+31);f.insert(f.end(),r,r+31);if(keepPcm)messages.push_back({0x88,slot,f});return true;}
 uint8_t hapticUlaw(float x){return x>0.001f?1:(x<-0.001f?2:0);}
-void hapticCancelPendingOn(int slot){
+''' + h[h.index('static inline float hapticSoftLimit'):h.index('void hapticSwitchHd(')] + '''void hapticCancelPendingOn(int slot){
  for(auto &m:messages)if(m.slot==slot && ((m.rid==0x83 && int8_t(m.p[1])!=-128) || (m.rid==0x81 && (m.p[5]||m.p[6])) || (m.rid==0x80 && m.p[0])))m.rid=0;
 }
 uint8_t jcBondOf(uint8_t slot){return (slot+3)%4;}

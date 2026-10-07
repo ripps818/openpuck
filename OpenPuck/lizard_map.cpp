@@ -43,13 +43,14 @@ static uint64_t lizardMaskFromV1(uint32_t m)
 #define KM_LALT 0x04u
 #define KM_LGUI 0x08u
 
-// Helper: append a binding to g_lizardMap
+// Helper: append a binding to the map defaultLizardMap() is filling
+static LizardMap *s_fill = &g_lizardMap;
 static void addBind(uint8_t type, const uint8_t *od7, uint64_t trig,
 		    uint64_t hold)
 {
-	if (g_lizardMap.count >= LZ_MAX_BINDINGS)
+	if (s_fill->count >= LZ_MAX_BINDINGS)
 		return;
-	LizardBinding &b = g_lizardMap.bindings[g_lizardMap.count++];
+	LizardBinding &b = s_fill->bindings[s_fill->count++];
 	b.outType = type;
 	for (int i = 0; i < 7; i++)
 		b.outData[i] = od7[i];
@@ -89,9 +90,10 @@ static inline void addConsumer(uint8_t bits, uint64_t trig, uint64_t hold)
 	addBind(LZ_OUT_CONSUMER, d, trig, hold);
 }
 
-void defaultLizardMap()
+void defaultLizardMap(LizardMap &m)
 {
-	g_lizardMap.count = 0;
+	s_fill = &m;
+	m.count = 0;
 
 	// Analog sources (always active; no trigger mask)
 	addAxis(LZ_MSRC_RPAD, LZ_GYRO_ALWAYS); // right pad → mouse
@@ -144,21 +146,21 @@ void defaultLizardMap()
 	addKey(KM_LALT, 0, 0x200u /*TB_RB*/, 0);
 }
 
-void saveLizardMap()
+void saveLizardMap(const LizardMap &m)
 {
 	uint8_t data[3 + LZ_MAX_BINDINGS * sizeof(LizardBinding)];
 	data[0] = LZ_MAGIC;
 	data[1] = LZ_VERSION;
-	data[2] = g_lizardMap.count;
-	size_t length = g_lizardMap.count * sizeof(LizardBinding);
-	memcpy(data + 3, g_lizardMap.bindings, length);
+	data[2] = m.count;
+	size_t length = m.count * sizeof(LizardBinding);
+	memcpy(data + 3, m.bindings, length);
 	storageWriteFile(LZ_FILE, "/lizard.tmp", data, 3 + length);
 }
 
-void loadLizardMap()
+void loadLizardMap(LizardMap &m)
 {
 	if (g_storageState == 0) {
-		defaultLizardMap();
+		defaultLizardMap(m);
 		return;
 	}
 	bool migrated = false;
@@ -168,13 +170,12 @@ void loadLizardMap()
 		if (f.read(hdr, 3) == 3 && hdr[0] == LZ_MAGIC &&
 		    hdr[2] <= LZ_MAX_BINDINGS) {
 			uint8_t cnt = hdr[2];
-			g_lizardMap.count = 0;
+			m.count = 0;
 			if (hdr[1] == LZ_VERSION) {
-				int got =
-					f.read((uint8_t *)g_lizardMap.bindings,
-					       cnt * sizeof(LizardBinding));
+				int got = f.read((uint8_t *)m.bindings,
+						 cnt * sizeof(LizardBinding));
 				if (got == (int)(cnt * sizeof(LizardBinding)))
-					g_lizardMap.count = cnt;
+					m.count = cnt;
 			} else if (hdr[1] == 1u) {
 				static LizardBindingV1 old[LZ_MAX_BINDINGS];
 				int got = f.read((uint8_t *)old,
@@ -183,7 +184,7 @@ void loadLizardMap()
 				    (int)(cnt * sizeof(LizardBindingV1))) {
 					for (uint8_t i = 0; i < cnt; i++) {
 						LizardBinding &b =
-							g_lizardMap.bindings[i];
+							m.bindings[i];
 						b.outType = old[i].outType;
 						memcpy(b.outData,
 						       old[i].outData,
@@ -193,7 +194,7 @@ void loadLizardMap()
 						b.holdMask = lizardMaskFromV1(
 							old[i].holdMask);
 					}
-					g_lizardMap.count = cnt;
+					m.count = cnt;
 					migrated = true;
 				}
 			}
@@ -201,10 +202,10 @@ void loadLizardMap()
 		f.close();
 	}
 	// If nothing loaded, install + persist defaults
-	if (g_lizardMap.count == 0) {
-		defaultLizardMap();
-		saveLizardMap();
+	if (m.count == 0) {
+		defaultLizardMap(m);
+		saveLizardMap(m);
 	} else if (migrated) {
-		saveLizardMap();
+		saveLizardMap(m);
 	}
 }

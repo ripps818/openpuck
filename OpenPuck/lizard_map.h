@@ -69,7 +69,9 @@ struct LizardMap {
 
 extern LizardMap g_lizardMap;
 
-// fill g_lizardMap with defaults (does NOT save to flash)
-void defaultLizardMap();
-void loadLizardMap();
-void saveLizardMap();
+// Each takes the map to work on; the default is the live g_lizardMap. The WebUSB editor passes a separate
+// copy outside MODE_LIZARD, where g_lizardMap holds the built-in defaults rather than the saved map.
+// fill a map with defaults (does NOT save to flash)
+void defaultLizardMap(LizardMap &m = g_lizardMap);
+void loadLizardMap(LizardMap &m = g_lizardMap);
+void saveLizardMap(const LizardMap &m = g_lizardMap);

@@ -525,6 +525,18 @@ Messages:
     `0x18 <idx> <24-byte binding>` set one, `0x19` commit to flash, `0x1A` reset to defaults. The 16-byte
     ops above use the legacy 32-bit masks, where bits 28-31 are the left-stick directions; the firmware
     translates them to and from the 64-bit form, so the right-stick triggers are reachable only through v2.
+  - Which map the lizard ops edit: from status-blob version 28, always the **saved** map. In Lizard (always)
+    mode that is the live map. Every other mode runs the built-in defaults (Steam-mode seamless lizard), so
+    the ops work on a separate copy loaded from flash, and committing it leaves the running defaults alone.
+    Before version 28 the ops edited the running map in every mode, so outside Lizard mode a dump returned
+    the defaults and a commit saved them over the user's map.
+  - `0x29` (status-blob version ≥ 28): turn on IMU streaming (`SETTING_IMU_MODE` = `0x07`) on every linked
+    controller, sent three times because the RF relay is no-ack. The emulated modes do this at connect; Steam
+    and Lizard modes never do, so there the panel's raw motion readout stays zero until this is sent. No reply.
+  - `0x2A <slot>` (status-blob version ≥ 28): one controller's live motion sample, replying with an `0xAF`
+    frame: `[ver=1][slot][linkUp]` then `ax ay az gx gy gz` and the report-`0x42` orientation quaternion
+    `qw qx qy qz` (Q15), all s16 LE. The quaternion reads all zero until the controller sends `0x42`; older
+    controller firmware sends identity. The panel polls it at about 25 Hz for its 3D motion view.
   - `0x20`–`0x24`: staged firmware update (begin/data/end/reboot/abort), acked with `0xAB` frames
   - `0x25 0x57 0x49 0x50 0x45`: **full board wipe** (`"WIPE"` magic, debug panel only). Erases the app
     region + LittleFS (settings + bonds) + bootloader-settings page and reboots app-less, so the board mounts

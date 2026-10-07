@@ -63,6 +63,8 @@ extern uint8_t g_rumbleStyle; // RUMBLE_STYLE_*
 #define RUMBLE_TEST_AMP 0x8000u
 #define RUMBLE_TEST_MS 500u
 void hapticTestRumble();
+// turn on IMU streaming on every linked controller (WebUSB op 0x29)
+void hapticImuOn();
 
 // Journal-builder progress tick. It is deliberately short and is emitted only
 // between measured channels, never inside a quality window. Hardware testing
