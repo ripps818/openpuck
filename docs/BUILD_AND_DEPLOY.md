@@ -305,6 +305,9 @@ Note on the serial method: puck (Steam/Lizard) mode drops the CDC console by def
 
 WebUSB requires a secure context. `http://localhost` qualifies.
 
+The panel is `docs/index.html` plus ES modules in `docs/js/` (entry point `app.js`, no build step). Browsers don't
+load modules from `file://`, so serve the folder over HTTP as below rather than opening the file directly.
+
 ### macOS / Linux
 
 ```bash
