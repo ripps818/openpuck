@@ -7,7 +7,7 @@ char g_unit[16];
 char g_board[16];
 
 // 0x83 attributes for the CONTROLLER, as [tag][u32-LE] records, matching controller firmware
-// 0x6ABC4999 (IBEX_FW_6ABC4999.fw): tag 01 = product 0x1302; tag 02 = capabilities; tag 0A =
+// 0x6AC686B3 (IBEX_FW_6AC686B3.fw): tag 01 = product 0x1302; tag 02 = capabilities; tag 0A =
 // bootloader build 0x68D2F92E (read from a real unit -- not part of the .fw image); tag 04 = fw build;
 // tag 09 = board rev 0x48; tag 0B = connection interval in us (4000 on both the ESB and USB transports;
 // firmware >= 0x6A4D85E3 appends it, older builds return only the first 25 bytes). These are
@@ -19,7 +19,7 @@ const uint8_t ATTR83[] = {
 	0x01, 0x02, 0x13, 0x00, 0x00,
 	0x02, 0x00, 0x00, 0x00, 0x00,
 	0x0A, 0x2E, 0xF9, 0xD2, 0x68,
-	0x04, 0x99, 0x49, 0xBC, 0x6A,
+	0x04, 0xB3, 0x86, 0xC6, 0x6A,
 	0x09, 0x48, 0x00, 0x00, 0x00,
 	0x0B, 0xA0, 0x0F, 0x00, 0x00,
 };
@@ -27,7 +27,7 @@ const uint8_t ATTR83[] = {
 const uint16_t ATTR83_LEN = sizeof ATTR83;
 
 // Git SHA embedded in the same firmware image; Steam reads it back as 0xAE tag 3.
-const char CTRL_GIT_SHA[] = "3a5c18c37841";
+const char CTRL_GIT_SHA[] = "970218aed150";
 
 uint32_t attr83Value(uint8_t tag)
 {

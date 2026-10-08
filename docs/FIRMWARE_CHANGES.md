@@ -19,6 +19,7 @@ identity, USB and protocol fingerprints of an image and diffs two releases; run 
 
 | Channel    | First seen | Controller (`IBEX_FW_`) | Puck (`PROTEUS_FW_`) | Git SHA        |
 |------------|------------|-------------------------|----------------------|----------------|
+| publicbeta | 2026-10-07 | `6AC686B3`              | `6AC6869B`           | `970218aed150` |
 | publicbeta | 2026-10-02 | `6ABC4999`              | `6ABC4988`           | `3a5c18c37841` |
 | publicbeta | 2026-09-17 | `6AA43B55`              | (`6A628359`)         | `39810c8f9d80` |
 | stable     | 2026-09-02 | `6A628345`              | `6A628359`           | `fec01234c8af` |
@@ -28,6 +29,61 @@ identity, USB and protocol fingerprints of an image and diffs two releases; run 
 A parenthesised puck build is the one still current on that channel. Before this update OpenPuck
 reported puck build `6A628359` (current stable). ReversePuck reported controller build `6A18D057`
 (May).
+
+## `6AC686B3` / `6AC6869B` (publicbeta, 2026-10-07)
+
+Diffed against `6ABC4999`/`6ABC4988`. Both builds were confirmed on hardware with
+`ReversePuck/scpair.py list`, which reads `0x83` and `0xAE`:
+
+- Controller: `0x83` is 30 bytes with build `6AC686B3`, bootloader `68D2F92E` (unchanged) and `0x0B` = 4000.
+- Puck: `0x83` is 25 bytes with build `6AC6869B`, bootloader `68D2F9F2` and hw `0x47`.
+- Both report `0xAE` tag 3 = `970218aed150`.
+
+No RF, USB or slot-HID protocol changes, so OpenPuck and ReversePuck only need the new build stamps.
+A function-level diff of the controller compared every old function of 24 bytes or more against the new
+image, with branch targets and address literals masked. It found these unchanged apart from relocation:
+
+- the ESB session loop and wireless state machine
+- the `0x83`/`0xAE`, settings, LED, battery and user-store feature handlers
+- the HID report senders and the haptic stream op
+
+The few functions that really changed are BLE host, NVS/flash, settings-partition and logging internals,
+plus the wireless-transport handler, which only gained the split PUCK/USB log lines.
+
+### Controller: Cirque trackpad support, and it can reflash the trackpad module
+
+The payload grew by 33.5 KB (389056 → 422584 bytes):
+
+- **Embedded trackpad-module firmware.** A ~27 KB block at `0x63C00`–`0x6A900` is not Thumb code. It
+  starts with a tuning table (600, 150, 1000, …) and then holds code for another ISA. It ends just
+  before the new strings `Cirque` and `CustomMeas`.
+- **Module updater.** New log lines `Timp: Updating FW`, `Timp: Update done` and `Timp: Update error`
+  sit next to the existing `Timp: Vendor/Prod/Vers/Rev` probe. The controller now updates its
+  trackpad ("Timp") module itself, presumably when the module's version is older than the embedded image.
+- **New vendor HID descriptor.** It holds feature `0x07` (530 bytes, page `0xFF01`) and IN/OUT `0x0D`
+  (642 bytes, page `0xFF00`). It appears only once, and the live USB descriptor is still the 372-byte
+  slot descriptor, so it is internal (the module or its update channel) and not visible to Steam.
+- `Wireless operation (continued)` was split into `Continue wireless operation (PUCK)` and `(USB)`,
+  so the log now says which link kept the controller's wireless running.
+
+### Puck: rebuild plus one pogo-pin timing change
+
+Same size, and only 17 bytes differ:
+
+- SHA and build stamp.
+- Three `__LINE__` arguments in `puck_adcs_read` log calls, each +2. The source moved; behaviour did not.
+- **VPOGO/VPILOT check:** the timeout before the pogo and pilot voltages are sampled went from 4 to
+  27 kernel ticks. Another timer in the image uses `0x24000` ticks for 4.5 s, which implies 32768 Hz,
+  so this is about 122 µs → 824 µs: a longer settle time when detecting a controller on the pogo pins.
+
+### Verified unchanged
+
+- USB IDs `28DE:1302`/`28DE:1304`. The descriptor in the image is still bcd `0x0404`; the live puck
+  enumerates as bcd `0x0002` with its CDC-ACM pair and five HID interfaces.
+- Slot HID descriptor (`0x40`–`0x45`, `0x79`, `0x7B`, OUT `0x80`–`0x89`, feature `0x01`/`0x02`),
+  byte-identical on the live devices.
+- Controller RF reply builders `F0 F2 F3 F4 F5`; puck `E0`–`E7`.
+- `0x83` lengths: controller 30 bytes, puck 25 bytes.
 
 ## `6ABC4999` / `6ABC4988` (publicbeta, 2026-10-02)
 
@@ -184,7 +240,12 @@ ATTRIB_CONNECTION_INTERVAL_IN_US:
 - **Report `0x42` bits 28/29** are the grip-touch bits (set from the pad/grip sensor events), not
   always-on status bits.
 
-## Repo changes for this release
+## Repo changes for `6AC686B3` / `6AC6869B`
+
+- `OpenPuck/identity.cpp`: puck and Steam Machine receiver `build_timestamp` → `0x6AC6869B`.
+- `ReversePuckFirmware/identity.cpp`: controller `0x83` build → `0x6AC686B3`; git SHA → `970218aed150`.
+
+## Repo changes for `6ABC4999` / `6ABC4988`
 
 - `OpenPuck/identity.cpp`: puck and Steam Machine receiver `build_timestamp` → `0x6ABC4988`.
 - `ReversePuckFirmware/identity.cpp`: controller `0x83` → 30-byte `6ABC4999` form, plus the git SHA
