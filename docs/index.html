@@ -1424,10 +1424,11 @@ function initTypes(){
         aud.onclick=()=>{ const on=aud.classList.contains("active"); setField(31, on?0:1); };
         // Haptics style (protocol v22): 0 rumble = the motor-style rumble, 1 tone = smooth per-actuator tones,
         // 2 split = below ~80 Hz as rumble, the rest as tones, 3 wave = the haptic channels streamed as PCM (default).
-        // Clicking cycles tone -> split -> wave -> rumble.
-        const sty=toggle(gAud,"Haptics style","wave"); sty.dataset.v="3";
+        const sty=document.createElement("select");
+        for(const [v,lbl] of [[3,"Wave"],[1,"Tone"],[2,"Split"],[0,"Rumble"]]){ const o=document.createElement("option"); o.value=v; o.textContent=lbl; sty.appendChild(o); }
+        row(gAud,"Haptics style",sty);
+        sty.addEventListener("change",()=>setField(88, +sty.value));
         rec.audioStyle=sty;
-        sty.onclick=()=>{ setField(88, ((+sty.dataset.v)+1)%4); };
         // Audio Haptics gain
         // 0 = Auto (firmware default): the loudest recent haptic plays at full strength; in Wave style Auto = 100%, a real DualSense's strength
         const sl=document.createElement("input"); sl.type="range"; sl.min=0; sl.max=500; sl.step=10;
@@ -2652,9 +2653,7 @@ function applyBlob(p){
       }
       if(rec.audioStyle){
         const v = (p.length>203 && p[203]<=3)?p[203]:1;
-        rec.audioStyle.dataset.v=v;
-        rec.audioStyle.textContent=["rumble","tone","split","wave"][v];
-        rec.audioStyle.classList.toggle("active",v!==0);
+        if(document.activeElement!==rec.audioStyle) rec.audioStyle.value=v;
       }
       if(rec.speaker){
         const cap=p[0]>=26 && p.length>206;
