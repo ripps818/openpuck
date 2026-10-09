@@ -108,7 +108,11 @@ export function initTypes(){
         sel.addEventListener("change",()=>setField(PAD_STICK_FIELD0+et*2+pad, +sel.value));
         rec.padStick.push(sel);
       }
-      const pad=toggle(gPad,"Trackpad haptics","on");
+      // 1 = controller's own haptics (ticks while moving + clicks), 2 = clicks only, 0 = off
+      const pad=document.createElement("select");
+      for(const [v,lbl] of [[1,"On"],[2,"Clicks only"],[0,"Off"]]){ const o=document.createElement("option"); o.value=v; o.textContent=lbl; pad.appendChild(o); }
+      row(gPad,"Trackpad haptics",pad);
+      pad.addEventListener("change",()=>setField(40+et*9+6, +pad.value));
       // rumble on/off, grip strength, grip limiter
       const gRum=group("Rumble");
       const rumble=toggle(gRum,"Rumble","on");
@@ -167,7 +171,6 @@ export function initTypes(){
         rec.speaker=sel; rec.speakerWrap=wrap;
       }
       ab.onclick=()=>{ const on=ab.classList.contains("active"); setField(40+et*9+5, on?0:1); };
-      pad.onclick=()=>{ const on=pad.classList.contains("active"); setField(40+et*9+6, on?0:1); };
       rumble.onclick=()=>{ const on=rumble.classList.contains("active"); setField(40+et*9+8, on?0:1); };
       rec.abSwap=ab; rec.pad=pad; rec.rumble=rumble;
       // Switch Pro-only settings get their own card on the Switch profile

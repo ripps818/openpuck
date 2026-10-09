@@ -159,7 +159,8 @@ extern int g_mDiv, g_mFric; // xbox/lizard mouse sensitivity divisor / friction%
 // Per-emulated-type button config. One entry per ET_* type. back[] = paddle L4,R4,L5,R5 -> button codes
 // (0..15 standard, 16=PS Touch Click, 17=PS5 Mute, 18=Switch Capture/Screenshot). qamMap = QAM (3 dots)
 // physical button -> same code space (0 = default/unmapped). abSwap = swap A/B and X/Y (Nintendo layout).
-// padHaptics = 1 keeps the controller's autonomous trackpad haptics, 0 disables them for this type.
+// padHaptics = PAD_HAPTICS_*: ON keeps the controller's autonomous trackpad haptics, OFF disables them for
+// this type, CLICK holds the autonomous engine off (no movement ticks) and has the puck pulse each pad click.
 // rumble = 1 enables host rumble relay (default), 0 silences it for this type.
 // ledBright = LED brightness sent to the controller on connect: 0 = no override (controller default),
 // 1-100 = brightness %. Steam sets brightness each session; emulated modes never do, so the controller
@@ -205,8 +206,11 @@ extern uint8_t g_shortcutFlags;
 void shortcutModeRequest(uint8_t mode, uint8_t slot);
 void shortcutModeTask();
 void captureFeedbackChord(uint8_t slot, uint32_t buttons);
-extern uint8_t
-	g_padHaptics; // 1 = trackpad haptics on (default), 0 = disabled for the active type
+#define PAD_HAPTICS_OFF 0
+#define PAD_HAPTICS_ON 1
+#define PAD_HAPTICS_CLICK 2
+// PAD_HAPTICS_* for the active type (ON in puck modes)
+extern uint8_t g_padHaptics;
 // 1 = host rumble relay on (default), 0 = silenced for the active emulated type
 extern uint8_t g_rumble;
 // 1 = audio-driven haptics on (default), 0 = silenced for DualSense UAC1 audio

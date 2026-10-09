@@ -296,7 +296,7 @@ export function applyBlob(p){
       rec.back.forEach((sel,i)=>{ if(document.activeElement!==sel) sel.value=back[i]; });
       if(document.activeElement!==rec.qam) rec.qam.value=qam;
       rec.abSwap.textContent=ab?"on":"off"; rec.abSwap.classList.toggle("active",!!ab);
-      rec.pad.textContent=pad?"on":"off"; rec.pad.classList.toggle("active",!!pad);
+      if(document.activeElement!==rec.pad) rec.pad.value=pad;
       rec.rumble.textContent=rum?"on":"off"; rec.rumble.classList.toggle("active",!!rum);
       if(rec.audioHaptics){
         const audOn = (p.length>196)?(p[196]!==0):true;

@@ -1384,7 +1384,11 @@ function initTypes(){
         sel.addEventListener("change",()=>setField(PAD_STICK_FIELD0+et*2+pad, +sel.value));
         rec.padStick.push(sel);
       }
-      const pad=toggle(gPad,"Trackpad haptics","on");
+      // 1 = controller's own haptics (ticks while moving + clicks), 2 = clicks only, 0 = off
+      const pad=document.createElement("select");
+      for(const [v,lbl] of [[1,"On"],[2,"Clicks only"],[0,"Off"]]){ const o=document.createElement("option"); o.value=v; o.textContent=lbl; pad.appendChild(o); }
+      row(gPad,"Trackpad haptics",pad);
+      pad.addEventListener("change",()=>setField(40+et*9+6, +pad.value));
       // rumble on/off, grip strength, grip limiter
       const gRum=group("Rumble");
       const rumble=toggle(gRum,"Rumble","on");
@@ -1443,7 +1447,6 @@ function initTypes(){
         rec.speaker=sel; rec.speakerWrap=wrap;
       }
       ab.onclick=()=>{ const on=ab.classList.contains("active"); setField(40+et*9+5, on?0:1); };
-      pad.onclick=()=>{ const on=pad.classList.contains("active"); setField(40+et*9+6, on?0:1); };
       rumble.onclick=()=>{ const on=rumble.classList.contains("active"); setField(40+et*9+8, on?0:1); };
       rec.abSwap=ab; rec.pad=pad; rec.rumble=rumble;
       // Switch Pro-only settings get their own card on the Switch profile
@@ -2640,7 +2643,7 @@ function applyBlob(p){
       rec.back.forEach((sel,i)=>{ if(document.activeElement!==sel) sel.value=back[i]; });
       if(document.activeElement!==rec.qam) rec.qam.value=qam;
       rec.abSwap.textContent=ab?"on":"off"; rec.abSwap.classList.toggle("active",!!ab);
-      rec.pad.textContent=pad?"on":"off"; rec.pad.classList.toggle("active",!!pad);
+      if(document.activeElement!==rec.pad) rec.pad.value=pad;
       rec.rumble.textContent=rum?"on":"off"; rec.rumble.classList.toggle("active",!!rum);
       if(rec.audioHaptics){
         const audOn = (p.length>196)?(p[196]!==0):true;
@@ -3477,7 +3480,7 @@ async function importBackup(file){
       for(let et=0; et<typeN; et++){ const t=c.types[et];
         for(let k=0;k<4;k++) await sf(40+et*9+k, t.back[k]);
         await sf(40+et*9+4, t.qam); await sf(40+et*9+5, t.abSwap?1:0);
-        await sf(40+et*9+6, t.pad?1:0); await sf(40+et*9+7, t.led);
+        await sf(40+et*9+6, t.pad===2?2:(t.pad?1:0)); await sf(40+et*9+7, t.led);
         await sf(40+et*9+8, t.rumble!==undefined?t.rumble:1);
         if(Array.isArray(t.padStick)){ await sf(PAD_STICK_FIELD0+et*2, t.padStick[0]); await sf(PAD_STICK_FIELD0+et*2+1, t.padStick[1]); }
         if(typeRumble && t.rumbleScale!==undefined) await sf(108+et, t.rumbleScale/2); }

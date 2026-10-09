@@ -7,7 +7,7 @@
 static bool g_psPadClickDown[NSLOT] = {};
 static unsigned long g_psPadClickReplyMs[NSLOT] = {};
 
-void psPadClickEdge(uint8_t slot, uint32_t clicks)
+void padClickEdge(uint8_t slot, uint32_t clicks)
 {
 	bool pressed = clicks != 0;
 	if (slot >= NSLOT)

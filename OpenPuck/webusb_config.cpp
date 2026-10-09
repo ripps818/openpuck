@@ -1244,7 +1244,9 @@ void webusbPoll()
 								v ? 1 : 0;
 						else if (k == 6)
 							g_type[et].padHaptics =
-								v ? 1 : 0;
+								v <= PAD_HAPTICS_CLICK ?
+									v :
+									PAD_HAPTICS_ON;
 						else if (k == 7)
 							g_type[et].ledBright =
 								v > 100 ? 100 :

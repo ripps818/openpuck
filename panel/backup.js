@@ -153,7 +153,7 @@ export async function importBackup(file){
       for(let et=0; et<typeN; et++){ const t=c.types[et];
         for(let k=0;k<4;k++) await sf(40+et*9+k, t.back[k]);
         await sf(40+et*9+4, t.qam); await sf(40+et*9+5, t.abSwap?1:0);
-        await sf(40+et*9+6, t.pad?1:0); await sf(40+et*9+7, t.led);
+        await sf(40+et*9+6, t.pad===2?2:(t.pad?1:0)); await sf(40+et*9+7, t.led);
         await sf(40+et*9+8, t.rumble!==undefined?t.rumble:1);
         if(Array.isArray(t.padStick)){ await sf(PAD_STICK_FIELD0+et*2, t.padStick[0]); await sf(PAD_STICK_FIELD0+et*2+1, t.padStick[1]); }
         if(typeRumble && t.rumbleScale!==undefined) await sf(108+et, t.rumbleScale/2); }

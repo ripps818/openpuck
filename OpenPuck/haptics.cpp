@@ -6,6 +6,7 @@
 #include "usb_tx.h" // usbTxBoost/Unboost -- flood-rate CDC prints share the dcd DMA claim window
 #include "puck_hid.h" // puckNotePowerOff() -- hold a powered-off slot disconnected to Steam
 #include "steam_commands.h"
+#include "gamepad_util.h"
 
 #include "fault_diag.h" // faultDiagTrace() -- flight recorder
 // USBDevice.suspended() -> autonomous controller power-off on host sleep
@@ -1324,7 +1325,7 @@ void hapticTask()
 	//    puckLizardActive() here, which fought Steam's own writes.
 	//  - emulated modes (Xbox/Switch/DS): follow the per-type trackpad-haptics config g_padHaptics (default
 	//    ON; Switch defaults OFF). Holding id9=0 is how we turn the controller's autonomous trackpad
-	//    haptics OFF for a type that doesn't want them.
+	//    haptics OFF for a type that doesn't want them, or set to clicks only.
 	if (g_lizKeep) {
 		static unsigned long lastKeep[NSLOT] = { 0 };
 		static bool landedAuto[NSLOT] = { false };
@@ -1342,7 +1343,7 @@ void hapticTask()
 
 		// In puck mode Steam owns haptics; skip id9 steering.
 		if (!modeIsPuck(g_usbMode)) {
-			bool wantAuto = (g_padHaptics != 0);
+			bool wantAuto = g_padHaptics == PAD_HAPTICS_ON;
 			for (int s = 0; s < NSLOT; s++) {
 				if (!g_slot[s].used || !hapticLinkUp(s)) {
 					// re-land settings on the next (re)connect: a fresh controller defaults to
@@ -1384,6 +1385,14 @@ void hapticTask()
 			}
 		} // !modeIsPuck
 	}
+	// Clicks-only trackpad haptics: id9 is held at 0 above (no movement ticks), so the puck pulses each
+	// click itself. The PlayStation builders also feed padClickEdge; it fires once per rising edge.
+	if (g_padHaptics == PAD_HAPTICS_CLICK && !modeIsPuck(g_usbMode))
+		for (uint8_t s = 0; s < NSLOT; s++)
+			if (g_slot[s].used)
+				padClickEdge(s, shortcutHostButtons(
+							g_in[s].buttons) &
+							(TB_LPADC | TB_RPADC));
 	// Per-slot link-edge detect (backup for hapticOnReconnect in rf_link).
 	static bool wasHapticLinkUp[NSLOT] = { 0 };
 	for (int s = 0; s < NSLOT; s++) {
