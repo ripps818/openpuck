@@ -72,6 +72,10 @@ void hapticTestRumble();
 // that nothing will ever wait on a reply for. rfConnFlushRelay uses this.
 bool relayEnqueue(uint8_t rid, const uint8_t *payload, uint8_t plen,
 		  bool isHaptic, uint8_t slot = 0xFF, bool expectReply = false);
+// Same as relayEnqueue for one bond slot, but the message is sent next instead of last. For latency-sensitive
+// one-shots (trackpad click pulse) that would otherwise wait behind queued PCM stream frames. ISR-safe.
+bool relayEnqueueFront(uint8_t rid, const uint8_t *payload, uint8_t plen,
+		       bool isHaptic, uint8_t slot);
 // Drop everything queued for one bond slot. Called when a slot becomes BONDED (Steam's 0xA2 pairing write,
 // the panel's bond import): whatever was queued while the slot was empty was aimed at a controller that no
 // longer -- or never did -- live there, and an unbonded slot's ring is never flushed, so it would otherwise

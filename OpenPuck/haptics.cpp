@@ -172,6 +172,34 @@ bool relayEnqueue(uint8_t rid, const uint8_t *payload, uint8_t plen,
 	faultDiagTrace(FR_RELAY, (uint16_t)((slot << 8) | rid));
 	return true;
 }
+bool relayEnqueueFront(uint8_t rid, const uint8_t *payload, uint8_t plen,
+		       bool isHaptic, uint8_t slot)
+{
+	if (slot >= NSLOT)
+		return false;
+	uint8_t cap = isHaptic ? RELAY_MAXP : RELAY_CMD_MAXP;
+	if (plen > cap)
+		plen = cap;
+	uint32_t pm = __get_PRIMASK();
+	__disable_irq();
+	// Full ring: drop the newest entry to make room, so the entries already waiting keep their order.
+	if (rqNext(g_rqHead[slot]) == g_rqTail[slot]) {
+		g_rqHead[slot] =
+			(uint8_t)((g_rqHead[slot] + RELAY_QLEN - 1) % RELAY_QLEN);
+		g_relayDrops++;
+	}
+	uint8_t t = (uint8_t)((g_rqTail[slot] + RELAY_QLEN - 1) % RELAY_QLEN);
+	g_rq[slot][t].rid = rid;
+	g_rq[slot][t].len = plen;
+	g_rq[slot][t].expectReply = false;
+	g_rq[slot][t].isHaptic = isHaptic;
+	if (plen)
+		memcpy(g_rq[slot][t].data, payload, plen);
+	g_rqTail[slot] = t;
+	__set_PRIMASK(pm);
+	faultDiagTrace(FR_RELAY, (uint16_t)((slot << 8) | rid));
+	return true;
+}
 void relayClearSlot(uint8_t slot)
 {
 	if (slot >= NSLOT)
