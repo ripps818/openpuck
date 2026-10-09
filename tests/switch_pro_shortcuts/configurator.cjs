@@ -70,6 +70,19 @@ assert.equal(lim.length,2);for(const r of lim)assert(r.parentElement.classList.c
 const p27=p26.slice();p27[0]=27;p27[207]=80;p=p27;applyBlob(new Uint8Array(p27));
 for(const r of lim){assert(!r.parentElement.classList.contains('hide'));assert.equal(r.querySelector('select').value,'80');}
 const limSel=lim[1].querySelector('select');limSel.value='100';assert.deepEqual(await change(limSel),[2,115,100]);
+// Reset to defaults acts on the open profile only, through the same fields the controls write, and skips what the
+// connected firmware predates (here v27: no Create = touchpad click yet).
+const resetOf=async et=>{document.querySelector('#mapTabs .slot-tab[data-type="'+et+'"]').click();const n=writes.length;await $('#mapReset').onclick();return writes.slice(n).filter(x=>x[0]===2).map(x=>x.slice(1));};
+const base=et=>[5,6,7,8,et===1?18:0,et===1?1:0,et===1?0:1,0,1].map((v,k)=>[40+et*9+k,v]);
+assert.deepEqual(await resetOf(0),[...base(0),[80,0],[81,0],[108,100]]);
+assert.deepEqual(await resetOf(1),[...base(1),[82,0],[83,0],[109,100],[115,70],[38,0],[230,1],[231,50],[239,18]]);
+assert.deepEqual(await resetOf(2),[...base(2),[84,0],[85,0],[110,100]]);
+assert.deepEqual(await resetOf(3),[...base(3),[86,0],[87,0],[111,100],[115,70],[31,1],[88,3],[30,0],[114,0]]);
+{const p29=p.slice();p29[0]=29;p=p29;applyBlob(new Uint8Array(p29));const d=await resetOf(3);assert.deepEqual(d[d.length-1],[116,0]);p=p27;applyBlob(new Uint8Array(p27));}
+// without the 0xAE frame the Switch-only controls are not shown, so they are not written either
+applySw(null);assert(!(await resetOf(1)).some(x=>x[0]===230||x[0]===231||x[0]===239));await apply();
+// declining the confirmation writes nothing
+globalThis.confirm=()=>false;{const n=writes.length;await $('#mapReset').onclick();assert.equal(writes.length,n);}globalThis.confirm=()=>true;
 p=p.slice(0,204);p[0]=23;await apply();
 // Button mapping: one tab per profile plus the lizard map; header shows the mode and controllers.
 assert.deepEqual([...document.querySelectorAll('#mapTabs .slot-tab')].map(e=>e.firstChild.textContent),['Xbox','Switch','DS4','DS5','Lizard (desktop)']);
@@ -89,5 +102,5 @@ before=writes.length;await importBackup({text:async()=>JSON.stringify(old)});ass
 const bad=JSON.parse(JSON.stringify(backup));bad.config.hdPadScale=301;before=writes.length;await importBackup({text:async()=>JSON.stringify(bad)});assert.equal(writes.length,before);
 applySw(null);before=writes.length;globalThis.confirm=()=>{throw Error('must reject incompatible restore');};await importBackup({text:async()=>JSON.stringify(backup)});assert.equal(writes.length,before);
 assert(lastSet());
-console.log('Configurator mode shortcuts, Switch tab, per-mode strength and backup tests passed');cleanup();
+console.log('Configurator mode shortcuts, Switch tab, per-mode strength, profile reset and backup tests passed');cleanup();
 })().catch(e=>{cleanup();console.error(e);process.exitCode=1;});

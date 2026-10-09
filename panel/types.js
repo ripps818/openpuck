@@ -1,5 +1,5 @@
 import { S } from './state.js';
-import { $ } from './util.js';
+import { $, log } from './util.js';
 import { setField } from './protocol.js';
 import { MODE_NAMES, MODE_ORDER } from './status.js';
 import { openNav } from './nav.js';
@@ -62,6 +62,38 @@ export function setTab(et){
   $("#mapUsedBy").textContent="Used by "+MODE_NAMES.filter((n,m)=>etypeForMode(m)===et).join(", ")+".";
 }
 export function currentType(){ return curTab; }
+
+// Factory values for what one profile's tab shows: the firmware's g_type[] initialisers plus the globals behind
+// the DualSense and Switch Pro cards. [field, value, minimum protocol version]. The Trackpad mouse card is shared
+// with the Lizard profile, so it is left alone.
+function typeResetFields(et){
+  const key=TYPE_DEFS[et].key, sw=key==="SWITCH", ds5=key==="DS5", b=40+et*9;
+  const f=[[b,5,0],[b+1,6,0],[b+2,7,0],[b+3,8,0],[b+4,sw?18:0,0],[b+5,sw?1:0,0],[b+6,sw?0:1,0],[b+7,0,0],[b+8,1,0],
+    [PAD_STICK_FIELD0+et*2,0,20],[PAD_STICK_FIELD0+et*2+1,0,20],[108+et,100,25]];
+  if(sw||ds5) f.push([115,70,27]);
+  if(ds5) f.push([31,1,0],[88,3,22],[30,0,0],[114,0,26],[116,0,29]);
+  if(sw){
+    f.push([38,0,19]);
+    // the 0xAE frame is absent on firmware that predates these controls
+    if(S.lastSw) f.push([230,1,0],[231,50,0],[239,18,0]);
+  }
+  return f;
+}
+let mapResetBusy=false;
+export async function resetTypeDefaults(et){
+  if(!S.dev||mapResetBusy) return;
+  const name=TYPE_DEFS[et].name, key=TYPE_DEFS[et].key;
+  const shared=key==="XBOX" ? "\n\nThe Trackpad mouse settings are shared with the Lizard profile and stay as they are."
+    : (key==="SWITCH"||key==="DS5") ? "\n\nThe grip limiter is one setting shared by the Switch and DS5 profiles, so it resets for both." : "";
+  if(!confirm("Reset the "+name+" profile to its defaults?\n\nThe button mapping, trackpad, rumble and light settings for this profile go back to their factory values. This saves to the puck immediately; your current choices for this profile are lost."+shared)) return;
+  mapResetBusy=true; $("#mapReset").disabled=true;
+  try{
+    const ver=S.lastP?S.lastP[0]:0;
+    const fields=typeResetFields(et).filter(([,,min])=>ver>=min);
+    for(const [field,value] of fields) await setField(field,value);
+    log(name+" profile reset to defaults ("+fields.length+" settings)");
+  }finally{ mapResetBusy=false; $("#mapReset").disabled=false; }
+}
 // Strength is sent as percent/2 (field 22), so every value here must be even.
 export const RUMBLE_SCALES=Array.from({length:246},(_,i)=>10+i*2);
 const HD_PAD_SCALES=Array.from({length:251},(_,i)=>i*2);

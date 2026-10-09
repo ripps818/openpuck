@@ -68,6 +68,19 @@ assert(row(4).querySelector('button[data-rf-hop]').disabled);assert(!row(20).que
 assert(row(4).querySelector('button[data-rf-startup]').disabled);assert(!row(20).querySelector('button[data-rf-startup]').disabled);
 assert(/14 of 39 channels enabled/.test($('#rfChannelSetNote').textContent));
 
+// The description box follows the pointer and keyboard focus like the Mode page, including the per-row controls
+// that every refresh rebuilds, and falls back to the hint when the pointer leaves.
+const help=()=>$('#rfHelp').textContent,hint=/^Point at a control/;
+const over=(el,type='mouseover',rel=null)=>el.dispatchEvent(new w.MouseEvent(type,{bubbles:true,relatedTarget:rel}));
+assert(hint.test(help()),help());
+for(const [el,name] of [[$('#rfSurvey'),'Survey Ambient RF'],[$('#rfBuilder'),'Build RF Journal'],[$('#rfJournalClear'),'Clear RF Journal'],[$('#rfChannelSet'),'Recovery channels'],[$('#rfDisablePoor'),'Disable poor channels'],[$('#rfEnabledHead'),'On'],[boxes()[0],'On'],[row(20).querySelector('button[data-rf-hop]'),'Hop'],[row(20).querySelector('button[data-rf-startup]'),'Startup']]){
+  over(el);assert(help().startsWith(name+': '),name+' -> '+help());
+  over(el,'mouseout');assert(hint.test(help()),name+' left -> '+help());
+}
+over($('#rfSurvey'),'mouseout',$('#rfBuilder'));assert(help().startsWith('Build RF Journal: '),help());
+$('#rfSurvey').dispatchEvent(new w.FocusEvent('focusin',{bubbles:true}));assert(help().startsWith('Survey Ambient RF: '),help());
+$('#rfSurvey').dispatchEvent(new w.FocusEvent('focusout',{bubbles:true,relatedTarget:null}));assert(hint.test(help()),help());
+
 // Unticking a channel straight from Default writes the mask without it and switches the dropdown to Custom.
 const sel=$('#rfChannelSet');
 n=writes.length;const cb20=boxes()[(20-4)/2];cb20.checked=false;cb20.dispatchEvent(new w.Event('change'));await settle();
@@ -123,5 +136,5 @@ version=1;n=writes.length;await refreshRfStatus();
 assert.deepEqual(writes.slice(n),[[2,97,1]]);
 assert.equal(rows().length,DEFAULT.length);assert($('#rfChannelSetRow').classList.contains('hide'));assert($('#rfEnabledHead').classList.contains('hide'));
 assert(!row(20).querySelector('button[data-rf-hop]').disabled);assert(!poorShown());
-console.log('RF channel set panel: paging, presets, per-channel toggles, disable poor channels, builder progress and v1 fallback tests passed');cleanup();
+console.log('RF channel set panel: paging, presets, per-channel toggles, disable poor channels, help box, builder progress and v1 fallback tests passed');cleanup();
 })().catch(e=>{cleanup();console.error(e);process.exitCode=1;});

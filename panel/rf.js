@@ -3,6 +3,37 @@ import { $, log } from './util.js';
 import { readFrame, send, waitIdle } from './protocol.js';
 
 // ---- RF recovery / journal status ----
+// One entry per control carrying data-rf-help: [name, description]. The Hop / Startup / On controls are rebuilt
+// on every status refresh, so the box listens on the card rather than on them.
+const RF_HELP = {
+  channels: ["Recovery channels", "the channels automatic recovery, the Journal Builder, Hop and Startup may use. Default is the original 14-channel set; All even channels enables every even channel from 4 to 80. Nothing above Ch 80 (2480 MHz) is offered, so the puck stays inside the 2400–2483.5 MHz band that is licence-exempt in all major regions. Ticking or unticking a channel in the On column switches to Custom."],
+  poor: ["Disable poor channels", "lists the enabled channels the journal rates poor and unticks them once you confirm. The rating comes from the latest Journal Builder run, so passing interference can cause it, and a disabled channel is no longer retested: tick it again in the On column to bring it back."],
+  enable: ["On", "lets automatic recovery, the Journal Builder, Hop and Startup use this channel. Untick a channel the ambient survey shows is always busy. The last enabled channel can't be switched off."],
+  survey: ["Survey Ambient RF", "samples background RF interference across every channel in the table, enabled or not, and updates the Ambient measurements."],
+  builder: ["Build RF Journal", "tests every enabled channel for about a minute to build the RF journal ahead of time, then saves the winning channel as Startup. While a build runs the button cancels it: the puck finishes its current safe step, returns to the channel it started on and keeps the existing journal."],
+  clear: ["Clear RF Journal", "erases the saved journal and forgets every channel's learned quality (the Startup channel is kept). It runs once no controller has been connected for a second, so turn the controllers off for a couple of seconds after clicking."],
+  hop: ["Hop", "moves to this channel with the same neutral-gated coordinated channel migration that automatic RF recovery uses. Only enabled channels can be hopped to."],
+  startup: ["Startup", "saves this channel as the starting channel for subsequent boots. It doesn't mark the channel good, and automatic RF learning may replace it later."],
+};
+function showRfHelp(key){
+  const h = RF_HELP[key];
+  $("#rfHelp").innerHTML = h ? `<b>${h[0]}</b>: ${h[1]}` : "Point at a control to see what it does.";
+}
+export function initRfHelp(){
+  const card = $("#rfRecoveryCard");
+  const owner = el => (el && el.closest) ? el.closest("[data-rf-help]") : null;
+  const enter = e => { const el = owner(e.target); if(el) showRfHelp(el.dataset.rfHelp); };
+  const leave = e => { const el = owner(e.relatedTarget); showRfHelp(el ? el.dataset.rfHelp : ""); };
+  card.addEventListener("mouseover", enter);
+  card.addEventListener("focusin", enter);
+  card.addEventListener("mouseout", leave);
+  card.addEventListener("focusout", leave);
+  showRfHelp("");
+  // The box sticks under the top bar, whose height changes as its header items wrap
+  const bar = document.querySelector(".topbar");
+  if(bar && typeof ResizeObserver !== "undefined")
+    new ResizeObserver(() => document.documentElement.style.setProperty("--topbar-h", bar.offsetHeight + "px")).observe(bar);
+}
 let rfJournalClearPending=false;
 let rfHandoffPhase=0, rfBuilderSaving=false, rfBuilderStartPending=false, rfSurveyGeneration=0, rfSurveyWatchActive=false, rfSurveyLockActive=false, rfSurveyLockGeneration=0, rfSurveyRetry=0, rfSurveyFailure=0, rfSurveyFailureChannel=0;
 let rfHopRequestedCh=0, rfHopSawHandoff=false;
@@ -174,7 +205,7 @@ function applyRfStatus(p){
     if(rfEnabled){
       const enCell=document.createElement("td");
       const cb=document.createElement("input");
-      cb.type="checkbox"; cb.checked=on; cb.dataset.rfEnable=String(idx);
+      cb.type="checkbox"; cb.checked=on; cb.dataset.rfEnable=String(idx); cb.dataset.rfHelp="enable";
       cb.addEventListener("change",()=>toggleRfChannel(idx,cb));
       enCell.appendChild(cb);
       tr.prepend(enCell);
@@ -182,7 +213,7 @@ function applyRfStatus(p){
     const hopCell=document.createElement("td");
     const hopBtn=document.createElement("button");
     hopBtn.textContent=ch===current?"Active":"Hop";
-    hopBtn.dataset.rfHop="1";
+    hopBtn.dataset.rfHop="1"; hopBtn.dataset.rfHelp="hop";
     hopBtn.dataset.rfOff=on?"0":"1";
     hopBtn.disabled=!on||ch===current||rfSurveyLockActive||rfHopWorkflowBlocked()||S.rfHopPending||S.rfBuilderActive;
     hopBtn.style.padding="4px 8px";
@@ -192,7 +223,7 @@ function applyRfStatus(p){
     hopCell.appendChild(hopBtn);
     const startupBtn=document.createElement("button");
     startupBtn.textContent=ch===startup?"Startup ✓":"Startup";
-    startupBtn.dataset.rfStartup="1";
+    startupBtn.dataset.rfStartup="1"; startupBtn.dataset.rfHelp="startup";
     startupBtn.dataset.rfOff=on?"0":"1";
     startupBtn.dataset.rfStartupSelected=ch===startup?"1":"0";
     startupBtn.disabled=!on||rfSurveyLockActive||ch===startup;
