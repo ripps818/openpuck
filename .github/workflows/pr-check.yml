@@ -63,6 +63,9 @@ jobs:
       - name: Configurator test
         run: NODE_PATH="$RUNNER_TEMP/ui-tests/node_modules" node tests/switch_pro_shortcuts/configurator.cjs
 
+      - name: RF channel set panel test
+        run: NODE_PATH="$RUNNER_TEMP/ui-tests/node_modules" node tests/rf_channel_set/panel.cjs
+
   build:
     if: github.repository == 'ripps818/openpuck'
     runs-on: ubuntu-latest

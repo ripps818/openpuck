@@ -173,6 +173,10 @@ struct Cfg {
 	// Create button acts as touchpad click. 0xFF (older file) -> off. Not an ext byte: ext[0] holds the startup
 	// RF channel, and sharing it makes the puck boot on channel 1.
 	uint8_t createAsTouch;
+	// Enabled RF recovery channels, g_rfChannelMask little-endian. The 0xFF
+	// fill of an older file sets bit 39, past the last candidate, so it loads
+	// as the default set.
+	uint8_t rfChannelMask[5];
 }; // rsvd0 = ex-padSmooth, now the one-shot debug-CDC arm
 
 // Shortest cfg.bin we still accept: the layout as of CFG_MAGIC 0xCF, i.e. everything before the appended tail.
@@ -244,6 +248,8 @@ void saveCfg()
 		  g_shortcutFlags };
 	memcpy(c.ext, g_cfgExt, sizeof c.ext);
 	c.createAsTouch = g_createAsTouch;
+	for (int i = 0; i < (int)sizeof c.rfChannelMask; i++)
+		c.rfChannelMask[i] = (uint8_t)(g_rfChannelMask >> (8 * i));
 	for (int i = 0; i < ET_COUNT; i++) {
 		c.type[i] = g_type[i];
 		c.typeRumbleScale2[i] = (uint8_t)(g_typeRumbleScale[i] / 2);
@@ -408,6 +414,11 @@ void loadCfg()
 	}
 	if (c.createAsTouch <= 1)
 		g_createAsTouch = c.createAsTouch;
+	uint64_t rfMask = 0;
+	for (int i = 0; i < (int)sizeof c.rfChannelMask; i++)
+		rfMask |= (uint64_t)c.rfChannelMask[i] << (8 * i);
+	g_rfChannelMask = rfChannelMaskValid(rfMask) ? rfMask :
+						       RF_CHANNEL_MASK_DEFAULT;
 	if (c.swDpadHaptics <= 1)
 		g_swDpadHaptics = c.swDpadHaptics;
 	if (c.hdPadScale2 <= 250)

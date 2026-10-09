@@ -88,9 +88,8 @@ static unsigned long g_recoveryCooldownUntilMs = 0;
 static uint64_t g_recoveryFailedTargetMask = 0;
 static uint8_t g_recoveryLastFailedTarget = 0;
 
-#define RF_RECOVERY_CHANNEL_MIN 4u
-#define RF_RECOVERY_CHANNEL_MAX 80u
-#define RF_RECOVERY_CHANNEL_COUNT 39u
+uint64_t g_rfChannelMask = RF_CHANNEL_MASK_DEFAULT;
+
 #define RF_CHANNEL_EVIDENCE_WINDOWS 5u
 #define RF_CHANNEL_EVIDENCE_MIN_SUCCESS_PERMILLE 800u
 #define RF_CHANNEL_EVIDENCE_MAX_AGE_MS 120000u
@@ -109,38 +108,39 @@ static bool g_channelRecoveryDecidedThisResidence = false;
 
 // Progressive exploration: no full-band outage scan. One channel is learned
 // naturally whenever degradation already requires a migration.
-#define RF_CHANNEL_HISTORY_POOL_COUNT 14u
 #define RF_CHANNEL_HISTORY_GOOD_WINDOWS 5u
 #define RF_CHANNEL_HISTORY_GOOD_PERMILLE 800u
 #define RF_CHANNEL_HISTORY_BAD_PERMILLE 550u
 #define RF_CHANNEL_HISTORY_BAD_WINDOWS 3u
 #define RF_CHANNEL_HISTORY_PERSIST_MAX_WRITES_PER_BOOT 4u
 #define RF_CHANNEL_HISTORY_PERSIST_MIN_INTERVAL_MS 30000u
-#define RF_CHANNEL_JOURNAL_FORMAT 2u
+// 3 = one row per candidate channel. 2 = one row per member of the old fixed
+// pool, still read once so an upgrade keeps its learned history.
+#define RF_CHANNEL_JOURNAL_FORMAT 3u
+#define RF_CHANNEL_JOURNAL_V2_FORMAT 2u
+#define RF_CHANNEL_JOURNAL_V2_POOL_COUNT 14u
 #define RF_CHANNEL_JOURNAL_WORD_INTERVAL_US 8000u
 #define RF_CHANNEL_JOURNAL_LIVE_WORD_MAX_US 250u
 #define RF_CHANNEL_JOURNAL_TIMER3_TICKS_PER_US 16u
 #define RF_CHANNEL_JOURNAL_OFFLINE_GUARD_MS 1000u
 #define RF_CHANNEL_JOURNAL_MAGIC 0x51323735u
 #define RF_CHANNEL_JOURNAL_COMMIT 0x51323743u
-static const uint8_t g_recoveryChannelPool[RF_CHANNEL_HISTORY_POOL_COUNT] = {
+// v2 row order: frozen on flash, independent of the default channel set
+static const uint8_t g_channelJournalV2Pool[RF_CHANNEL_JOURNAL_V2_POOL_COUNT] = {
 	18, 20, 22, 34, 42, 46, 52, 56, 68, 70, 72, 74, 76, 80
 };
 
 // Persistent priors are loaded from the channel-history journal. Runtime evidence
 // always overrides these priors for operational target selection.
 static uint8_t
-	g_channelHistoryPersistentWorstPct[RF_CHANNEL_HISTORY_POOL_COUNT] = {};
+	g_channelHistoryPersistentWorstPct[RF_RECOVERY_CHANNEL_COUNT] = {};
+static uint8_t g_channelHistoryPersistentMeanPct[RF_RECOVERY_CHANNEL_COUNT] = {};
 static uint8_t
-	g_channelHistoryPersistentMeanPct[RF_CHANNEL_HISTORY_POOL_COUNT] = {};
+	g_channelHistoryPersistentConfidence[RF_RECOVERY_CHANNEL_COUNT] = {};
+static uint8_t g_channelHistoryPersistentTrials[RF_RECOVERY_CHANNEL_COUNT] = {};
+static uint8_t g_channelHistoryPersistentPenalty[RF_RECOVERY_CHANNEL_COUNT] = {};
 static uint8_t
-	g_channelHistoryPersistentConfidence[RF_CHANNEL_HISTORY_POOL_COUNT] = {};
-static uint8_t
-	g_channelHistoryPersistentTrials[RF_CHANNEL_HISTORY_POOL_COUNT] = {};
-static uint8_t
-	g_channelHistoryPersistentPenalty[RF_CHANNEL_HISTORY_POOL_COUNT] = {};
-static uint8_t
-	g_channelHistoryPersistentRecentOrder[RF_CHANNEL_HISTORY_POOL_COUNT] = {};
+	g_channelHistoryPersistentRecentOrder[RF_RECOVERY_CHANNEL_COUNT] = {};
 static uint8_t g_channelHistoryPersistentOrderCounter = 0;
 static bool g_channelHistoryPersistentLoaded = false;
 static bool g_channelHistoryPersistentDirty = false;
@@ -158,9 +158,9 @@ static unsigned long g_channelHistoryPersistentLastWriteMs = 0;
 #define RF_AMBIENT_SURVEY_POST_HOP_GUARD_MS 30000u
 #define RF_AMBIENT_SURVEY_REFRESH_MS 60000u
 #define RF_AMBIENT_SURVEY_SAMPLE_RETRY_MAX 5u
-static uint8_t g_ambientStableRssi[RF_CHANNEL_HISTORY_POOL_COUNT] = {};
-static uint8_t g_ambientWorkRssi[RF_CHANNEL_HISTORY_POOL_COUNT] = {};
-static uint8_t g_ambientWorkSamples[RF_CHANNEL_HISTORY_POOL_COUNT] = {};
+static uint8_t g_ambientStableRssi[RF_RECOVERY_CHANNEL_COUNT] = {};
+static uint8_t g_ambientWorkRssi[RF_RECOVERY_CHANNEL_COUNT] = {};
+static uint8_t g_ambientWorkSamples[RF_RECOVERY_CHANNEL_COUNT] = {};
 static bool g_ambientStableValid = false;
 static bool g_ambientSurveyRunning = false;
 static bool g_ambientSurveyPending = false;
@@ -205,6 +205,8 @@ static uint8_t g_rfJournalBuilderOriginChannel = 0;
 static uint8_t g_rfJournalBuilderIndex = 0;
 static uint8_t g_rfJournalBuilderChannel = 0;
 static uint8_t g_rfJournalBuilderBestChannel = 0;
+// Enabled set at Start; the run tests and promotes only these channels.
+static uint64_t g_rfJournalBuilderChannelMask = 0;
 static uint8_t g_rfJournalBuilderFailure = RF_JOURNAL_BUILDER_FAIL_NONE;
 static uint8_t g_rfJournalBuilderHopAttempts = 0;
 static uint16_t g_rfJournalBuilderSurveyGeneration = 0;
@@ -212,13 +214,11 @@ static unsigned long g_rfJournalBuilderPhaseMs = 0;
 static unsigned long g_rfJournalBuilderCohortStableMs = 0;
 static bool g_rfJournalBuilderCancelRequested = false;
 static bool g_rfJournalBuilderPromoted = false;
-static uint16_t
-	g_rfJournalBuilderWorstPermille[RF_CHANNEL_HISTORY_POOL_COUNT] = {};
+static uint16_t g_rfJournalBuilderWorstPermille[RF_RECOVERY_CHANNEL_COUNT] = {};
 static uint32_t
-	g_rfJournalBuilderMeanSumPermille[RF_CHANNEL_HISTORY_POOL_COUNT] = {};
-static uint8_t
-	g_rfJournalBuilderValidWindows[RF_CHANNEL_HISTORY_POOL_COUNT] = {};
-static uint8_t g_rfJournalBuilderBadWindows[RF_CHANNEL_HISTORY_POOL_COUNT] = {};
+	g_rfJournalBuilderMeanSumPermille[RF_RECOVERY_CHANNEL_COUNT] = {};
+static uint8_t g_rfJournalBuilderValidWindows[RF_RECOVERY_CHANNEL_COUNT] = {};
+static uint8_t g_rfJournalBuilderBadWindows[RF_RECOVERY_CHANNEL_COUNT] = {};
 
 // Builder keep-awake is crash-tolerant: read each frozen participant's live
 // inactivity timeout, then pulse that controller by one second and immediately
@@ -301,24 +301,53 @@ struct RfChannelJournalRecord {
 	uint8_t poolCount;
 	uint8_t orderCounter;
 	uint8_t reserved;
-	uint8_t worstPct[RF_CHANNEL_HISTORY_POOL_COUNT];
-	uint8_t meanPct[RF_CHANNEL_HISTORY_POOL_COUNT];
-	uint8_t confidence[RF_CHANNEL_HISTORY_POOL_COUNT];
-	uint8_t trials[RF_CHANNEL_HISTORY_POOL_COUNT];
-	uint8_t penalty[RF_CHANNEL_HISTORY_POOL_COUNT];
-	uint8_t recentOrder[RF_CHANNEL_HISTORY_POOL_COUNT];
+	uint8_t worstPct[RF_RECOVERY_CHANNEL_COUNT];
+	uint8_t meanPct[RF_RECOVERY_CHANNEL_COUNT];
+	uint8_t confidence[RF_RECOVERY_CHANNEL_COUNT];
+	uint8_t trials[RF_RECOVERY_CHANNEL_COUNT];
+	uint8_t penalty[RF_RECOVERY_CHANNEL_COUNT];
+	uint8_t recentOrder[RF_RECOVERY_CHANNEL_COUNT];
+	uint8_t reserved2[2];
 	uint32_t crc32;
 	uint32_t commit;
 };
-static_assert(sizeof(RfChannelJournalRecord) == 104u,
+// A power of two, so records tile each page exactly.
+static_assert(sizeof(RfChannelJournalRecord) == 256u,
 	      "channel journal record layout changed");
 #define RF_CHANNEL_JOURNAL_RECORDS_PER_PAGE \
 	(RF_CHANNEL_JOURNAL_PAGE_BYTES / sizeof(RfChannelJournalRecord))
 #define RF_CHANNEL_JOURNAL_TOTAL_RECORDS \
 	(RF_CHANNEL_JOURNAL_RECORDS_PER_PAGE * RF_CHANNEL_JOURNAL_PAGE_COUNT)
 
+// Format 2 tiles the pages at a 104-byte stride. Its slots and format-3 slots
+// can share a page without overlapping: each format only writes into a fully
+// erased slot of its own stride and rejects the other's records by format.
+struct RfChannelJournalRecordV2 {
+	uint32_t magic;
+	uint32_t sequence;
+	uint8_t format;
+	uint8_t poolCount;
+	uint8_t orderCounter;
+	uint8_t reserved;
+	uint8_t worstPct[RF_CHANNEL_JOURNAL_V2_POOL_COUNT];
+	uint8_t meanPct[RF_CHANNEL_JOURNAL_V2_POOL_COUNT];
+	uint8_t confidence[RF_CHANNEL_JOURNAL_V2_POOL_COUNT];
+	uint8_t trials[RF_CHANNEL_JOURNAL_V2_POOL_COUNT];
+	uint8_t penalty[RF_CHANNEL_JOURNAL_V2_POOL_COUNT];
+	uint8_t recentOrder[RF_CHANNEL_JOURNAL_V2_POOL_COUNT];
+	uint32_t crc32;
+	uint32_t commit;
+};
+static_assert(sizeof(RfChannelJournalRecordV2) == 104u,
+	      "v2 channel journal record layout changed");
+#define RF_CHANNEL_JOURNAL_V2_RECORDS_PER_PAGE \
+	(RF_CHANNEL_JOURNAL_PAGE_BYTES / sizeof(RfChannelJournalRecordV2))
+
 static uint32_t g_channelJournalSequence = 0;
 static int16_t g_channelJournalLatestSlot = -1;
+// Page holding the v2 record imported at boot (0xFF = none). Reclaim keeps it
+// until a format-3 record supersedes it, so an upgrade never loses history.
+static uint8_t g_channelJournalV2Page = 0xFFu;
 static int16_t g_channelJournalFreeSlot = -1;
 static RfChannelJournalRecord g_channelJournalJob = {};
 static int16_t g_channelJournalJobSlot = -1;
@@ -336,10 +365,8 @@ static bool g_channelJournalWindowOk = false;
 static bool g_channelJournalClearPending = false;
 
 // Current-boot evidence. A historical score is a prior, never current proof.
-static uint8_t
-	g_channelHistoryRuntimeGoodStreak[RF_CHANNEL_HISTORY_POOL_COUNT] = {};
-static uint8_t
-	g_channelHistoryRuntimeBadStreak[RF_CHANNEL_HISTORY_POOL_COUNT] = {};
+static uint8_t g_channelHistoryRuntimeGoodStreak[RF_RECOVERY_CHANNEL_COUNT] = {};
+static uint8_t g_channelHistoryRuntimeBadStreak[RF_RECOVERY_CHANNEL_COUNT] = {};
 static uint8_t g_channelHistoryResidenceChannel = 0xFFu;
 static bool g_channelHistoryResidenceOutcomeRecorded = false;
 
@@ -716,10 +743,40 @@ static int rfRecoveryChannelIndex(uint8_t ch)
 	return (int)((ch - RF_RECOVERY_CHANNEL_MIN) >> 1);
 }
 
+static uint8_t rfRecoveryChannelAt(uint8_t index)
+{
+	return (uint8_t)(RF_RECOVERY_CHANNEL_MIN + 2u * index);
+}
+
+static bool rfRecoveryIndexEnabled(uint64_t mask, uint8_t index)
+{
+	return index < RF_RECOVERY_CHANNEL_COUNT && ((mask >> index) & 1u);
+}
+
 static uint64_t rfRecoveryTargetBit(uint8_t ch)
 {
 	const int index = rfRecoveryChannelIndex(ch);
 	return index >= 0 ? ((uint64_t)1u << index) : 0;
+}
+
+bool rfRecoveryChannelEnabled(uint8_t channel)
+{
+	return (g_rfChannelMask & rfRecoveryTargetBit(channel)) != 0u;
+}
+
+bool rfChannelMaskValid(uint64_t mask)
+{
+	return mask != 0u && !(mask & ~RF_CHANNEL_MASK_ALL);
+}
+
+uint8_t rfRecoveryDefaultChannel()
+{
+	if (rfRecoveryChannelEnabled(18u))
+		return 18u;
+	for (uint8_t i = 0; i < RF_RECOVERY_CHANNEL_COUNT; i++)
+		if (rfRecoveryIndexEnabled(g_rfChannelMask, i))
+			return rfRecoveryChannelAt(i);
+	return 18u;
 }
 
 static bool rfRecoveryTargetFailed(uint8_t ch)
@@ -840,17 +897,16 @@ static void rfChannelRecoveryRequest(bool wouldPending)
 	rfHopTo(g_recoveryTargetChannel);
 }
 
-static int rfChannelHistoryPoolIndex(uint8_t ch)
+bool rfRecoverySetChannelMask(uint64_t mask)
 {
-	for (uint8_t i = 0; i < RF_CHANNEL_HISTORY_POOL_COUNT; i++)
-		if (g_recoveryChannelPool[i] == ch)
-			return (int)i;
-	return -1;
-}
-
-bool rfRecoveryChannelValid(uint8_t channel)
-{
-	return rfChannelHistoryPoolIndex(channel) >= 0;
+	if (!rfChannelMaskValid(mask) || rfJournalBuilderActive())
+		return false;
+	g_rfChannelMask = mask;
+	// A handoff already under way finishes; only a parked target is dropped.
+	if (g_rfChHandoffState == RF_CH_IDLE && !g_rfChGroupActive &&
+	    !rfRecoveryChannelEnabled(g_recoveryTargetChannel))
+		(void)rfChannelRecoverySetTarget(0u);
+	return true;
 }
 
 static uint8_t rfAmbientMeasureChannel(uint8_t ch, uint16_t sampleUs)
@@ -949,7 +1005,7 @@ static void rfAmbientSurveyBegin(unsigned long now)
 	memset(g_ambientWorkSamples, 0, sizeof g_ambientWorkSamples);
 	g_ambientSurveyIndex = 0;
 	g_ambientSurveyPass = 0;
-	g_ambientSurveyChannel = g_recoveryChannelPool[0];
+	g_ambientSurveyChannel = rfRecoveryChannelAt(0);
 	g_ambientSurveySampleRetry = 0;
 	g_ambientSurveyLastStepMs = now - RF_AMBIENT_SURVEY_STEP_MS;
 	g_ambientSurveyRunning = true;
@@ -958,7 +1014,7 @@ static void rfAmbientSurveyBegin(unsigned long now)
 
 static bool rfAmbientSurveyComplete()
 {
-	for (uint8_t i = 0; i < RF_CHANNEL_HISTORY_POOL_COUNT; i++)
+	for (uint8_t i = 0; i < RF_RECOVERY_CHANNEL_COUNT; i++)
 		if (!g_ambientWorkSamples[i])
 			return false;
 	return true;
@@ -1026,7 +1082,7 @@ static void rfAmbientSurveyTask()
 	g_ambientSurveyLastStepMs = now;
 
 	const uint8_t i = g_ambientSurveyIndex;
-	g_ambientSurveyChannel = g_recoveryChannelPool[i];
+	g_ambientSurveyChannel = rfRecoveryChannelAt(i);
 	const uint8_t sample = rfAmbientMeasureChannel(
 		g_ambientSurveyChannel, RF_AMBIENT_SURVEY_SAMPLE_US);
 	if (!sample) {
@@ -1052,7 +1108,7 @@ static void rfAmbientSurveyTask()
 		g_ambientWorkRssi[i] = sample;
 	if (g_ambientWorkSamples[i] != 0xFFu)
 		g_ambientWorkSamples[i]++;
-	if (++g_ambientSurveyIndex >= RF_CHANNEL_HISTORY_POOL_COUNT) {
+	if (++g_ambientSurveyIndex >= RF_RECOVERY_CHANNEL_COUNT) {
 		g_ambientSurveyIndex = 0;
 		g_ambientSurveyPass++;
 	}
@@ -1061,9 +1117,9 @@ static void rfAmbientSurveyTask()
 
 	if (!rfAmbientSurveyComplete()) {
 		uint8_t failedChannel = 0;
-		for (uint8_t j = 0; j < RF_CHANNEL_HISTORY_POOL_COUNT; j++)
+		for (uint8_t j = 0; j < RF_RECOVERY_CHANNEL_COUNT; j++)
 			if (!g_ambientWorkSamples[j]) {
-				failedChannel = g_recoveryChannelPool[j];
+				failedChannel = rfRecoveryChannelAt(j);
 				break;
 			}
 		const bool reportFailure = g_ambientSurveyManual;
@@ -1093,7 +1149,7 @@ static void rfAmbientSurveyTask()
 
 static uint8_t rfChannelHistoryDesignation(uint8_t index)
 {
-	if (index >= RF_CHANNEL_HISTORY_POOL_COUNT ||
+	if (index >= RF_RECOVERY_CHANNEL_COUNT ||
 	    !g_channelHistoryPersistentTrials[index])
 		return RF_CHANNEL_UNEXPLORED;
 	if (g_channelHistoryPersistentWorstPct[index] >= 80u &&
@@ -1107,21 +1163,26 @@ static uint8_t rfChannelHistoryDesignation(uint8_t index)
 	return RF_CHANNEL_MIXED;
 }
 
+static bool rfRecoveryIndexSelectable(uint8_t index, uint8_t current)
+{
+	const uint8_t ch = rfRecoveryChannelAt(index);
+	return rfRecoveryIndexEnabled(g_rfChannelMask, index) &&
+	       ch != current && !rfRecoveryTargetFailed(ch);
+}
+
 static uint8_t rfChannelHistorySelectGoodPrior(uint8_t current)
 {
 	uint8_t best = 0;
-	for (uint8_t i = 0; i < RF_CHANNEL_HISTORY_POOL_COUNT; i++) {
-		const uint8_t ch = g_recoveryChannelPool[i];
-		if (rfRecoveryTargetFailed(ch))
-			continue;
-		if (ch == current ||
+	for (uint8_t i = 0; i < RF_RECOVERY_CHANNEL_COUNT; i++) {
+		const uint8_t ch = rfRecoveryChannelAt(i);
+		if (!rfRecoveryIndexSelectable(i, current) ||
 		    rfChannelHistoryDesignation(i) != RF_CHANNEL_GOOD)
 			continue;
 		if (!best) {
 			best = ch;
 			continue;
 		}
-		const int bi = rfChannelHistoryPoolIndex(best);
+		const int bi = rfRecoveryChannelIndex(best);
 		if (g_channelHistoryPersistentWorstPct[i] >
 			    g_channelHistoryPersistentWorstPct[bi] ||
 		    (g_channelHistoryPersistentWorstPct[i] ==
@@ -1142,11 +1203,10 @@ static uint8_t rfChannelHistorySelectGoodPrior(uint8_t current)
 static uint8_t rfChannelHistorySelectUnexplored(uint8_t current)
 {
 	int best = -1;
-	for (uint8_t step = 0; step < RF_CHANNEL_HISTORY_POOL_COUNT; step++) {
+	for (uint8_t step = 0; step < RF_RECOVERY_CHANNEL_COUNT; step++) {
 		const uint8_t i = (uint8_t)((g_hopIdx + step) %
-					    RF_CHANNEL_HISTORY_POOL_COUNT);
-		if (g_recoveryChannelPool[i] == current ||
-		    rfRecoveryTargetFailed(g_recoveryChannelPool[i]) ||
+					    RF_RECOVERY_CHANNEL_COUNT);
+		if (!rfRecoveryIndexSelectable(i, current) ||
 		    g_channelHistoryPersistentTrials[i])
 			continue;
 		if (best < 0 ||
@@ -1157,8 +1217,8 @@ static uint8_t rfChannelHistorySelectUnexplored(uint8_t current)
 	}
 	if (best < 0)
 		return 0;
-	g_hopIdx = (uint8_t)((best + 1) % RF_CHANNEL_HISTORY_POOL_COUNT);
-	return g_recoveryChannelPool[best];
+	g_hopIdx = (uint8_t)((best + 1) % RF_RECOVERY_CHANNEL_COUNT);
+	return rfRecoveryChannelAt((uint8_t)best);
 }
 
 static uint8_t
@@ -1166,9 +1226,8 @@ rfChannelHistorySelectBestRemaining(uint8_t current,
 				    uint16_t currentWorstPermille)
 {
 	int best = -1;
-	for (uint8_t i = 0; i < RF_CHANNEL_HISTORY_POOL_COUNT; i++) {
-		if (g_recoveryChannelPool[i] == current ||
-		    rfRecoveryTargetFailed(g_recoveryChannelPool[i]) ||
+	for (uint8_t i = 0; i < RF_RECOVERY_CHANNEL_COUNT; i++) {
+		if (!rfRecoveryIndexSelectable(i, current) ||
 		    !g_channelHistoryPersistentTrials[i])
 			continue;
 		const uint16_t priorWorst =
@@ -1186,7 +1245,7 @@ rfChannelHistorySelectBestRemaining(uint8_t current,
 			     g_channelHistoryPersistentPenalty[best]))
 			best = i;
 	}
-	return best < 0 ? 0 : g_recoveryChannelPool[best];
+	return best < 0 ? 0 : rfRecoveryChannelAt((uint8_t)best);
 }
 
 static uint8_t rfRecoveryHandoffPhase()
@@ -1219,7 +1278,7 @@ void rfRecoveryStatusSnapshot(RfRecoveryStatus *status)
 	if (!status)
 		return;
 	memset(status, 0, sizeof *status);
-	status->version = 1;
+	status->version = 2;
 	if (g_ambientSurveyRunning)
 		status->flags |= 0x01u;
 	if (g_ambientSurveyPending)
@@ -1241,9 +1300,13 @@ void rfRecoveryStatusSnapshot(RfRecoveryStatus *status)
 		(g_rfChHandoffState != RF_CH_IDLE || g_rfChGroupActive) ?
 			g_rfChHandoffTarget :
 			g_recoveryTargetChannel;
+	// What the next boot uses: a saved channel since disabled is skipped.
 	status->startupChannel =
-		g_rfStartupLastGoodChannel ? g_rfStartupLastGoodChannel : 18u;
-	status->channelCount = RF_CHANNEL_HISTORY_POOL_COUNT;
+		rfRecoveryChannelEnabled(g_rfStartupLastGoodChannel) ?
+			g_rfStartupLastGoodChannel :
+			rfRecoveryDefaultChannel();
+	status->channelCount = RF_RECOVERY_CHANNEL_COUNT;
+	status->channelMask = g_rfChannelMask;
 	status->journalWrites = g_channelHistoryPersistentWrites;
 	status->ambientGeneration = g_ambientSurveyGeneration;
 	status->ambientSurveyChannel =
@@ -1258,7 +1321,7 @@ void rfRecoveryStatusSnapshot(RfRecoveryStatus *status)
 	status->journalBuilderIndex = g_rfJournalBuilderIndex;
 	status->journalBuilderChannel = g_rfJournalBuilderChannel;
 	status->journalBuilderProgress =
-		g_rfJournalBuilderIndex < RF_CHANNEL_HISTORY_POOL_COUNT ?
+		g_rfJournalBuilderIndex < RF_RECOVERY_CHANNEL_COUNT ?
 			g_rfJournalBuilderValidWindows[g_rfJournalBuilderIndex] :
 			0u;
 	status->journalBuilderParticipantMask = g_rfJournalBuilderParticipants;
@@ -1278,9 +1341,9 @@ void rfRecoveryStatusSnapshot(RfRecoveryStatus *status)
 	status->ambientSurveyRetry = g_ambientSurveySampleRetry;
 	status->ambientSurveyFailure = g_ambientSurveyFailure;
 	status->ambientSurveyFailureChannel = g_ambientSurveyFailureChannel;
-	for (uint8_t i = 0; i < RF_CHANNEL_HISTORY_POOL_COUNT; i++) {
+	for (uint8_t i = 0; i < RF_RECOVERY_CHANNEL_COUNT; i++) {
 		RfChannelStatusEntry &entry = status->channel[i];
-		entry.channel = g_recoveryChannelPool[i];
+		entry.channel = rfRecoveryChannelAt(i);
 		entry.ambientRssi =
 			g_ambientStableValid ? g_ambientStableRssi[i] : 0u;
 		entry.designation = rfChannelHistoryDesignation(i);
@@ -1345,11 +1408,72 @@ static bool rfChannelJournalReadValid(uint16_t slot,
 	if (out->magic != RF_CHANNEL_JOURNAL_MAGIC ||
 	    out->commit != RF_CHANNEL_JOURNAL_COMMIT ||
 	    out->format != RF_CHANNEL_JOURNAL_FORMAT ||
-	    out->poolCount != RF_CHANNEL_HISTORY_POOL_COUNT)
+	    out->poolCount != RF_RECOVERY_CHANNEL_COUNT)
 		return false;
 	return out->crc32 ==
 	       rfChannelJournalCrc32(out,
 				     offsetof(RfChannelJournalRecord, crc32));
+}
+
+static bool rfChannelJournalReadValidV2(uint16_t slot,
+					RfChannelJournalRecordV2 *out)
+{
+	const uint16_t page = slot / RF_CHANNEL_JOURNAL_V2_RECORDS_PER_PAGE;
+	const uint16_t inPage = slot % RF_CHANNEL_JOURNAL_V2_RECORDS_PER_PAGE;
+	memcpy(out,
+	       (const void *)(rfChannelJournalBase() +
+			      (uintptr_t)page * RF_CHANNEL_JOURNAL_PAGE_BYTES +
+			      (uintptr_t)inPage * sizeof *out),
+	       sizeof *out);
+	if (out->magic != RF_CHANNEL_JOURNAL_MAGIC ||
+	    out->commit != RF_CHANNEL_JOURNAL_COMMIT ||
+	    out->format != RF_CHANNEL_JOURNAL_V2_FORMAT ||
+	    out->poolCount != RF_CHANNEL_JOURNAL_V2_POOL_COUNT)
+		return false;
+	return out->crc32 ==
+	       rfChannelJournalCrc32(out,
+				     offsetof(RfChannelJournalRecordV2, crc32));
+}
+
+// Seed the per-candidate history from the newest v2 record and mark it dirty,
+// so the next checkpoint rewrites it as format 3.
+static void rfChannelJournalImportV2()
+{
+	static RfChannelJournalRecordV2 rec, latest;
+	bool haveLatest = false;
+	uint16_t latestSlot = 0;
+	for (uint16_t slot = 0; slot < RF_CHANNEL_JOURNAL_V2_RECORDS_PER_PAGE *
+					       RF_CHANNEL_JOURNAL_PAGE_COUNT;
+	     slot++) {
+		if (!rfChannelJournalReadValidV2(slot, &rec))
+			continue;
+		if (!haveLatest || rfChannelJournalSequenceNewer(
+					   rec.sequence, latest.sequence)) {
+			latest = rec;
+			latestSlot = slot;
+			haveLatest = true;
+		}
+	}
+	if (!haveLatest)
+		return;
+	for (uint8_t i = 0; i < RF_CHANNEL_JOURNAL_V2_POOL_COUNT; i++) {
+		const int idx =
+			rfRecoveryChannelIndex(g_channelJournalV2Pool[i]);
+		g_channelHistoryPersistentWorstPct[idx] = latest.worstPct[i];
+		g_channelHistoryPersistentMeanPct[idx] = latest.meanPct[i];
+		g_channelHistoryPersistentConfidence[idx] =
+			latest.confidence[i];
+		g_channelHistoryPersistentTrials[idx] = latest.trials[i];
+		g_channelHistoryPersistentPenalty[idx] = latest.penalty[i];
+		g_channelHistoryPersistentRecentOrder[idx] =
+			latest.recentOrder[i];
+	}
+	g_channelHistoryPersistentOrderCounter = latest.orderCounter;
+	g_channelJournalSequence = latest.sequence;
+	g_channelJournalV2Page =
+		(uint8_t)(latestSlot / RF_CHANNEL_JOURNAL_V2_RECORDS_PER_PAGE);
+	g_channelHistoryPersistentDirty = true;
+	g_channelHistoryPersistentGeneration++;
 }
 
 static void rfChannelJournalCheckSoftDevice()
@@ -1478,11 +1602,11 @@ static void rfChannelJournalLoad()
 		return;
 	}
 	g_channelJournalWindowOk = true;
-	RfChannelJournalRecord latest = {};
+	// static: two 256-byte records are too much for the loop task's stack
+	static RfChannelJournalRecord rec, latest;
 	bool haveLatest = false;
 	for (uint16_t slot = 0; slot < RF_CHANNEL_JOURNAL_TOTAL_RECORDS;
 	     slot++) {
-		RfChannelJournalRecord rec = {};
 		if (!rfChannelJournalReadValid(slot, &rec))
 			continue;
 		if (!haveLatest || rfChannelJournalSequenceNewer(
@@ -1508,6 +1632,8 @@ static void rfChannelJournalLoad()
 		       sizeof g_channelHistoryPersistentRecentOrder);
 		g_channelHistoryPersistentOrderCounter = latest.orderCounter;
 		g_channelJournalSequence = latest.sequence;
+	} else {
+		rfChannelJournalImportV2();
 	}
 	g_channelJournalFreeSlot = rfChannelJournalFindFreeSlot();
 }
@@ -1518,7 +1644,7 @@ static void rfChannelJournalBuildRecord(RfChannelJournalRecord *rec)
 	rec->magic = RF_CHANNEL_JOURNAL_MAGIC;
 	rec->sequence = g_channelJournalSequence + 1u;
 	rec->format = RF_CHANNEL_JOURNAL_FORMAT;
-	rec->poolCount = RF_CHANNEL_HISTORY_POOL_COUNT;
+	rec->poolCount = RF_RECOVERY_CHANNEL_COUNT;
 	rec->orderCounter = g_channelHistoryPersistentOrderCounter;
 	memcpy(rec->worstPct, g_channelHistoryPersistentWorstPct,
 	       sizeof rec->worstPct);
@@ -1552,7 +1678,7 @@ static bool rfChannelJournalStartWrite()
 
 static void rfChannelJournalFinishWrite(uint32_t now)
 {
-	RfChannelJournalRecord verify = {};
+	static RfChannelJournalRecord verify;
 	const bool valid =
 		rfChannelJournalReadValid((uint16_t)g_channelJournalJobSlot,
 					  &verify) &&
@@ -1564,6 +1690,7 @@ static void rfChannelJournalFinishWrite(uint32_t now)
 	}
 	g_channelJournalSequence = verify.sequence;
 	g_channelJournalLatestSlot = g_channelJournalJobSlot;
+	g_channelJournalV2Page = 0xFFu;
 	g_channelHistoryPersistentWrites++;
 	g_channelHistoryPersistentLastWriteMs = now;
 	if (g_channelHistoryPersistentGeneration ==
@@ -1662,7 +1789,7 @@ static bool rfChannelJournalMaybeCollect(uint32_t now, uint8_t liveMask)
 	if ((uint32_t)(now - g_channelJournalNoLiveSinceMs) <
 	    RF_CHANNEL_JOURNAL_OFFLINE_GUARD_MS)
 		return false;
-	uint8_t keepPage = 0xFFu;
+	uint8_t keepPage = g_channelJournalV2Page;
 	if (g_channelJournalLatestSlot >= 0)
 		keepPage = (uint8_t)g_channelJournalLatestSlot /
 			   RF_CHANNEL_JOURNAL_RECORDS_PER_PAGE;
@@ -1705,6 +1832,7 @@ static void rfChannelJournalMaybeClear(uint32_t now, uint8_t liveMask)
 	g_channelHistoryPersistentGeneration++;
 	g_channelJournalSequence = 0;
 	g_channelJournalLatestSlot = -1;
+	g_channelJournalV2Page = 0xFFu;
 	g_channelJournalFreeSlot = rfChannelJournalFindFreeSlot();
 	g_channelJournalClearPending = false;
 }
@@ -1720,7 +1848,7 @@ static void rfChannelHistorySyncResidence()
 		return;
 	g_channelHistoryResidenceChannel = g_sessCh;
 	g_channelHistoryResidenceOutcomeRecorded = false;
-	const int idx = rfChannelHistoryPoolIndex(g_sessCh);
+	const int idx = rfRecoveryChannelIndex(g_sessCh);
 	if (idx >= 0) {
 		// Good/bad streaks are consecutive-residence evidence. Never carry a
 		// partial streak across a channel excursion and count it as continuous.
@@ -1738,7 +1866,7 @@ static void rfChannelHistoryRecordPersistentOutcome(uint8_t ch,
 	rfChannelHistorySyncResidence();
 	if (g_channelHistoryResidenceOutcomeRecorded)
 		return;
-	const int idx = rfChannelHistoryPoolIndex(ch);
+	const int idx = rfRecoveryChannelIndex(ch);
 	if (idx < 0)
 		return;
 	g_channelHistoryResidenceOutcomeRecorded = true;
@@ -1800,7 +1928,7 @@ static void rfChannelHistoryObserve(uint8_t ch, uint16_t worstPermille,
 {
 	rfChannelHistoryEnsureLoaded();
 	rfChannelHistorySyncResidence();
-	const int idx = rfChannelHistoryPoolIndex(ch);
+	const int idx = rfRecoveryChannelIndex(ch);
 	if (idx < 0 || !valid)
 		return;
 	if (worstPermille >= RF_CHANNEL_HISTORY_GOOD_PERMILLE) {
@@ -1875,7 +2003,7 @@ static void rfChannelHistoryMaybeCheckpoint(uint32_t now)
 
 static void rfJournalBuilderResetChannel(uint8_t index)
 {
-	if (index >= RF_CHANNEL_HISTORY_POOL_COUNT)
+	if (index >= RF_RECOVERY_CHANNEL_COUNT)
 		return;
 	g_rfJournalBuilderWorstPermille[index] = 1000u;
 	g_rfJournalBuilderMeanSumPermille[index] = 0;
@@ -1885,7 +2013,7 @@ static void rfJournalBuilderResetChannel(uint8_t index)
 
 static void rfJournalBuilderResetAll()
 {
-	for (uint8_t i = 0; i < RF_CHANNEL_HISTORY_POOL_COUNT; i++)
+	for (uint8_t i = 0; i < RF_RECOVERY_CHANNEL_COUNT; i++)
 		rfJournalBuilderResetChannel(i);
 	g_rfJournalBuilderIndex = 0;
 	g_rfJournalBuilderChannel = 0;
@@ -1904,6 +2032,18 @@ static void rfJournalBuilderResetAll()
 	g_rfJournalBuilderSurveyStarted = false;
 }
 
+// Move to the first channel at or after index that this run tests.
+static void rfJournalBuilderSeek(uint8_t index)
+{
+	while (index < RF_RECOVERY_CHANNEL_COUNT &&
+	       !rfRecoveryIndexEnabled(g_rfJournalBuilderChannelMask, index))
+		index++;
+	g_rfJournalBuilderIndex = index;
+	g_rfJournalBuilderChannel = index < RF_RECOVERY_CHANNEL_COUNT ?
+					    rfRecoveryChannelAt(index) :
+					    0u;
+}
+
 static void rfJournalBuilderSetPhase(uint8_t phase, unsigned long now)
 {
 	g_rfJournalBuilderPhase = phase;
@@ -1914,7 +2054,7 @@ static void rfJournalBuilderObserveWindow(uint8_t ch, uint16_t worstPermille,
 					  uint16_t meanPermille, bool valid)
 {
 	if (g_rfJournalBuilderPhase != RF_JOURNAL_BUILDER_MEASURING ||
-	    g_rfJournalBuilderIndex >= RF_CHANNEL_HISTORY_POOL_COUNT ||
+	    g_rfJournalBuilderIndex >= RF_RECOVERY_CHANNEL_COUNT ||
 	    ch != g_rfJournalBuilderChannel || !valid)
 		return;
 	const uint8_t i = g_rfJournalBuilderIndex;
@@ -1931,7 +2071,7 @@ static void rfJournalBuilderObserveWindow(uint8_t ch, uint16_t worstPermille,
 
 static void rfJournalBuilderMarkHopFailure(uint8_t index)
 {
-	if (index >= RF_CHANNEL_HISTORY_POOL_COUNT)
+	if (index >= RF_RECOVERY_CHANNEL_COUNT)
 		return;
 	g_rfJournalBuilderWorstPermille[index] = 0;
 	g_rfJournalBuilderMeanSumPermille[index] = 0;
@@ -1942,7 +2082,7 @@ static void rfJournalBuilderMarkHopFailure(uint8_t index)
 static uint8_t rfJournalBuilderSelectBest()
 {
 	int best = -1;
-	for (uint8_t i = 0; i < RF_CHANNEL_HISTORY_POOL_COUNT; i++) {
+	for (uint8_t i = 0; i < RF_RECOVERY_CHANNEL_COUNT; i++) {
 		if (g_rfJournalBuilderValidWindows[i] <
 		    RF_JOURNAL_BUILDER_WINDOWS)
 			continue;
@@ -1971,7 +2111,7 @@ static uint8_t rfJournalBuilderSelectBest()
 		     g_ambientStableRssi[i] > g_ambientStableRssi[best]))
 			best = i;
 	}
-	return best < 0 ? 0u : g_recoveryChannelPool[best];
+	return best < 0 ? 0u : rfRecoveryChannelAt((uint8_t)best);
 }
 
 static bool rfJournalBuilderPromoteAndStartWrite(unsigned long now)
@@ -1982,7 +2122,9 @@ static bool rfJournalBuilderPromoteAndStartWrite(unsigned long now)
 		return false;
 
 	uint8_t order = g_channelHistoryPersistentOrderCounter;
-	for (uint8_t i = 0; i < RF_CHANNEL_HISTORY_POOL_COUNT; i++) {
+	for (uint8_t i = 0; i < RF_RECOVERY_CHANNEL_COUNT; i++) {
+		if (!rfRecoveryIndexEnabled(g_rfJournalBuilderChannelMask, i))
+			continue;
 		const uint8_t windows = g_rfJournalBuilderValidWindows[i];
 		if (!windows)
 			return false;
@@ -2017,7 +2159,7 @@ static bool rfJournalBuilderPromoteAndStartWrite(unsigned long now)
 
 static bool rfChannelRetuneNoControllers(uint8_t channel, unsigned long now)
 {
-	if (rfChannelHistoryPoolIndex(channel) < 0 || rfChannelLiveMask(now) ||
+	if (rfRecoveryChannelIndex(channel) < 0 || rfChannelLiveMask(now) ||
 	    g_rfChHandoffState != RF_CH_IDLE || g_rfChGroupActive)
 		return false;
 	if (channel == g_sessCh)
@@ -2044,7 +2186,7 @@ static bool rfChannelRetuneNoControllers(uint8_t channel, unsigned long now)
 
 static bool rfJournalBuilderImmediateHop(uint8_t channel)
 {
-	if (rfChannelHistoryPoolIndex(channel) < 0)
+	if (rfRecoveryChannelIndex(channel) < 0)
 		return false;
 	if (channel == g_sessCh || g_rfChHandoffState != RF_CH_IDLE ||
 	    g_rfChGroupActive)
@@ -2209,6 +2351,7 @@ bool rfRecoveryRequestJournalBuilder()
 	g_ambientSurveyFailure = RF_AMBIENT_SURVEY_FAIL_NONE;
 	g_ambientSurveyFailureChannel = 0;
 	rfJournalBuilderResetAll();
+	g_rfJournalBuilderChannelMask = g_rfChannelMask;
 	g_rfJournalBuilderParticipants = liveMask;
 	g_rfJournalBuilderOriginChannel = g_sessCh;
 	g_rfJournalBuilderSurveyGeneration = g_ambientSurveyGeneration;
@@ -2278,8 +2421,7 @@ static void rfJournalBuilderTask()
 						RF_JOURNAL_BUILDER_SURVEY ?
 					RF_JOURNAL_BUILDER_SURVEY :
 					RF_JOURNAL_BUILDER_HOPPING;
-			if (g_rfJournalBuilderIndex <
-			    RF_CHANNEL_HISTORY_POOL_COUNT)
+			if (g_rfJournalBuilderIndex < RF_RECOVERY_CHANNEL_COUNT)
 				rfJournalBuilderResetChannel(
 					g_rfJournalBuilderIndex);
 			rfJournalBuilderSetPhase(RF_JOURNAL_BUILDER_PAUSED,
@@ -2343,8 +2485,7 @@ static void rfJournalBuilderTask()
 			    g_rfJournalBuilderSurveyGeneration &&
 		    !g_ambientSurveyRunning && !g_ambientSurveyPending &&
 		    !g_ambientSurveyManual) {
-			g_rfJournalBuilderIndex = 0;
-			g_rfJournalBuilderChannel = g_recoveryChannelPool[0];
+			rfJournalBuilderSeek(0u);
 			g_rfJournalBuilderHopAttempts = 0;
 			rfJournalBuilderSetPhase(RF_JOURNAL_BUILDER_HOPPING,
 						 now);
@@ -2356,13 +2497,13 @@ static void rfJournalBuilderTask()
 		return;
 
 	case RF_JOURNAL_BUILDER_HOPPING: {
-		if (g_rfJournalBuilderIndex >= RF_CHANNEL_HISTORY_POOL_COUNT) {
+		if (g_rfJournalBuilderIndex >= RF_RECOVERY_CHANNEL_COUNT) {
 			rfJournalBuilderSetPhase(RF_JOURNAL_BUILDER_SELECTING,
 						 now);
 			return;
 		}
 		const uint8_t target =
-			g_recoveryChannelPool[g_rfJournalBuilderIndex];
+			rfRecoveryChannelAt(g_rfJournalBuilderIndex);
 		g_rfJournalBuilderChannel = target;
 		if (g_rfChHandoffState != RF_CH_IDLE || g_rfChGroupActive)
 			return;
@@ -2411,17 +2552,13 @@ static void rfJournalBuilderTask()
 		if ((uint32_t)(now - g_rfJournalBuilderPhaseMs) <
 		    RF_JOURNAL_BUILDER_BETWEEN_MS)
 			return;
-		g_rfJournalBuilderIndex++;
+		rfJournalBuilderSeek((uint8_t)(g_rfJournalBuilderIndex + 1u));
 		g_rfJournalBuilderHopAttempts = 0;
-		if (g_rfJournalBuilderIndex >= RF_CHANNEL_HISTORY_POOL_COUNT)
-			rfJournalBuilderSetPhase(RF_JOURNAL_BUILDER_SELECTING,
-						 now);
-		else {
-			g_rfJournalBuilderChannel =
-				g_recoveryChannelPool[g_rfJournalBuilderIndex];
-			rfJournalBuilderSetPhase(RF_JOURNAL_BUILDER_HOPPING,
-						 now);
-		}
+		rfJournalBuilderSetPhase(
+			g_rfJournalBuilderIndex >= RF_RECOVERY_CHANNEL_COUNT ?
+				RF_JOURNAL_BUILDER_SELECTING :
+				RF_JOURNAL_BUILDER_HOPPING,
+			now);
 		return;
 
 	case RF_JOURNAL_BUILDER_SELECTING:
@@ -2595,7 +2732,8 @@ static uint8_t rfCohortSelectRecoveryChannel(uint8_t liveMask,
 	uint32_t bestWorstAge = 0xFFFFFFFFu;
 	for (uint8_t ch = RF_RECOVERY_CHANNEL_MIN;
 	     ch <= RF_RECOVERY_CHANNEL_MAX; ch += 2u) {
-		if (ch == g_sessCh || rfRecoveryTargetFailed(ch))
+		if (ch == g_sessCh || rfRecoveryTargetFailed(ch) ||
+		    !rfRecoveryChannelEnabled(ch))
 			continue;
 		const int idx = rfRecoveryChannelIndex(ch);
 		if (idx < 0)
@@ -3375,7 +3513,7 @@ void rfHopTo(uint8_t newCh)
 
 bool rfRecoveryRequestHop(uint8_t channel)
 {
-	if (rfJournalBuilderActive() || rfChannelHistoryPoolIndex(channel) < 0)
+	if (rfJournalBuilderActive() || !rfRecoveryChannelEnabled(channel))
 		return false;
 	if (channel == g_sessCh)
 		return true;

@@ -475,10 +475,11 @@ Messages:
     puck (`28DE:1304`); takes effect on the next enumeration.
     DualSense audio haptics: `31` on/off, `30` gain as percent/2 (10-500%, 0 = automatic), `88` style
     (0 rumble, 1 tone, 2 split, 3 wave; default 3). See DUALSENSE_HAPTICS.md.
-    RF recovery (reply is an `0xAD` frame, not a status blob; nothing is saved except by `100`): `97` request
-    RF status, `98` run an ambient channel survey, `99 <ch>` hop to a channel, `100 <ch>` save a known channel
-    as the startup channel, `101` start (1) / cancel (0) the journal builder, `113` clear the RF journal
-    (applied once no controller is live).
+    RF recovery (reply is an `0xAD` frame, not a status blob; nothing is saved except by `100`): `97 <page+1>`
+    request RF status (the value picks the `0xAD` v2 row page; older firmware ignores it), `98` run an ambient
+    channel survey, `99 <ch>` hop to an enabled channel, `100 <ch>` save an enabled channel as the startup
+    channel, `101` start (1) / cancel (0) the journal builder, `113` clear the RF journal (applied once no
+    controller is live). The fields other than `97` answer with the first page.
     Switch Pro / HD rumble / shortcuts (blob version ≥ 23): `190`-`229` were the removed Switch Pro
     back-button profiles and are ignored (still answered with a status blob), `230` trackpad D-pad click
     feedback, `231` HD trackpad strength as percent/2, `239` Quick Access + Select target, `240` shortcut
@@ -537,6 +538,13 @@ Messages:
     frame: `[ver=1][slot][linkUp]` then `ax ay az gx gy gz` and the report-`0x42` orientation quaternion
     `qw qx qy qz` (Q15), all s16 LE. The quaternion reads all zero until the controller sends `0x42`; older
     controller firmware sends identity. The panel polls it at about 25 Hz for its 3D motion view.
+  - `0x2B <mask: 5 bytes LE>` (status-blob version ≥ 29): set the enabled RF recovery channels, bit `i` =
+    channel `4 + 2i` (every even channel 4..80, 39 bits). Automatic recovery, the journal builder and the
+    `99` / `100` RF fields use only enabled channels; the ambient survey and the journal cover all 39. An
+    empty mask, a bit past 38, or a write while the journal builder runs is refused. Saved in `cfg.bin`
+    (default: the original 14-channel pool 18, 20, 22, 34, 42, 46, 52, 56, 68, 70, 72, 74, 76, 80). Replies
+    with an `0xAD` frame, which carries the mask in force. Firmware that predates it answers `0xAD` version 1;
+    send it only once an `0xAD` version 2 frame has been seen.
   - `0x20`–`0x24`: staged firmware update (begin/data/end/reboot/abort), acked with `0xAB` frames
   - `0x25 0x57 0x49 0x50 0x45`: **full board wipe** (`"WIPE"` magic, debug panel only). Erases the app
     region + LittleFS (settings + bonds) + bootloader-settings page and reboots app-less, so the board mounts
@@ -550,7 +558,13 @@ Messages:
   - `0xAA <count> <count×16-byte bindings>`: lizard binding map
   - `0xAB 5 <status> <nextOff u32 LE>`: firmware-update ack
   - `0xAD <len> <payload>`: RF recovery status (current/target/startup channel, per-channel survey rows,
-    handoff and journal-builder progress); layout in `webusbSendRfStatus()` (`webusb_config.cpp`)
+    handoff and journal-builder progress); layout in `webusbSendRfStatus()` (`webusb_config.cpp`).
+    Version 1 (`payload[0]` = 1) lists the fixed 14-channel pool in one frame. Version 2 (status-blob
+    version ≥ 29) covers all 39 even channels 4..80 and pages them, 13 rows per frame:
+    `[2][flags][cur][target][startup][channelCount][journalWrites][ambientGen u16][journalSeq u32]`
+    `[rowStart][rowCount][rowCount × 9-byte rows][the 29 v1 trailer bytes][enabled mask: 5 B LE]`
+    `[default mask: 5 B LE]`. In v2 the journal-builder index is a candidate index (channel `4 + 2i`), and
+    the startup channel is the one the next boot uses (a saved channel that is no longer enabled is skipped).
   - `0xAE 55 <payload>`: Switch Pro / HD rumble / shortcut settings: `[ver=1][37 zero bytes]`
     `[swDpadHaptics][storageState][hdPadScale/2][4 zero bytes][swQamSelect][shortcutFlags][8 zero bytes]`.
     The zero bytes held removed settings (Switch Pro profiles, rumble presets and slot, strength steps and

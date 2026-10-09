@@ -116,7 +116,31 @@ extern volatile uint8_t g_battery[NSLOT];
 // charge state from report 0x43 body[0] (EChargeState: 1=discharging, 2=charging, 4=charging-done; 0=unknown)
 extern volatile uint8_t g_batteryState[NSLOT];
 
-#define RF_RECOVERY_STATUS_CHANNELS 14u
+// Recovery channel candidates: every even channel 4..80, candidate index
+// (ch - 4) / 2. Ch 2 is the discovery rendezvous. Nothing above 80 (2480 MHz)
+// is offered, to keep a 2 Mbit/s signal clear of the 2483.5 MHz edge of the
+// 2.4 GHz band, which is licence-exempt in all major regions.
+#define RF_RECOVERY_CHANNEL_MIN 4u
+#define RF_RECOVERY_CHANNEL_MAX 80u
+#define RF_RECOVERY_CHANNEL_COUNT 39u
+#define RF_RECOVERY_STATUS_CHANNELS RF_RECOVERY_CHANNEL_COUNT
+
+#define RF_CHANNEL_BIT(ch) (1ull << (((ch) - RF_RECOVERY_CHANNEL_MIN) >> 1))
+#define RF_CHANNEL_MASK_ALL ((1ull << RF_RECOVERY_CHANNEL_COUNT) - 1u)
+// The original fixed recovery pool, so an upgraded puck behaves as before.
+#define RF_CHANNEL_MASK_DEFAULT                                         \
+	(RF_CHANNEL_BIT(18) | RF_CHANNEL_BIT(20) | RF_CHANNEL_BIT(22) | \
+	 RF_CHANNEL_BIT(34) | RF_CHANNEL_BIT(42) | RF_CHANNEL_BIT(46) | \
+	 RF_CHANNEL_BIT(52) | RF_CHANNEL_BIT(56) | RF_CHANNEL_BIT(68) | \
+	 RF_CHANNEL_BIT(70) | RF_CHANNEL_BIT(72) | RF_CHANNEL_BIT(74) | \
+	 RF_CHANNEL_BIT(76) | RF_CHANNEL_BIT(80))
+
+// Enabled candidates (bit i = channel 4 + 2 * i), persisted in cfg.bin.
+// Automatic recovery, the Journal Builder and the panel's Hop / Startup use
+// only these; the ambient survey and the journal cover every candidate.
+extern uint64_t g_rfChannelMask;
+// Nonzero, and no bit past the last candidate.
+bool rfChannelMaskValid(uint64_t mask);
 
 enum RfChannelDesignation : uint8_t {
 	RF_CHANNEL_UNEXPLORED = 0,
@@ -207,12 +231,19 @@ struct RfRecoveryStatus {
 	uint8_t ambientSurveyFailure;
 	uint8_t ambientSurveyFailureChannel;
 	uint8_t journalClearPending;
+	uint64_t channelMask;
 };
 
 bool rfRecoveryRequestAmbientSurvey();
 bool rfRecoveryRequestHop(uint8_t channel);
-// True for the channels the panel lists and can hop to (the recovery pool).
-bool rfRecoveryChannelValid(uint8_t channel);
+// An enabled candidate: one the panel can hop to or save as Startup.
+bool rfRecoveryChannelEnabled(uint8_t channel);
+// Boot channel when no enabled Startup channel is saved: 18 if enabled, else
+// the lowest enabled channel.
+uint8_t rfRecoveryDefaultChannel();
+// Refused while the Journal Builder runs, since it walks the enabled set.
+// The caller persists an accepted mask with saveCfg().
+bool rfRecoverySetChannelMask(uint64_t mask);
 bool rfRecoveryRequestJournalBuilder();
 void rfRecoveryCancelJournalBuilder();
 // Clear the RF journal and its learned history once no controller is live (refused while the Builder runs).

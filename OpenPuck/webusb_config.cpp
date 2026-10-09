@@ -148,7 +148,9 @@ static void webusbSendBlob()
 
 	// clang-format off
 	// protocol version
-	// (29 = +Create-as-touchpad-click toggle (field 116, blob p[210]);
+	// (29 = +Create-as-touchpad-click toggle (field 116, blob p[210]); +selectable RF channel set: op 0x2B
+	// [mask: 5 bytes LE], 0xAD frame v2 (every even channel 4..80, rows paged by field 97's value, enabled +
+	// default masks appended; the panel keys off the 0xAD version, not this one);
 	// 28 = lizard-map ops 0x11..0x1A edit the SAVED map in every mode (a separate copy outside MODE_LIZARD,
 	// whose live map is the built-in defaults), +op 0x29 turn on controller IMU, +op 0x2A live motion sample
 	// (0xAF frame: accel, gyro, report-0x42 orientation quaternion); payload unchanged;
@@ -560,6 +562,17 @@ static void webusbDrainFlight(bool restart)
 // Runs on the usbd task (registered via usbTxRegisterDrain -> tud_sof_cb). Sends the blob if loop() asked for
 // one. Keeps every usb_web write/flush off the loop task so it can't block on the device event queue.
 static volatile bool g_rfStatusRequest = false;
+// Row page the next 0xAD frame carries, chosen by field 97's value
+static volatile uint8_t g_rfStatusPage = 0;
+
+// 0xAD v2: every candidate channel no longer fits one frame (the length is
+// one byte, and the drop-on-full send needs the whole frame to fit the
+// 256-byte vendor FIFO), so rows travel in pages:
+//   [ver=2][flags][cur][target][startup][channelCount][journalWrites]
+//   [ambientGen u16][journalSeq u32][rowStart][rowCount][rowCount x 9-byte rows]
+//   [the v1 trailers, unchanged][enabled mask: 5 bytes LE][default mask: 5 bytes LE]
+#define RF_STATUS_PAGE_ROWS 13u
+#define RF_STATUS_TRAILER_BYTES (4u + 7u + 1u + 5u + 3u + 8u + 1u)
 
 static bool webusbSendRfStatus()
 {
@@ -567,16 +580,24 @@ static bool webusbSendRfStatus()
 		return false;
 	static RfRecoveryStatus status;
 	rfRecoveryStatusSnapshot(&status);
-	// Append-only trailers after the counted channel rows preserve the v1
-	// header/row offsets: 4 bytes legacy handoff telemetry + 7 bytes journal-
-	// builder status + 1 byte ambient-survey progress + 5 bytes automatic-
-	// handoff admission/retry diagnostics + 3 bytes ambient-survey retry/failure
-	// diagnostics + 8 bytes full-width handoff elapsed time + 1 byte journal-clear pending.
-	static uint8_t f[2 + 13 + RF_RECOVERY_STATUS_CHANNELS * 9 + 4 + 7 + 1 +
-			 5 + 3 + 8 + 1];
+	// Trailers after the rows, as in v1: 4 bytes legacy handoff telemetry +
+	// 7 bytes journal-builder status + 1 byte ambient-survey progress + 5 bytes
+	// automatic-handoff admission/retry diagnostics + 3 bytes ambient-survey
+	// retry/failure diagnostics + 8 bytes full-width handoff elapsed time + 1
+	// byte journal-clear pending.
+	static uint8_t f[2 + 15 + RF_STATUS_PAGE_ROWS * 9 +
+			 RF_STATUS_TRAILER_BYTES + 5 + 5];
+	uint16_t rowStart = (uint16_t)(g_rfStatusPage * RF_STATUS_PAGE_ROWS);
+	if (rowStart >= status.channelCount)
+		rowStart = 0;
+	uint8_t rowCount = (uint8_t)(status.channelCount - rowStart);
+	if (rowCount > RF_STATUS_PAGE_ROWS)
+		rowCount = RF_STATUS_PAGE_ROWS;
+	const uint8_t len =
+		(uint8_t)(15u + rowCount * 9u + RF_STATUS_TRAILER_BYTES + 10u);
 	uint8_t *q = f + 2;
 	f[0] = 0xAD;
-	f[1] = (uint8_t)(sizeof f - 2u);
+	f[1] = len;
 	*q++ = status.version;
 	*q++ = status.flags;
 	*q++ = status.currentChannel;
@@ -590,7 +611,9 @@ static bool webusbSendRfStatus()
 	*q++ = (uint8_t)(status.journalSequence >> 8);
 	*q++ = (uint8_t)(status.journalSequence >> 16);
 	*q++ = (uint8_t)(status.journalSequence >> 24);
-	for (uint8_t i = 0; i < status.channelCount; i++) {
+	*q++ = (uint8_t)rowStart;
+	*q++ = rowCount;
+	for (uint16_t i = rowStart; i < rowStart + rowCount; i++) {
 		const RfChannelStatusEntry &entry = status.channel[i];
 		*q++ = entry.channel;
 		*q++ = entry.ambientRssi;
@@ -629,9 +652,14 @@ static bool webusbSendRfStatus()
 	for (uint8_t shift = 0; shift < 64u; shift += 8u)
 		*q++ = (uint8_t)(status.handoffElapsedMs >> shift);
 	*q++ = status.journalClearPending;
-	if (tud_vendor_write_available() < sizeof f)
+	for (uint8_t shift = 0; shift < 40u; shift += 8u)
+		*q++ = (uint8_t)(status.channelMask >> shift);
+	for (uint8_t shift = 0; shift < 40u; shift += 8u)
+		*q++ = (uint8_t)(RF_CHANNEL_MASK_DEFAULT >> shift);
+	const uint16_t frameLen = (uint16_t)(2u + len);
+	if (tud_vendor_write_available() < frameLen)
 		return false;
-	usb_web.write(f, sizeof f);
+	usb_web.write(f, frameLen);
 	usb_web.flush();
 	return true;
 }
@@ -930,9 +958,10 @@ void webusbPoll()
 			uint8_t op = buf[0];
 			// 0x16 = test rumble (v21), 0x17..0x1A = lizard v2 (v21), 0x27 = Switch Pro/shortcut frame
 			// request (v23), 0x28 = save shortcut settings (v23), 0x29 = IMU on (v28), 0x2A = motion sample
-			// (v28); extend this range whenever a new opcode is added, or the parser drops it as garbage.
+			// (v28), 0x2B = RF channel set (v29); extend this range whenever a new opcode is added, or the
+			// parser drops it as garbage.
 			if ((op < 0x01 || op > 0x1A) &&
-			    (op < 0x20 || op > 0x2A)) { // resync: drop one byte
+			    (op < 0x20 || op > 0x2B)) { // resync: drop one byte
 				memmove(buf, buf + 1, --n);
 				continue;
 			}
@@ -948,7 +977,8 @@ void webusbPoll()
 			// Command length (fixed per opcode). 0x0D = write-one-bond-slot (27 B); 0x12 = set-one-lizard-
 			// binding (18 B); 0x05/0x0E/0x0F/0x10/0x13 carry one value byte; 0x02 a field+value; 0x0A a
 			// 3-byte magic. Firmware update: 0x20 begin [size u32][crc32 u32], 0x21 data (6 B header +
-			// payload), 0x22/0x23/0x24 bare. (0x11/0x14/0x15 are bare lizard opcodes -> default 1.)
+			// payload), 0x22/0x23/0x24 bare. 0x2B = RF channel set [mask: 5 bytes LE]. (0x11/0x14/0x15
+			// are bare lizard opcodes -> default 1.)
 			uint8_t need =
 				(op == 0x0D) ? 27 :
 				(op == 0x12) ? 18 :
@@ -961,6 +991,7 @@ void webusbPoll()
 				(op == 0x0A) ? 4 :
 				(op == 0x25) ? 5 :
 				(op == 0x20) ? 9 :
+				(op == 0x2B) ? 6 :
 				(op == 0x21) ? (uint8_t)(6 + (n >= 6 ? buf[5] :
 								       0)) :
 					       1;
@@ -1023,6 +1054,21 @@ void webusbPoll()
 				hapticImuOn();
 			} else if (op == 0x2A) {
 				g_motionSlot = buf[1] < NSLOT ? buf[1] : 0;
+			}
+
+			// Enabled RF recovery channels (bit i = channel 4 + 2 * i). The 0xAD reply carries the
+			// mask actually in force, so a refused write (empty, out of range, Builder running)
+			// shows as unchanged.
+			else if (op == 0x2B) {
+				uint64_t mask = 0;
+				for (uint8_t i = 0; i < 5u; i++)
+					mask |= (uint64_t)buf[1 + i]
+						<< (8u * i);
+				if (mask != g_rfChannelMask &&
+				    rfRecoverySetChannelMask(mask))
+					saveCfg();
+				g_rfStatusPage = 0;
+				g_rfStatusRequest = true;
 			}
 
 			// trigger controller power-off (same path Steam 0x9F / host-suspend use)
@@ -1231,6 +1277,14 @@ void webusbPoll()
 				// first and phase-shifts the browser's shared bulk-IN stream.
 				const bool rfStatusOnly =
 					(f >= 97u && f <= 101u) || f == 113u;
+				// 97's value picks the 0xAD row page (1 = first page; older firmware
+				// ignores it and sends a v1 frame with every row). The other RF
+				// controls answer with the first page.
+				if (rfStatusOnly)
+					g_rfStatusPage =
+						f == 97u && v ?
+							(uint8_t)(v - 1u) :
+							0u;
 				// per-type cfg writes (protocol v10/v17): field = 40 + et*9 + k, k: 0..3 back, 4 qam, 5 abSwap,
 				// 6 padHaptics, 7 ledBright, 8 rumble. Edits g_type[et]; refresh the live mirrors if it's the active type.
 				if (f >= 40 && f < 40 + ET_COUNT * 9) {
@@ -1606,22 +1660,11 @@ void webusbPoll()
 					g_rfStatusRequest = true;
 					persist = false;
 					break;
-				case 100: {
-					static RfRecoveryStatus status;
-					rfRecoveryStatusSnapshot(&status);
-					for (uint8_t i = 0;
-					     i < status.channelCount; i++) {
-						if (status.channel[i].channel !=
-						    v)
-							continue;
-						(void)saveRfStartupLastGoodChannel(
-							v);
-						break;
-					}
+				case 100:
+					(void)saveRfStartupLastGoodChannel(v);
 					g_rfStatusRequest = true;
 					persist = false;
 					break;
-				}
 				}
 				if (persist)
 					saveCfg();

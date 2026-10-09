@@ -458,19 +458,25 @@
         <div class="stat"><div class="k">Handoff status</div><div class="v" id="rfHandoffStatus" style="font-size:14px">Idle</div></div>
         <div class="stat"><div class="k">Journal builder</div><div class="v" id="rfBuilderStatus" style="font-size:14px">Idle</div></div>
       </div>
+      <div class="row hide" id="rfChannelSetRow" style="margin-top:10px"><label>Recovery channels</label><select id="rfChannelSet">
+        <option value="default">Default</option>
+        <option value="all">All even channels</option>
+        <option value="custom">Custom</option>
+      </select></div>
+      <p class="note hide" id="rfChannelSetNote" style="margin-top:4px"></p>
       <div class="row" style="margin-top:10px">
         <button id="rfSurvey">Survey Ambient RF</button>
         <button id="rfBuilder" style="margin-left:8px">Build RF Journal</button>
         <button id="rfJournalClear" style="margin-left:8px">Clear RF Journal</button>
       </div>
-      <p class="note" style="margin-top:10px"><strong>Survey Ambient RF</strong> samples background RF interference across all 14 recovery channels and updates the Ambient measurements shown below.<br><strong>Build RF Journal</strong> will initiate a comprehensive 14-channel scan to build the RF Journal ahead of time and save the winning channel as Startup.<br><strong>Clear RF Journal</strong> erases the saved journal and forgets every channel's learned quality (the Startup channel is kept). It runs once no controller has been connected for a second, so turn the controllers off for a couple of seconds after clicking.<br><strong>Hop</strong> uses the same neutral-gated coordinated channel migration as automatic RF recovery.<br><strong>Startup</strong> manually saves that channel as the starting channel for subsequent boots, but automatic RF learning may replace it later.</p>
+      <p class="note" style="margin-top:10px"><strong>Recovery channels</strong> picks the channels automatic recovery, the Journal Builder, Hop and Startup may use: Default is the original 14-channel set, All even channels enables every even channel from 4 to 80, and ticking or unticking a channel in the On column switches to Custom, so you can drop a channel the ambient survey shows is always busy. Nothing above Ch 80 (2480 MHz) is offered, so the puck stays inside the 2400–2483.5 MHz band that is licence-exempt in all major regions.<br><strong>Survey Ambient RF</strong> samples background RF interference across every channel in the table, enabled or not, and updates the Ambient measurements shown below.<br><strong>Build RF Journal</strong> tests every enabled channel for about a minute to build the RF Journal ahead of time and saves the winning channel as Startup.<br><strong>Clear RF Journal</strong> erases the saved journal and forgets every channel's learned quality (the Startup channel is kept). It runs once no controller has been connected for a second, so turn the controllers off for a couple of seconds after clicking.<br><strong>Hop</strong> uses the same neutral-gated coordinated channel migration as automatic RF recovery.<br><strong>Startup</strong> manually saves that channel as the starting channel for subsequent boots, but automatic RF learning may replace it later.</p>
       <div style="overflow-x:auto;margin-top:12px">
         <table style="width:100%;border-collapse:collapse;font-size:0.88em">
-          <thead><tr style="text-align:left"><th>Channel</th><th>MHz</th><th>Journal</th><th>Worst</th><th>Mean</th><th>Confidence</th><th>Trials</th><th>Penalty</th><th>Ambient</th><th>Recent</th><th>Actions</th></tr></thead>
+          <thead><tr style="text-align:left"><th class="hide" id="rfEnabledHead">On</th><th>Channel</th><th>MHz</th><th>Journal</th><th>Worst</th><th>Mean</th><th>Confidence</th><th>Trials</th><th>Penalty</th><th>Ambient</th><th>Recent</th><th>Actions</th></tr></thead>
           <tbody id="rfJournalBody"></tbody>
         </table>
       </div>
-      <div id="rfAmbientBars" style="display:flex;gap:4px;align-items:flex-end;height:76px;margin-top:12px;padding:8px;background:#151821;border:1px solid #272d3d;border-radius:6px"></div>
+      <div id="rfAmbientBars" style="display:flex;gap:2px;align-items:flex-end;height:76px;margin-top:12px;padding:8px;background:#151821;border:1px solid #272d3d;border-radius:6px"></div>
     </div>
     </section>
     <section class="page hide" id="pgDevice">
@@ -1493,9 +1499,33 @@ function initTypes(){
 let rfJournalClearPending=false;
 let rfHandoffPhase=0, rfBuilderSaving=false, rfBuilderStartPending=false, rfSurveyGeneration=0, rfSurveyWatchActive=false, rfSurveyLockActive=false, rfSurveyLockGeneration=0, rfSurveyRetry=0, rfSurveyFailure=0, rfSurveyFailureChannel=0;
 let rfHopRequestedCh=0, rfHopSawHandoff=false;
+// channels Hop / Startup accept: the whole v1 pool, or the enabled ones on v2
 let rfPoolChannels=new Set();
+// Channel rows by position. A v2 0xAD frame carries one page of the candidate channels (field 97's value picks
+// it), so rows from the other pages are kept; a v1 frame carries the whole fixed pool.
+let rfRows=[], rfFrameVersion=0, rfPageRows=0, rfPollPage=0;
+// v2 only, per candidate index (channel 4+2i): enabled now / in the firmware's default set
+let rfEnabled=null, rfDefaultEnabled=null, rfChannelSetCustom=false, rfChannelSetBusy=false;
 const RF_DESIG=["unexplored","good","poor","mixed"];
 function rfChLabel(ch){ return ch ? `Ch ${ch} · ${2400+ch} MHz` : "—"; }
+// offset of the trailers that follow the channel rows
+function rfTail(p){ return p[0]===2 ? 15+p[14]*9 : 13+p[5]*9; }
+function rfMaskBits(p, at, count){ const bits=[]; for(let i=0;i<count;i++) bits.push(!!((p[at+(i>>3)]>>(i&7))&1)); return bits; }
+function rfMaskBytes(bits){ const m=[0,0,0,0,0]; bits.forEach((on,i)=>{ if(on) m[i>>3]|=1<<(i&7); }); return m; }
+function rfSameSet(a, b){ return !!a && !!b && a.length===b.length && a.every((v,i)=>v===b[i]); }
+// Field 97 value for a status poll: cycling the page keeps every row fresh while a workflow polls fast.
+function rfNextPageArg(){
+  const pages=rfFrameVersion===2&&rfPageRows ? Math.ceil(rfRows.length/rfPageRows) : 1;
+  rfPollPage=(rfPollPage+1)%pages;
+  return rfPollPage+1;
+}
+function rfChannelSetMode(){
+  if(!rfEnabled) return "";
+  if(rfChannelSetCustom) return "custom";
+  if(rfSameSet(rfEnabled, rfDefaultEnabled)) return "default";
+  return rfEnabled.every(Boolean) ? "all" : "custom";
+}
+function rfEnabledCount(){ return rfEnabled ? rfEnabled.filter(Boolean).length : rfRows.length; }
 function rfElapsedLabel(ms){
   if(ms<1000) return `${ms} ms`;
   const s=Math.floor(ms/1000);
@@ -1508,7 +1538,8 @@ function rfElapsedLabel(ms){
   return `${d}d ${String(h%24).padStart(2,"0")}h`;
 }
 function applyRfStatus(p){
-  if(!p || p.length<13 || p[0]!==1) return;
+  if(!p || p.length<13 || (p[0]!==1 && p[0]!==2) || (p[0]===2 && p.length<15)) return;
+  const v2=p[0]===2;
   const flags=p[1], current=p[2], target=p[3], startup=p[4], count=p[5];
   const writes=p[6], generation=p[7]|(p[8]<<8);
   const seq=((p[9]|(p[10]<<8)|(p[11]<<16)|(p[12]<<24))>>>0);
@@ -1519,7 +1550,21 @@ function applyRfStatus(p){
   $("#rfJournalSeq").textContent=String(seq);
   $("#rfJournalWrites").textContent=String(writes);
   const running=!!(flags&1), pending=!!(flags&2), ambient=!!(flags&4), live=!!(flags&8), handoff=!!(flags&16);
-  const tail=13+count*9;
+  const tail=rfTail(p);
+  if(!v2 || rfFrameVersion!==2 || rfRows.length!==count) rfRows=new Array(count).fill(null);
+  rfFrameVersion=p[0];
+  const rowStart=v2?p[13]:0, rowCount=v2?p[14]:count, rowBase=v2?15:13;
+  if(v2&&rowStart===0) rfPageRows=rowCount;
+  for(let i=0;i<rowCount&&rowStart+i<count;i++){
+    const q=rowBase+i*9; if(q+9>p.length) break;
+    rfRows[rowStart+i]=Array.from(p.slice(q,q+9));
+  }
+  // v2 appends the enabled and default channel masks after the v1 trailers (29 bytes)
+  const maskBase=tail+29;
+  if(v2 && p.length>=maskBase+10){
+    rfEnabled=rfMaskBits(p,maskBase,count);
+    rfDefaultEnabled=rfMaskBits(p,maskBase+5,count);
+  }else if(!v2){ rfEnabled=null; rfDefaultEnabled=null; rfChannelSetCustom=false; }
   const hopPhase=p.length>=tail+4?p[tail]:0;
   const hopElapsed16=p.length>=tail+4?(p[tail+1]|(p[tail+2]<<8)):0;
   const hopOld=p.length>=tail+4?p[tail+3]:0;
@@ -1564,12 +1609,15 @@ function applyRfStatus(p){
   const builderFailure=p.length>=builderBase+7?p[builderBase+6]:0;
   const surveyChannel=p.length>=builderBase+8?p[builderBase+7]:0;
   const builderFailureText=["","no live controller","RF workflow busy","journal storage full: turn the controller off for 2 s to free space, then on, and retry","no valid channel","final hop failed","journal save failed","journal write could not be completed","could not read controller idle timeout","startup save failed","ambient survey failed"];
+  // v2's builder index is a candidate index; the run tests only the enabled ones
+  const builderTotal=rfEnabledCount();
+  const builderOrd=Math.min(rfEnabled ? rfEnabled.slice(0,builderIndex+1).filter(Boolean).length : builderIndex+1, builderTotal);
   let builderText="Idle";
   if(builderPhase===1) builderText="Preparing controllers / ambient survey";
   else if(builderPhase===2) builderText=`Preparing Ch ${builderChannel} · configuring RF`;
-  else if(builderPhase===3) builderText=`Testing ${Math.min(builderIndex+1,count)}/${count} · Ch ${builderChannel} (${2400+builderChannel} MHz) · ${builderProgress}%`;
-  else if(builderPhase===4) builderText=`Testing ${Math.min(builderIndex+1,count)}/${count} · Ch ${builderChannel} · finalizing`;
-  else if(builderPhase===5) builderText=`Testing ${Math.min(builderIndex+1,count)}/${count} · between channels`;
+  else if(builderPhase===3) builderText=`Testing ${builderOrd}/${builderTotal} · Ch ${builderChannel} (${2400+builderChannel} MHz) · ${builderProgress}%`;
+  else if(builderPhase===4) builderText=`Testing ${builderOrd}/${builderTotal} · Ch ${builderChannel} · finalizing`;
+  else if(builderPhase===5) builderText=`Testing ${builderOrd}/${builderTotal} · between channels`;
   else if(builderPhase===6) builderText="Selecting best channel";
   else if(builderPhase===7) builderText=`Final hop · Ch ${builderBest||builderChannel}`;
   else if(builderPhase===8) builderText=`Saving journal${builderBest?` · Ch ${builderBest}`:""}`;
@@ -1598,39 +1646,55 @@ function applyRfStatus(p){
   const surveyFailureText=["","sample timeout","incomplete scan"];
   $("#rfSurveyState").textContent=running?(surveyRetry&&surveyChannel?`retrying Ch ${surveyChannel} · ${surveyRetry}/5`:surveyChannel?`surveying Ch ${surveyChannel}`:"surveying"):pending?(handoff?"queued for handoff":"starting survey"):surveyFailure?`failed${surveyFailureChannel?` · Ch ${surveyFailureChannel}`:""} · ${surveyFailureText[surveyFailure]||(`code ${surveyFailure}`)}`:ambient?`cached #${generation}`:"not sampled";
   const body=$("#rfJournalBody"), bars=$("#rfAmbientBars"); body.innerHTML=""; bars.innerHTML=""; rfPoolChannels=new Set();
-  for(let i=0;i<count;i++){
-    const q=13+i*9; if(q+9>p.length) break;
-    const ch=p[q], noise=p[q+1], d=p[q+2], worst=p[q+3], mean=p[q+4], conf=p[q+5], trials=p[q+6], penalty=p[q+7], recent=p[q+8];
-    rfPoolChannels.add(ch);
+  $("#rfEnabledHead").classList.toggle("hide",!rfEnabled);
+  // 39 bars leave no room for a dBm label over each one; the tooltip still has it
+  const dense=rfRows.length>20;
+  rfRows.forEach((row,idx)=>{
+    if(!row) return;
+    const [ch,noise,d,worst,mean,conf,trials,penalty,recent]=row;
+    const on=!rfEnabled||rfEnabled[idx];
+    if(on) rfPoolChannels.add(ch);
     const tr=document.createElement("tr"); tr.dataset.rfCh=String(ch);
     const desig=RF_DESIG[d]||("state "+d);
-    tr.innerHTML=`<td>${ch}${ch===current?' <span class="pill up">active</span>':''}${ch===target?' <span class="pill rf-target">target</span>':''}</td><td>${2400+ch}</td><td>${desig}</td><td>${trials?worst+'%':'—'}</td><td>${trials?mean+'%':'—'}</td><td>${trials?conf:'—'}</td><td>${trials}</td><td>${trials?penalty:'—'}</td><td>${noise?'-'+noise+' dBm':'—'}</td><td>${recent||'—'}</td>`;
+    tr.innerHTML=`<td data-rf-ch-cell="1">${ch}${ch===current?' <span class="pill up">active</span>':''}${ch===target?' <span class="pill rf-target">target</span>':''}</td><td>${2400+ch}</td><td>${desig}</td><td>${trials?worst+'%':'—'}</td><td>${trials?mean+'%':'—'}</td><td>${trials?conf:'—'}</td><td>${trials}</td><td>${trials?penalty:'—'}</td><td>${noise?'-'+noise+' dBm':'—'}</td><td>${recent||'—'}</td>`;
+    if(!on) for(const td of tr.cells) td.style.opacity=".5";
+    if(rfEnabled){
+      const enCell=document.createElement("td");
+      const cb=document.createElement("input");
+      cb.type="checkbox"; cb.checked=on; cb.dataset.rfEnable=String(idx);
+      cb.addEventListener("change",()=>toggleRfChannel(idx,cb));
+      enCell.appendChild(cb);
+      tr.prepend(enCell);
+    }
     const hopCell=document.createElement("td");
     const hopBtn=document.createElement("button");
     hopBtn.textContent=ch===current?"Active":"Hop";
     hopBtn.dataset.rfHop="1";
-    hopBtn.disabled=ch===current||rfSurveyLockActive||rfHopWorkflowBlocked()||S.rfHopPending||S.rfBuilderActive;
+    hopBtn.dataset.rfOff=on?"0":"1";
+    hopBtn.disabled=!on||ch===current||rfSurveyLockActive||rfHopWorkflowBlocked()||S.rfHopPending||S.rfBuilderActive;
     hopBtn.style.padding="4px 8px";
     hopBtn.dataset.rfCurrent=ch===current?"1":"0";
+    if(!on) hopBtn.title="Enable this channel to hop to it.";
     hopBtn.addEventListener("click",()=>hopRf(ch));
     hopCell.appendChild(hopBtn);
     const startupBtn=document.createElement("button");
     startupBtn.textContent=ch===startup?"Startup ✓":"Startup";
     startupBtn.dataset.rfStartup="1";
+    startupBtn.dataset.rfOff=on?"0":"1";
     startupBtn.dataset.rfStartupSelected=ch===startup?"1":"0";
-    startupBtn.disabled=rfSurveyLockActive||ch===startup;
+    startupBtn.disabled=!on||rfSurveyLockActive||ch===startup;
     startupBtn.style.cssText="padding:4px 8px;margin-left:6px";
-    startupBtn.title="Use this channel on the next boot. This does not mark the channel good.";
+    startupBtn.title=on?"Use this channel on the next boot. This does not mark the channel good.":"Enable this channel to use it on boot.";
     startupBtn.addEventListener("click",()=>manualStartupRf(ch));
     hopCell.appendChild(startupBtn);
     tr.appendChild(hopCell);
     body.appendChild(tr);
-    const col=document.createElement("div"); col.style.cssText="flex:1;min-width:18px;height:100%;display:flex;flex-direction:column;justify-content:flex-end;align-items:center";
+    const col=document.createElement("div"); col.style.cssText="flex:1;min-width:0;height:100%;display:flex;flex-direction:column;justify-content:flex-end;align-items:center";
     const h=noise?Math.max(6,Math.min(58,(noise-35)*1.15)):4;
-    col.title=noise?`Ch ${ch}: ambient peak -${noise} dBm`:`Ch ${ch}: no ambient sample`;
-    col.innerHTML=`<div style="font-size:9px;color:#8ba2c4">${noise?'-'+noise:''}</div><div style="width:100%;height:${h}px;background:currentColor;opacity:${noise?'.72':'.18'};border-radius:2px 2px 0 0"></div><div style="font-size:9px;margin-top:2px">${ch}</div>`;
+    col.title=(noise?`Ch ${ch}: ambient peak -${noise} dBm`:`Ch ${ch}: no ambient sample`)+(on?"":" · not enabled");
+    col.innerHTML=`<div style="font-size:9px;color:#8ba2c4">${noise&&!dense?'-'+noise:''}</div><div style="width:100%;height:${h}px;background:currentColor;opacity:${noise?(on?'.72':'.3'):'.18'};border-radius:2px 2px 0 0"></div><div style="font-size:9px;margin-top:2px">${ch}</div>`;
     bars.appendChild(col);
-  }
+  });
   syncRfSurveyControls();
 }
 function syncRfSurveyControls(){
@@ -1638,11 +1702,66 @@ function syncRfSurveyControls(){
   $("#rfSurvey").disabled=locked||S.rfBuilderActive;
   for(const tr of $("#rfJournalBody").querySelectorAll("tr")){
     for(const btn of tr.querySelectorAll("button[data-rf-hop]"))
-      btn.disabled=locked||S.rfHopPending||S.rfBuilderActive||btn.dataset.rfCurrent==="1"||rfHopWorkflowBlocked();
+      btn.disabled=locked||S.rfHopPending||S.rfBuilderActive||btn.dataset.rfCurrent==="1"||btn.dataset.rfOff==="1"||rfHopWorkflowBlocked();
     for(const btn of tr.querySelectorAll("button[data-rf-startup]"))
-      btn.disabled=locked||btn.dataset.rfStartupSelected==="1";
+      btn.disabled=locked||btn.dataset.rfStartupSelected==="1"||btn.dataset.rfOff==="1";
   }
+  syncRfChannelSet();
   syncRfBuilderDisabled();
+}
+// The firmware refuses a channel-set change while the Journal Builder runs, since the Builder walks that set.
+function syncRfChannelSet(){
+  const row=$("#rfChannelSetRow"), note=$("#rfChannelSetNote"), sel=$("#rfChannelSet");
+  row.classList.toggle("hide",!rfEnabled); note.classList.toggle("hide",!rfEnabled);
+  if(!rfEnabled) return;
+  const mode=rfChannelSetMode(), n=rfEnabledCount();
+  const nDefault=rfDefaultEnabled ? rfDefaultEnabled.filter(Boolean).length : 0;
+  sel.options[0].textContent=`Default (${nDefault} channels)`;
+  sel.options[1].textContent=`All even channels (${rfEnabled.length}: Ch 4–${4+2*(rfEnabled.length-1)})`;
+  if(document.activeElement!==sel) sel.value=mode;
+  const blocked=rfChannelSetBusy||S.rfBuilderActive||rfSurveyLockActive;
+  sel.disabled=blocked;
+  for(const cb of $("#rfJournalBody").querySelectorAll("input[data-rf-enable]")){
+    cb.disabled=blocked;
+    cb.title="Let automatic recovery, the Journal Builder, Hop and Startup use this channel. Untick a channel that the ambient survey shows is always busy.";
+  }
+  note.textContent=`${n} of ${rfEnabled.length} channels enabled. The ambient survey measures all of them; automatic recovery, the Journal Builder, Hop and Startup use only the enabled ones. The Builder tests each enabled channel for about a minute (about ${n+1} minutes in all).`;
+}
+async function writeRfChannelSet(bits){
+  if(!S.dev||S.isDongle||!S.rfCapable||!rfEnabled||S.rfBuilderActive||rfChannelSetBusy) return;
+  rfChannelSetBusy=true;
+  syncRfChannelSet();
+  try{
+    if(!(await waitRfUiIdle())) return;
+    S.rfBusy=true;
+    try{
+      await waitIdle(); if(!S.dev) return;
+      await send([0x2B,...rfMaskBytes(bits)]);
+      const p=await readFrame(0xAD,13,256); if(p) applyRfStatus(p);
+      S.rfLastRefresh=Date.now();
+    }finally{ S.rfBusy=false; }
+  }catch(e){ log("RF channel set err: "+e.message); }
+  finally{
+    rfChannelSetBusy=false;
+    syncRfChannelSet();
+  }
+}
+function changeRfChannelSet(mode){
+  if(!rfEnabled) return;
+  if(mode==="custom"){ rfChannelSetCustom=true; syncRfChannelSet(); return; }
+  rfChannelSetCustom=false;
+  writeRfChannelSet(mode==="all" ? rfEnabled.map(()=>true) : rfDefaultEnabled.slice());
+}
+function toggleRfChannel(idx, cb){
+  if(!rfEnabled) return;
+  const bits=rfEnabled.slice(); bits[idx]=cb.checked;
+  if(!bits.some(Boolean)){
+    cb.checked=true;
+    log("RF channels: keep at least one channel enabled");
+    return;
+  }
+  rfChannelSetCustom=true;
+  writeRfChannelSet(bits);
 }
 function rfBuilderWorkflowBlocked(){
   // Waiting-for-neutral is the automatic, pre-E4 admission phase. Firmware can
@@ -1665,7 +1784,7 @@ function setRfHopButtonsDisabled(disabled){
   S.rfHopPending=!!disabled;
   for(const tr of $("#rfJournalBody").querySelectorAll("tr")){
     for(const btn of tr.querySelectorAll("button[data-rf-hop]"))
-      btn.disabled=rfSurveyLockActive||S.rfHopPending||S.rfBuilderActive||btn.dataset.rfCurrent==="1"||rfHopWorkflowBlocked();
+      btn.disabled=rfSurveyLockActive||S.rfHopPending||S.rfBuilderActive||btn.dataset.rfCurrent==="1"||btn.dataset.rfOff==="1"||rfHopWorkflowBlocked();
   }
   // Keep the Builder interlock synchronized with the local Hop latch as well
   // as firmware handoff state. The terminal status frame arrives before the
@@ -1676,7 +1795,7 @@ function setRfHopButtonsDisabled(disabled){
 function showRfHopTarget(ch){
   $("#rfTargetCh").textContent=rfChLabel(ch);
   for(const tr of $("#rfJournalBody").querySelectorAll("tr")){
-    const cell=tr.cells[0]; if(!cell) continue;
+    const cell=tr.querySelector("td[data-rf-ch-cell]"); if(!cell) continue;
     for(const badge of cell.querySelectorAll(".rf-target")) badge.remove();
     if(+tr.dataset.rfCh===ch){
       const badge=document.createElement("span"); badge.className="pill rf-target"; badge.textContent="target";
@@ -1711,8 +1830,7 @@ async function hopRf(ch){
       if(p){
         sawStatus=true;
         const current=p[2], target=p[3], flags=p[1];
-        const tail=13+p[5]*9;
-        const phase=p[tail];
+        const phase=p[rfTail(p)];
         const handoff=!!(flags&16);
         applyRfStatus(p);
         if(current===ch && !handoff && phase===0){ terminal=true; break; }
@@ -1723,7 +1841,7 @@ async function hopRf(ch){
         if(!handoff && phase===0 && !target && i>=10){ terminal=true; break; }
       }
       await new Promise(resolve=>setTimeout(resolve,50));
-      await send([0x02,97,1]);
+      await send([0x02,97,rfNextPageArg()]);
       p=await readFrame(0xAD,13,256);
     }
     if(sawStatus) S.rfLastRefresh=Date.now();
@@ -1765,7 +1883,8 @@ async function manualJournalBuilderRf(){
     finally{ S.rfBusy=false; }
     return;
   }
-  const ok=confirm("RF Journal Builder\n\nPlace all connected controllers at approximately the farthest distance from the puck at which you normally use them, and leave them in their normal operating location during the test.\n\nThe puck will survey ambient RF, test all 14 recovery channels for about 60 seconds each, select the best channel, and save one completed RF journal record. The test takes roughly 15 minutes.\n\nStart the journal build?");
+  const n=rfEnabledCount();
+  const ok=confirm(`RF Journal Builder\n\nPlace all connected controllers at approximately the farthest distance from the puck at which you normally use them, and leave them in their normal operating location during the test.\n\nThe puck will survey ambient RF, test the ${n} enabled recovery channels for about 60 seconds each, select the best channel, and save one completed RF journal record. The test takes roughly ${n+1} minutes.\n\nStart the journal build?`);
   if(!ok) return;
   rfBuilderStartPending=true;
   $("#rfBuilderStatus").textContent="Starting…";
@@ -1790,7 +1909,7 @@ async function manualJournalBuilderRf(){
       if(p){ sawStatus=true; applyRfStatus(p); }
       if(!rfBuilderStartPending) break;
       await new Promise(resolve=>setTimeout(resolve,100));
-      await send([0x02,97,1]);
+      await send([0x02,97,rfNextPageArg()]);
     }
     if(rfBuilderStartPending){
       rfBuilderStartPending=false;
@@ -1860,7 +1979,7 @@ async function manualSurveyRf(){
         }
       }
       await new Promise(resolve=>setTimeout(resolve,50));
-      await send([0x02,97,1]);
+      await send([0x02,97,rfNextPageArg()]);
     }
     if(!terminal){
       if(S.rfSurveyRunning||S.rfSurveyPending) $("#rfSurveyState").textContent=S.rfSurveyRunning?"Survey still active":"Survey queued";
@@ -1887,7 +2006,14 @@ async function refreshRfStatus(survey=false){
   try{
     await waitIdle(); if(!S.dev) return;
     await send([0x02,survey?98:97,1]);
-    const p=await readFrame(0xAD,13,256); if(p) applyRfStatus(p);
+    // v2 pages the channel rows: fetch the remaining pages so the table is whole
+    let p=await readFrame(0xAD,13,256);
+    for(let page=1;p;page++){
+      applyRfStatus(p);
+      if(p[0]!==2||p[13]+p[14]>=p[5]||page>=8) break;
+      await send([0x02,97,page+1]);
+      p=await readFrame(0xAD,13,256);
+    }
     S.rfLastRefresh=Date.now();
   }catch(e){ log("RF status err: "+e.message); }
   finally{ S.rfBusy=false; }
@@ -3761,6 +3887,7 @@ $("#ledTest").onclick=async()=>{ if(S.dev){ await setField(92, 1); log("LED test
 $("#rfSurvey").onclick=()=>manualSurveyRf();
 $("#rfBuilder").onclick=()=>manualJournalBuilderRf();
 $("#rfJournalClear").onclick=()=>clearJournalRf();
+$("#rfChannelSet").onchange=e=>changeRfChannelSet(e.target.value);
 for(const sel of document.querySelectorAll("select.chord")){
   sel.addEventListener("change", ()=>setField(CHORD_FIELD[+sel.dataset.i], +sel.value));
 }
