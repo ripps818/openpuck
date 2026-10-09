@@ -170,6 +170,9 @@ struct Cfg {
 	// per-type grip strength (pct/2); 0xFF (older file) -> the legacy global value above. The byte before
 	// each was a per-type rumble style, now automatic.
 	uint8_t reservedTypeRumbleStyle[ET_COUNT], typeRumbleScale2[ET_COUNT];
+	// Create button acts as touchpad click. 0xFF (older file) -> off. Not an ext byte: ext[0] holds the startup
+	// RF channel, and sharing it makes the puck boot on channel 1.
+	uint8_t createAsTouch;
 }; // rsvd0 = ex-padSmooth, now the one-shot debug-CDC arm
 
 // Shortest cfg.bin we still accept: the layout as of CFG_MAGIC 0xCF, i.e. everything before the appended tail.
@@ -203,7 +206,6 @@ void saveCfg()
 	// 14 was the HD grip renderer A/B switch (0/1); its old values fall outside the knee range and load as default
 	cfgExtWrite(14u, g_hapticLimitKnee);
 	cfgExtWrite(15u, (uint8_t)(g_audioSpeaker / 2));
-	cfgExtWrite(0u, g_createAsTouch);
 	cfgExtWrite(5u, g_ledMode);
 	cfgExtWrite(6u, g_ledPinA);
 	cfgExtWrite(7u, g_ledPinB);
@@ -241,6 +243,7 @@ void saveCfg()
 		  g_swQamSelect,
 		  g_shortcutFlags };
 	memcpy(c.ext, g_cfgExt, sizeof c.ext);
+	c.createAsTouch = g_createAsTouch;
 	for (int i = 0; i < ET_COUNT; i++) {
 		c.type[i] = g_type[i];
 		c.typeRumbleScale2[i] = (uint8_t)(g_typeRumbleScale[i] / 2);
@@ -363,9 +366,6 @@ void loadCfg()
 			const uint8_t kneeVal = cfgExtRead(14u);
 			if (kneeVal >= 50 && kneeVal <= 100)
 				g_hapticLimitKnee = kneeVal;
-			const uint8_t createTouchVal = cfgExtRead(0u);
-			if (createTouchVal <= 1)
-				g_createAsTouch = createTouchVal;
 			const uint8_t speakerVal = cfgExtRead(15u);
 			if (speakerVal <= 100)
 				g_audioSpeaker = (uint16_t)speakerVal * 2;
@@ -406,6 +406,8 @@ void loadCfg()
 		}
 		f.close();
 	}
+	if (c.createAsTouch <= 1)
+		g_createAsTouch = c.createAsTouch;
 	if (c.swDpadHaptics <= 1)
 		g_swDpadHaptics = c.swDpadHaptics;
 	if (c.hdPadScale2 <= 250)

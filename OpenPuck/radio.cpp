@@ -1,6 +1,7 @@
 #include "radio.h"
 #include "bonds.h" // g_slot[]
 #include "config.h"
+#include "rf_link.h" // rfRecoveryChannelValid
 
 // Pairing rendezvous bytes from IBEX rodata. The 0x91A2A793 key preceding "ibex" is a DIFFERENT key,
 // NOT the discovery address.
@@ -80,7 +81,9 @@ void rfGenSessionAddr(int slot)
 void rfApplyStartupLastGoodChannel()
 {
 	const uint8_t saved = cfgExtRead(0u);
-	g_rfStartupLastGoodChannel = (saved > 0u && saved <= 100u) ? saved : 0u;
+	// A channel outside the recovery pool can't be listed or hopped away
+	// from in the panel, so it is never a deliberate choice: treat it as unset.
+	g_rfStartupLastGoodChannel = rfRecoveryChannelValid(saved) ? saved : 0u;
 	cfgExtWrite(1u, 1u);
 	cfgExtWrite(2u, 1u);
 	if (g_rfStartupLastGoodChannel)
