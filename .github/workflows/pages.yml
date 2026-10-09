@@ -1,0 +1,86 @@
+name: Pages
+
+# ripps818/openpuck only. Publishes the GitHub Pages site with two config panels:
+#   index.html    the stable panel: docs/index.html as of the newest non-prerelease release
+#   nightly.html  the bleeding-edge panel: docs/index.html as of main
+# A deploy replaces the whole site, so each call rebuilds both pages: nightly.yml calls this after a build that
+# changed the firmware or the panel, promote-nightly.yml after publishing a release (that is what moves index.html).
+# Run it by hand to publish after changing this workflow or tools/build_site.py.
+# Needs Settings > Pages > Source: GitHub Actions; the first step fails the deploy otherwise.
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  deploy:
+    if: github.repository == 'ripps818/openpuck'
+    runs-on: ubuntu-latest
+    # a deploy queued behind a running one waits instead of cancelling it; the newest queued call wins
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+
+    steps:
+      - name: Check the Pages source
+        # With Source "Deploy from a branch", GitHub's own pages-build-deployment republishes docs/ from main on
+        # every push, replacing this deploy: nightly.html disappears and index.html becomes main's panel.
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eu
+          TYPE="$(gh api "repos/${GITHUB_REPOSITORY}/pages" --jq .build_type)"
+          if [ "$TYPE" != "workflow" ]; then
+            echo "::error::Settings > Pages > Source is \"$TYPE\"; set it to GitHub Actions, then rerun this"
+            exit 1
+          fi
+
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Check the panel bundle
+        # docs/index.html carries the bundle of panel/*.js; a push that changed panel/ without `make panel`
+        # fails here instead of publishing a page that is missing the change.
+        run: make panel-check
+
+      - name: Find the stable release
+        id: stable
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # promote-nightly.yml marks each release it creates as the latest and the nightly as a pre-release, so
+        # "latest" is the newest promoted build.
+        run: |
+          set -eu
+          TAG="$(gh api "repos/${GITHUB_REPOSITORY}/releases/latest" --jq .tag_name 2>/dev/null || true)"
+          if [ -z "$TAG" ]; then
+            echo "::warning::no stable release yet; index.html will be the nightly panel"
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Assemble the site
+        env:
+          TAG: ${{ steps.stable.outputs.tag }}
+        run: |
+          set -euo pipefail
+          python3 tools/build_site.py build/site ${TAG:+--stable-ref "$TAG"} | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v6
+
+      - name: Upload the site
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: build/site
+
+      - name: Deploy
+        id: deploy
+        uses: actions/deploy-pages@v5

@@ -17,6 +17,7 @@ on:
       - 'docs/*.html'
       - 'panel/**'
       - 'tools/build_panel.py'
+      - 'tools/build_site.py'
   workflow_dispatch:
 
 # a newer push supersedes a nightly still building
@@ -61,7 +62,7 @@ jobs:
           else
             echo "firmware=false" >> "$GITHUB_OUTPUT"
           fi
-          if echo "$FILES" | grep -Eq '^(docs/[^/]*\.html|panel/.+|tools/build_panel\.py)$'; then
+          if echo "$FILES" | grep -Eq '^(docs/[^/]*\.html|panel/.+|tools/build_(panel|site)\.py)$'; then
             echo "panel=true" >> "$GITHUB_OUTPUT"
           else
             echo "panel=false" >> "$GITHUB_OUTPUT"
@@ -194,40 +195,16 @@ jobs:
           git -C "$NEW" push -f "$REPO" firmware
           ls -la "$NEW"
 
-  # The config panel (docs/) goes live when it changed, and only after the nightly it ships with (if the push
-  # also changed the firmware) built and published, so a failed build never leaves the panel ahead of the
-  # firmware. Needs Settings > Pages > Source: GitHub Actions.
+  # The panels go live when the panel changed, and only after the nightly it ships with (if the push also
+  # changed the firmware) built and published, so a failed build never leaves the panel ahead of the firmware.
+  # pages.yml publishes this push's panel as nightly.html; index.html stays on the newest promoted release.
   pages:
     needs: [changes, build]
     if: >-
       always() && needs.changes.outputs.panel == 'true' &&
       (needs.build.result == 'success' || needs.build.result == 'skipped')
-    runs-on: ubuntu-latest
     permissions:
       contents: read
       pages: write
       id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deploy.outputs.page_url }}
-
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v7
-
-      - name: Check the panel bundle
-        # docs/index.html carries the bundle of panel/*.js; a push that changed panel/ without `make panel`
-        # fails here instead of publishing a page that is missing the change.
-        run: make panel-check
-
-      - name: Configure Pages
-        uses: actions/configure-pages@v6
-
-      - name: Upload the panel
-        uses: actions/upload-pages-artifact@v5
-        with:
-          path: docs
-
-      - name: Deploy
-        id: deploy
-        uses: actions/deploy-pages@v5
+    uses: ./.github/workflows/pages.yml

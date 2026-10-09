@@ -71,3 +71,12 @@ jobs:
             --title "$(cat nightly-title.txt)" \
             --notes-file nightly-notes.md
           echo "Released $VERSION from nightly ($SHA)" >> "$GITHUB_STEP_SUMMARY"
+
+  # index.html (the stable panel) is the panel as of the newest release, so publishing one is what updates it.
+  pages:
+    needs: promote
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    uses: ./.github/workflows/pages.yml
