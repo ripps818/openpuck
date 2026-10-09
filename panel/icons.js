@@ -8,6 +8,9 @@ const PADDLE_XY = [[7,5],[23,5],[7,15],[23,15]];
 const paddles = on => svg(30, 20, PADDLE_XY.map(([x,y],i) =>
   `<ellipse cx="${x}" cy="${y}" rx="5.4" ry="3.6"${on[i] ? "" : " "+LINE+' opacity=".45"'}/>`).join(""));
 const face = l => svg(18, 18, `<circle cx="9" cy="9" r="8" ${LINE}/><text x="9" y="12.6" text-anchor="middle" font-size="10" font-weight="700" font-family="system-ui,sans-serif">${l}</text>`);
+// a rounded square with its top leaning in, like the controller's pads; the letter stays upright to stay legible
+const PAD_TILT = 12;
+const pad = (l, deg) => svg(20, 20, `<rect x="2.5" y="2.5" width="15" height="15" rx="3.5" transform="rotate(${deg} 10 10)" ${LINE}/><text x="10" y="13.6" text-anchor="middle" font-size="10" font-weight="700" font-family="system-ui,sans-serif">${l}</text>`);
 const DPAD_ARM = {up:[7,1], down:[7,13], left:[1,7], right:[13,7]};
 // a faint cross with the one arm solid: an outline is too thick at label size to tell the arms apart
 const dpad = dir => svg(20, 20, `<path d="M7 1h6v6h6v6h-6v6H7v-6H1V7h6z" opacity=".35"/><rect x="${DPAD_ARM[dir][0]}" y="${DPAD_ARM[dir][1]}" width="6" height="6" rx="1"/>`);
@@ -22,6 +25,7 @@ const ICONS = {
   A: ["A", face("A")], B: ["B", face("B")], X: ["X", face("X")], Y: ["Y", face("Y")],
   up: ["D-pad Up", dpad("up")], down: ["D-pad Down", dpad("down")],
   left: ["D-pad Left", dpad("left")], right: ["D-pad Right", dpad("right")],
+  padL: ["Left trackpad", pad("L", PAD_TILT)], padR: ["Right trackpad", pad("R", -PAD_TILT)],
   // the Select-side button: Back on Xbox, Minus on Switch, Create on PlayStation
   view: ["View (Minus on Switch)", svg(20, 18, `<rect x="6.5" y="1.5" width="12" height="9" rx="2" ${LINE}/><rect x="1.5" y="7" width="12" height="9.5" rx="2"/>`)],
 };

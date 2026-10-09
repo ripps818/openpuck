@@ -50,10 +50,12 @@ const click=$('#swClickFeedback');click.value='0';assert.deepEqual(await change(
 const capture=$('#qamSelect');capture.value='0';assert.deepEqual(await change(capture),[2,239,0]);
 // v25: grip strength per type in Button mapping (no style row); the global strength row hides.
 const secs=[...$('#typeCfgs').children];
-// Back-button labels are the paddle glyph (full name on hover) plus the short name; QAM is its glyph alone.
+// Back-button and QAM labels are the glyph (full name on hover) plus the short name.
 {const labs=[...secs[0].querySelectorAll('.row label')];
  assert.deepEqual(labs.slice(0,4).map(l=>l.textContent.trim()+'|'+l.querySelector('.ic').title),['L4|L4 (back upper-left)','R4|R4 (back upper-right)','L5|L5 (back lower-left)','R5|R5 (back lower-right)']);
- assert.equal(labs[4].querySelector('.ic').dataset.ic,'qam');}
+ assert.equal(labs[4].querySelector('.ic').dataset.ic,'qam');assert.equal(labs[4].textContent.trim(),'QAM');
+ // the trackpad mapping rows are labelled by the left / right pad glyph plus the word
+ assert.deepEqual([...secs[0].querySelectorAll('.row label .ic[data-ic^=pad]')].map(e=>e.title+'|'+e.nextSibling.textContent),['Left trackpad| Trackpad','Right trackpad| Trackpad']);}
 const typeRow=(et,label)=>[...secs[et].querySelectorAll('.row')].find(r=>r.querySelector('label') && r.querySelector('label').textContent===label);
 const scl=et=>typeRow(et,'Grip rumble strength').querySelector('select');
 for(let et=0;et<4;et++)assert(!typeRow(et,'Rumble style'));

@@ -25,7 +25,6 @@ export const typeEls = []; // one entry per TYPE_DEFS: {sec, tab, activeDot, bac
 // stick re-centers, and an untouched mapped pad leaves the physical stick in control.
 export const PAD_STICK_FIELD0 = 80;
 const PAD_STICK_OPTS = [[0,"Off (touchpad)"],[1,"Left stick"],[2,"Right stick"]];
-const PAD_STICK_LABELS = ["Left trackpad mapping","Right trackpad mapping"];
 function mkSelect(def, includeNone){
   const sel=document.createElement("select");
   if(includeNone){ const o=document.createElement("option"); o.value=0; o.textContent="— none —"; sel.appendChild(o); }
@@ -129,7 +128,7 @@ export function initTypes(){
       }
       // QAM + A/B swap
       const gBtn=group("Buttons");
-      { const sel=mkSelect(def,false); row(gBtn,"",sel).querySelector("label").append(iconEl("qam"));
+      { const sel=mkSelect(def,false); row(gBtn,"",sel).querySelector("label").append(iconEl("qam")," QAM");
         sel.addEventListener("change",()=>setField(40+et*9+4, +sel.value));
         rec.qam=sel; }
       const ab=toggle(gBtn,"A/B + X/Y swap","off");
@@ -138,7 +137,7 @@ export function initTypes(){
       for(let pad=0; pad<2; pad++){
         const sel=document.createElement("select");
         for(const [v,lbl] of (et===1 ? [...PAD_STICK_OPTS,[3,"D-pad on touch (Switch Pro)"],[4,"D-pad on click (Switch Pro)"]] : PAD_STICK_OPTS)){ const o=document.createElement("option"); o.value=v; o.textContent=lbl; sel.appendChild(o); }
-        row(gPad,PAD_STICK_LABELS[pad],sel);
+        row(gPad,"",sel).querySelector("label").append(iconEl(pad?"padR":"padL")," Trackpad");
         sel.addEventListener("change",()=>setField(PAD_STICK_FIELD0+et*2+pad, +sel.value));
         rec.padStick.push(sel);
       }
