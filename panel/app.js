@@ -11,8 +11,10 @@ import { initFirmware, updateFwGate, updateUf2UI } from './firmware.js';
 import { initNav } from './nav.js';
 import { initMotion } from './motion.js';
 import { currentType, initTypes, resetTypeDefaults } from './types.js';
+import { initIcons } from './icons.js';
 
 initDiag();
+initIcons();
 if(!DEBUG_UI) for(const el of document.querySelectorAll(".debugonly")) el.style.display="none";
 initTypes();
 initRfHelp();

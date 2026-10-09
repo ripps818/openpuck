@@ -34,9 +34,12 @@ for(const id of ['rumbleStyle','rumbleState1','strengthSteps','scHaptics','short
 assert.equal($('#qamSelect').value,'18');
 // Shortcut toggles live in the Mode shortcuts card; every chord is available.
 assert(!$('#shortcutToggles').classList.contains('hide'));assert($('#shortcutToggles').closest('.card').querySelector('.chord'));
-assert.equal($('#scQam').textContent,'Quick Access');
+// The modifier shows as a glyph named on hover: the toggle and every chord label follow the setting.
+const mods=()=>[...document.querySelectorAll('.ic-mod')].map(e=>e.getAttribute('aria-label')+'|'+e.title);
+assert.equal(mods().length,8);assert(mods().every(m=>m==='Quick Access|Quick Access'),mods().join());
+assert($('#scQam .ic-mod'));assert.equal($('#qamSelectRow label .ic').title,'Quick Access');
 for(const el of document.querySelectorAll('.chord,.chordD'))assert(!el.parentElement.classList.contains('hide'));
-assert.deepEqual(await act(()=>$('#scQam').click()),[2,240,56]);s[46]=56;await apply();assert.equal($('#scQam').textContent,'All four back buttons');
+assert.deepEqual(await act(()=>$('#scQam').click()),[2,240,56]);s[46]=56;await apply();assert(mods().every(m=>m==='All four back buttons|All four back buttons'),mods().join());
 for(const [id,bit] of [['scFeedback',8],['scCapture',16],['scEnabled',32]])assert.deepEqual(await act(()=>$('#'+id).click()),[2,240,s[46]^bit]);
 // Switch Pro-only controls (and HD trackpad strength) live in the Switch tab of Button mapping.
 const swTab=$('#swClickControls').parentElement;assert($('#typeCfgs').contains(swTab));
@@ -47,6 +50,10 @@ const click=$('#swClickFeedback');click.value='0';assert.deepEqual(await change(
 const capture=$('#qamSelect');capture.value='0';assert.deepEqual(await change(capture),[2,239,0]);
 // v25: grip strength per type in Button mapping (no style row); the global strength row hides.
 const secs=[...$('#typeCfgs').children];
+// Back-button labels are the paddle glyph (full name on hover) plus the short name; QAM is its glyph alone.
+{const labs=[...secs[0].querySelectorAll('.row label')];
+ assert.deepEqual(labs.slice(0,4).map(l=>l.textContent.trim()+'|'+l.querySelector('.ic').title),['L4|L4 (back upper-left)','R4|R4 (back upper-right)','L5|L5 (back lower-left)','R5|R5 (back lower-right)']);
+ assert.equal(labs[4].querySelector('.ic').dataset.ic,'qam');}
 const typeRow=(et,label)=>[...secs[et].querySelectorAll('.row')].find(r=>r.querySelector('label') && r.querySelector('label').textContent===label);
 const scl=et=>typeRow(et,'Grip rumble strength').querySelector('select');
 for(let et=0;et<4;et++)assert(!typeRow(et,'Rumble style'));
