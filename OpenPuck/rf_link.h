@@ -211,6 +211,8 @@ struct RfRecoveryStatus {
 
 bool rfRecoveryRequestAmbientSurvey();
 bool rfRecoveryRequestHop(uint8_t channel);
+// True for the channels the panel lists and can hop to (the recovery pool).
+bool rfRecoveryChannelValid(uint8_t channel);
 bool rfRecoveryRequestJournalBuilder();
 void rfRecoveryCancelJournalBuilder();
 // Clear the RF journal and its learned history once no controller is live (refused while the Builder runs).

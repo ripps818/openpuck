@@ -848,6 +848,11 @@ static int rfChannelHistoryPoolIndex(uint8_t ch)
 	return -1;
 }
 
+bool rfRecoveryChannelValid(uint8_t channel)
+{
+	return rfChannelHistoryPoolIndex(channel) >= 0;
+}
+
 static uint8_t rfAmbientMeasureChannel(uint8_t ch, uint16_t sampleUs)
 {
 	const uint8_t restoreCh = rfChannelLiveMask(millis()) ? g_sessCh :
