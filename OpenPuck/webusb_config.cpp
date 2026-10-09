@@ -148,7 +148,8 @@ static void webusbSendBlob()
 
 	// clang-format off
 	// protocol version
-	// (28 = lizard-map ops 0x11..0x1A edit the SAVED map in every mode (a separate copy outside MODE_LIZARD,
+	// (29 = +Create-as-touchpad-click toggle (field 116, blob p[210]);
+	// 28 = lizard-map ops 0x11..0x1A edit the SAVED map in every mode (a separate copy outside MODE_LIZARD,
 	// whose live map is the built-in defaults), +op 0x29 turn on controller IMU, +op 0x2A live motion sample
 	// (0xAF frame: accel, gyro, report-0x42 orientation quaternion); payload unchanged;
 	// 27 = +grip soft-limit knee (field 115, blob p[209], percent 50..100, 100 = off);
@@ -172,7 +173,7 @@ static void webusbSendBlob()
 	// cfg; 8 = +per-slot link status; 7 = +raw accel; 
 	// 6 = +swPro120/gyroScale)
 	// clang-format on
-	p[2] = 28;
+	p[2] = 29;
 	p[3] = g_usbMode;
 	p[4] = (uint8_t)g_mDiv;
 	p[5] = (uint8_t)g_mFric;
@@ -371,10 +372,11 @@ static void webusbSendBlob()
 	p[205] = g_audioHapticStyle;
 	p[206] = g_trigInner;
 	p[207] = g_trigOuter;
-	// p[208]: controller speaker volume (v26). p[209]: grip soft-limit knee (v27). p[210..211] (per-type rumble
-	// style) stay zero: the style follows the mode
+	// p[208]: controller speaker volume (v26). p[209]: grip soft-limit knee (v27). p[210]: Create-as-touchpad-click
+	// (v29). p[211] (per-type rumble style) stays zero: the style follows the mode
 	p[208] = (uint8_t)(g_audioSpeaker / 2);
 	p[209] = g_hapticLimitKnee;
+	p[210] = g_createAsTouch;
 	for (uint8_t et = 0; et < ET_COUNT; et++)
 		p[212 + et] = (uint8_t)(g_typeRumbleScale[et] / 2);
 	// CRITICAL: usb_web.write() SPINS (`while (remain && _connected) yield();`) until the IN FIFO drains or the
@@ -1488,6 +1490,11 @@ void webusbPoll()
 				case 115:
 					if (v >= 50 && v <= 100)
 						g_hapticLimitKnee = v;
+					break;
+
+				// Create button acts as the DualSense touchpad click. Protocol v29.
+				case 116:
+					g_createAsTouch = v ? 1 : 0;
 					break;
 
 				// Trigger deadzone / full-press point, percent (protocol v24). The pair stays ordered:

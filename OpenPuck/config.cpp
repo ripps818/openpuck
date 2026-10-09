@@ -61,6 +61,7 @@ uint16_t g_audioHapticGain = 0;
 uint8_t g_audioHapticStyle = AUDIO_STYLE_WAVE;
 uint16_t g_audioSpeaker = 0;
 uint8_t g_hapticLimitKnee = HAPTIC_LIMIT_KNEE_DEFAULT;
+uint8_t g_createAsTouch = 0;
 uint8_t g_trigInner = 0, g_trigOuter = 100;
 uint8_t g_ledBright = 0;
 
@@ -202,6 +203,7 @@ void saveCfg()
 	// 14 was the HD grip renderer A/B switch (0/1); its old values fall outside the knee range and load as default
 	cfgExtWrite(14u, g_hapticLimitKnee);
 	cfgExtWrite(15u, (uint8_t)(g_audioSpeaker / 2));
+	cfgExtWrite(0u, g_createAsTouch);
 	cfgExtWrite(5u, g_ledMode);
 	cfgExtWrite(6u, g_ledPinA);
 	cfgExtWrite(7u, g_ledPinB);
@@ -361,6 +363,9 @@ void loadCfg()
 			const uint8_t kneeVal = cfgExtRead(14u);
 			if (kneeVal >= 50 && kneeVal <= 100)
 				g_hapticLimitKnee = kneeVal;
+			const uint8_t createTouchVal = cfgExtRead(0u);
+			if (createTouchVal <= 1)
+				g_createAsTouch = createTouchVal;
 			const uint8_t speakerVal = cfgExtRead(15u);
 			if (speakerVal <= 100)
 				g_audioSpeaker = (uint16_t)speakerVal * 2;

@@ -153,6 +153,10 @@ export function initTypes(){
         row(gAud,"Haptics style",sty);
         sty.addEventListener("change",()=>setField(88, +sty.value));
         rec.audioStyle=sty;
+        // Create button presses the touchpad click instead (protocol v29)
+        const ct=toggle(gBtn,"Create = touchpad click","off");
+        rec.createTouch=ct;
+        ct.onclick=()=>setField(116, ct.classList.contains("active")?0:1);
         // Audio Haptics gain
         // 0 = Auto (firmware default): the loudest recent haptic plays at full strength; in Wave style Auto = 100%, a real DualSense's strength
         const sl=document.createElement("input"); sl.type="range"; sl.min=0; sl.max=500; sl.step=10;

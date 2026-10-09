@@ -1429,6 +1429,10 @@ function initTypes(){
         row(gAud,"Haptics style",sty);
         sty.addEventListener("change",()=>setField(88, +sty.value));
         rec.audioStyle=sty;
+        // Create button presses the touchpad click instead (protocol v29)
+        const ct=toggle(gBtn,"Create = touchpad click","off");
+        rec.createTouch=ct;
+        ct.onclick=()=>setField(116, ct.classList.contains("active")?0:1);
         // Audio Haptics gain
         // 0 = Auto (firmware default): the loudest recent haptic plays at full strength; in Wave style Auto = 100%, a real DualSense's strength
         const sl=document.createElement("input"); sl.type="range"; sl.min=0; sl.max=500; sl.step=10;
@@ -2650,6 +2654,11 @@ function applyBlob(p){
         const audOn = (p.length>196)?(p[196]!==0):true;
         rec.audioHaptics.textContent=audOn?"on":"off";
         rec.audioHaptics.classList.toggle("active",audOn);
+      }
+      if(rec.createTouch){
+        const on=p[0]>=29 && p.length>208 && p[208]!==0;
+        rec.createTouch.textContent=on?"on":"off";
+        rec.createTouch.classList.toggle("active",on);
       }
       if(rec.audioStyle){
         const v = (p.length>203 && p[203]<=3)?p[203]:1;

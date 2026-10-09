@@ -231,6 +231,8 @@ extern uint16_t g_audioSpeaker;
 // Peaks above it are rounded off toward full scale; 100 leaves only the hard clip at full scale.
 #define HAPTIC_LIMIT_KNEE_DEFAULT 70u
 extern uint8_t g_hapticLimitKnee;
+// DualSense modes: 1 = the Create button presses the touchpad click instead
+extern uint8_t g_createAsTouch;
 // Analog trigger response for the emulated modes (Steam mode relays raw input): travel at or below
 // g_trigInner % reads 0, travel at or past g_trigOuter % reads full, linear between. 0/100 = raw. A lower
 // full-press point lets games that expect DualSense-style resistive triggers see a complete pull.

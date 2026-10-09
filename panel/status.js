@@ -303,6 +303,11 @@ export function applyBlob(p){
         rec.audioHaptics.textContent=audOn?"on":"off";
         rec.audioHaptics.classList.toggle("active",audOn);
       }
+      if(rec.createTouch){
+        const on=p[0]>=29 && p.length>208 && p[208]!==0;
+        rec.createTouch.textContent=on?"on":"off";
+        rec.createTouch.classList.toggle("active",on);
+      }
       if(rec.audioStyle){
         const v = (p.length>203 && p[203]<=3)?p[203]:1;
         if(document.activeElement!==rec.audioStyle) rec.audioStyle.value=v;
