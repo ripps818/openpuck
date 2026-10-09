@@ -7,7 +7,12 @@ OpenPuck is an opensource firmware for NRF52840 Pro Micro that copycats the Stea
 > [!WARNING]
 > Every part of this project _HEAVILY_ used LLMs*
 
-This is ripps818's fork of [safijari/openpuck](https://github.com/safijari/openpuck). Its builds are on [this fork's releases page](https://github.com/ripps818/openpuck/releases) and its configurator is at [ripps818.github.io/openpuck](https://ripps818.github.io/openpuck/). Upstream's configurator doesn't have the settings below.
+This is ripps818's fork of [safijari/openpuck](https://github.com/safijari/openpuck). Its builds are on [this fork's releases page](https://github.com/ripps818/openpuck/releases), and it has two configurators:
+
+- **Stable:** [ripps818.github.io/openpuck](https://ripps818.github.io/openpuck/), matching the latest release.
+- **Nightly:** [ripps818.github.io/openpuck/nightly.html](https://ripps818.github.io/openpuck/nightly.html), matching the `nightly` pre-release built from `main`. It has the newest settings, which need nightly firmware.
+
+Upstream's configurator doesn't have the settings below.
 
 ## What this fork adds
 - **DualSense 4-channel USB audio & voice-coil haptics:** DualSense mode presents the same USB audio function as a real DualSense (4-channel output, silent 2-channel mic). Channels 3 & 4 (the haptic tracks) are turned into Steam Controller haptic commands in real time and sent over the 2.4GHz RF link. The default **wave** style streams the haptic waveform itself to the grip actuators as PCM; rumble, tone and split (low frequencies as rumble, the rest as tones) remain as options. Linux/Proton setup: [DualSense mode & audio haptics on Linux / Proton](#dualsense-mode--audio-haptics-on-linux--proton).
