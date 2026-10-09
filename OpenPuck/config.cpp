@@ -406,6 +406,8 @@ void loadCfg()
 		}
 		f.close();
 	}
+	if (c.createAsTouch <= 1)
+		g_createAsTouch = c.createAsTouch;
 	if (c.swDpadHaptics <= 1)
 		g_swDpadHaptics = c.swDpadHaptics;
 	if (c.hdPadScale2 <= 250)
@@ -425,8 +427,6 @@ void loadCfg()
 		g_shortcutFlags = c.shortcutFlags & ~6u;
 	else
 		g_shortcutFlags = SHORTCUT_ENABLED;
-	if (c.createAsTouch <= 1)
-		g_createAsTouch = c.createAsTouch;
 	// resolve the active emulated type's settings into the live mirrors the mode builders read
 	applyActiveType();
 	// clear the one-shot so the NEXT cold boot reverts to the default/persist policy
