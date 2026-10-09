@@ -229,8 +229,8 @@ function syncRfChannelSet(){
   const blocked=rfChannelSetBusy||S.rfBuilderActive||rfSurveyLockActive;
   sel.disabled=blocked;
   for(const cb of $("#rfJournalBody").querySelectorAll("input[data-rf-enable]")){
-    cb.disabled=blocked||mode!=="custom";
-    cb.title=mode==="custom"?"Let automatic recovery, the Journal Builder, Hop and Startup use this channel.":"Choose Custom above to pick channels.";
+    cb.disabled=blocked;
+    cb.title="Let automatic recovery, the Journal Builder, Hop and Startup use this channel. Untick a channel that the ambient survey shows is always busy.";
   }
   note.textContent=`${n} of ${rfEnabled.length} channels enabled. The ambient survey measures all of them; automatic recovery, the Journal Builder, Hop and Startup use only the enabled ones. The Builder tests each enabled channel for about a minute (about ${n+1} minutes in all).`;
 }
@@ -267,6 +267,7 @@ function toggleRfChannel(idx, cb){
     log("RF channels: keep at least one channel enabled");
     return;
   }
+  rfChannelSetCustom=true;
   writeRfChannelSet(bits);
 }
 function rfBuilderWorkflowBlocked(){

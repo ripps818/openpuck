@@ -461,7 +461,7 @@
       <div class="row hide" id="rfChannelSetRow" style="margin-top:10px"><label>Recovery channels</label><select id="rfChannelSet">
         <option value="default">Default</option>
         <option value="all">All even channels</option>
-        <option value="custom">Custom (tick channels in the table)</option>
+        <option value="custom">Custom</option>
       </select></div>
       <p class="note hide" id="rfChannelSetNote" style="margin-top:4px"></p>
       <div class="row" style="margin-top:10px">
@@ -469,7 +469,7 @@
         <button id="rfBuilder" style="margin-left:8px">Build RF Journal</button>
         <button id="rfJournalClear" style="margin-left:8px">Clear RF Journal</button>
       </div>
-      <p class="note" style="margin-top:10px"><strong>Recovery channels</strong> picks the channels automatic recovery, the Journal Builder, Hop and Startup may use: Default is the original 14-channel set, All even channels enables every even channel from 4 to 80, and Custom lets you tick channels in the table. Nothing above Ch 80 (2480 MHz) is offered, so the puck stays inside the 2400–2483.5 MHz band that is licence-exempt in all major regions.<br><strong>Survey Ambient RF</strong> samples background RF interference across every channel in the table, enabled or not, and updates the Ambient measurements shown below.<br><strong>Build RF Journal</strong> tests every enabled channel for about a minute to build the RF Journal ahead of time and saves the winning channel as Startup.<br><strong>Clear RF Journal</strong> erases the saved journal and forgets every channel's learned quality (the Startup channel is kept). It runs once no controller has been connected for a second, so turn the controllers off for a couple of seconds after clicking.<br><strong>Hop</strong> uses the same neutral-gated coordinated channel migration as automatic RF recovery.<br><strong>Startup</strong> manually saves that channel as the starting channel for subsequent boots, but automatic RF learning may replace it later.</p>
+      <p class="note" style="margin-top:10px"><strong>Recovery channels</strong> picks the channels automatic recovery, the Journal Builder, Hop and Startup may use: Default is the original 14-channel set, All even channels enables every even channel from 4 to 80, and ticking or unticking a channel in the On column switches to Custom, so you can drop a channel the ambient survey shows is always busy. Nothing above Ch 80 (2480 MHz) is offered, so the puck stays inside the 2400–2483.5 MHz band that is licence-exempt in all major regions.<br><strong>Survey Ambient RF</strong> samples background RF interference across every channel in the table, enabled or not, and updates the Ambient measurements shown below.<br><strong>Build RF Journal</strong> tests every enabled channel for about a minute to build the RF Journal ahead of time and saves the winning channel as Startup.<br><strong>Clear RF Journal</strong> erases the saved journal and forgets every channel's learned quality (the Startup channel is kept). It runs once no controller has been connected for a second, so turn the controllers off for a couple of seconds after clicking.<br><strong>Hop</strong> uses the same neutral-gated coordinated channel migration as automatic RF recovery.<br><strong>Startup</strong> manually saves that channel as the starting channel for subsequent boots, but automatic RF learning may replace it later.</p>
       <div style="overflow-x:auto;margin-top:12px">
         <table style="width:100%;border-collapse:collapse;font-size:0.88em">
           <thead><tr style="text-align:left"><th class="hide" id="rfEnabledHead">On</th><th>Channel</th><th>MHz</th><th>Journal</th><th>Worst</th><th>Mean</th><th>Confidence</th><th>Trials</th><th>Penalty</th><th>Ambient</th><th>Recent</th><th>Actions</th></tr></thead>
@@ -1722,8 +1722,8 @@ function syncRfChannelSet(){
   const blocked=rfChannelSetBusy||S.rfBuilderActive||rfSurveyLockActive;
   sel.disabled=blocked;
   for(const cb of $("#rfJournalBody").querySelectorAll("input[data-rf-enable]")){
-    cb.disabled=blocked||mode!=="custom";
-    cb.title=mode==="custom"?"Let automatic recovery, the Journal Builder, Hop and Startup use this channel.":"Choose Custom above to pick channels.";
+    cb.disabled=blocked;
+    cb.title="Let automatic recovery, the Journal Builder, Hop and Startup use this channel. Untick a channel that the ambient survey shows is always busy.";
   }
   note.textContent=`${n} of ${rfEnabled.length} channels enabled. The ambient survey measures all of them; automatic recovery, the Journal Builder, Hop and Startup use only the enabled ones. The Builder tests each enabled channel for about a minute (about ${n+1} minutes in all).`;
 }
@@ -1760,6 +1760,7 @@ function toggleRfChannel(idx, cb){
     log("RF channels: keep at least one channel enabled");
     return;
   }
+  rfChannelSetCustom=true;
   writeRfChannelSet(bits);
 }
 function rfBuilderWorkflowBlocked(){

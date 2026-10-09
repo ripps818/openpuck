@@ -59,21 +59,24 @@ assert.deepEqual(writes.slice(n),[[2,97,1],[2,97,2],[2,97,3]]);
 assert.equal(rows().length,COUNT);assert.equal(row(4).cells[1].textContent,'4');assert(row(80));
 assert(!$('#rfChannelSetRow').classList.contains('hide'));assert(!$('#rfEnabledHead').classList.contains('hide'));
 assert.equal($('#rfChannelSet').value,'default');
-assert.equal(boxes().filter(b=>b.checked).length,DEFAULT.length);assert(boxes().every(b=>b.disabled));
+assert.equal(boxes().filter(b=>b.checked).length,DEFAULT.length);assert(boxes().every(b=>!b.disabled));
 // Hop and Startup only for enabled channels
 assert(row(4).querySelector('button[data-rf-hop]').disabled);assert(!row(20).querySelector('button[data-rf-hop]').disabled);
 assert(row(4).querySelector('button[data-rf-startup]').disabled);assert(!row(20).querySelector('button[data-rf-startup]').disabled);
 assert(/14 of 39 channels enabled/.test($('#rfChannelSetNote').textContent));
 
-// All even channels: one op 0x2B with bits 0..38 set.
+// Unticking a channel straight from Default writes the mask without it and switches the dropdown to Custom.
 const sel=$('#rfChannelSet');
+n=writes.length;const cb20=boxes()[(20-4)/2];cb20.checked=false;cb20.dispatchEvent(new w.Event('change'));await settle();
+assert.deepEqual(sentMasks(n),[[0x2B,...bytesOf(bitsOf(DEFAULT.filter(c=>c!==20)))]]);
+await refreshRfStatus();assert.equal(sel.value,'custom');assert(row(20).querySelector('button[data-rf-hop]').disabled);
+
+// All even channels: one op 0x2B with bits 0..38 set.
 n=writes.length;sel.value='all';sel.dispatchEvent(new w.Event('change'));await settle();
 assert.deepEqual(sentMasks(n),[[0x2B,0xFF,0xFF,0xFF,0xFF,0x7F]]);
 await refreshRfStatus();assert.equal(sel.value,'all');assert(!row(4).querySelector('button[data-rf-hop]').disabled);
 
-// Custom unlocks the checkboxes; each toggle writes the whole mask.
-sel.value='custom';sel.dispatchEvent(new w.Event('change'));await settle();
-assert(boxes().every(b=>!b.disabled));
+// Each toggle writes the whole mask; the dropdown stays on Custom.
 n=writes.length;const cb4=boxes()[0];cb4.checked=false;cb4.dispatchEvent(new w.Event('change'));await settle();
 assert.deepEqual(sentMasks(n),[[0x2B,0xFE,0xFF,0xFF,0xFF,0x7F]]);
 await refreshRfStatus();assert.equal(sel.value,'custom');assert(row(4).querySelector('button[data-rf-hop]').disabled);
@@ -97,5 +100,5 @@ version=1;n=writes.length;await refreshRfStatus();
 assert.deepEqual(writes.slice(n),[[2,97,1]]);
 assert.equal(rows().length,DEFAULT.length);assert($('#rfChannelSetRow').classList.contains('hide'));assert($('#rfEnabledHead').classList.contains('hide'));
 assert(!row(20).querySelector('button[data-rf-hop]').disabled);
-console.log('RF channel set panel: paging, presets, custom toggles, builder progress and v1 fallback tests passed');cleanup();
+console.log('RF channel set panel: paging, presets, per-channel toggles, builder progress and v1 fallback tests passed');cleanup();
 })().catch(e=>{cleanup();console.error(e);process.exitCode=1;});
