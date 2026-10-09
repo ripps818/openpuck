@@ -305,9 +305,7 @@ export function applyBlob(p){
       }
       if(rec.audioStyle){
         const v = (p.length>203 && p[203]<=3)?p[203]:1;
-        rec.audioStyle.dataset.v=v;
-        rec.audioStyle.textContent=["rumble","tone","split","wave"][v];
-        rec.audioStyle.classList.toggle("active",v!==0);
+        if(document.activeElement!==rec.audioStyle) rec.audioStyle.value=v;
       }
       if(rec.speaker){
         const cap=p[0]>=26 && p.length>206;
