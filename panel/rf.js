@@ -33,6 +33,12 @@ function rfChannelSetMode(){
   return rfEnabled.every(Boolean) ? "all" : "custom";
 }
 function rfEnabledCount(){ return rfEnabled ? rfEnabled.filter(Boolean).length : rfRows.length; }
+function rfPoorEnabled(){
+  if(!rfEnabled) return [];
+  const idx=[];
+  rfRows.forEach((row,i)=>{ if(row&&row[2]===2&&rfEnabled[i]) idx.push(i); });
+  return idx;
+}
 function rfElapsedLabel(ms){
   if(ms<1000) return `${ms} ms`;
   const s=Math.floor(ms/1000);
@@ -163,7 +169,7 @@ function applyRfStatus(p){
     if(on) rfPoolChannels.add(ch);
     const tr=document.createElement("tr"); tr.dataset.rfCh=String(ch);
     const desig=RF_DESIG[d]||("state "+d);
-    tr.innerHTML=`<td data-rf-ch-cell="1">${ch}${ch===current?' <span class="pill up">active</span>':''}${ch===target?' <span class="pill rf-target">target</span>':''}</td><td>${2400+ch}</td><td>${desig}</td><td>${trials?worst+'%':'—'}</td><td>${trials?mean+'%':'—'}</td><td>${trials?conf:'—'}</td><td>${trials}</td><td>${trials?penalty:'—'}</td><td>${noise?'-'+noise+' dBm':'—'}</td><td>${recent||'—'}</td>`;
+    tr.innerHTML=`<td data-rf-ch-cell="1">${ch}${ch===current?' <span class="pill up">active</span>':''}${ch===target?' <span class="pill rf-target">target</span>':''}</td><td>${2400+ch}</td><td${d===2?' style="color:var(--warn)"':''}>${desig}</td><td>${trials?worst+'%':'—'}</td><td>${trials?mean+'%':'—'}</td><td>${trials?conf:'—'}</td><td>${trials}</td><td>${trials?penalty:'—'}</td><td>${noise?'-'+noise+' dBm':'—'}</td><td>${recent||'—'}</td>`;
     if(!on) for(const td of tr.cells) td.style.opacity=".5";
     if(rfEnabled){
       const enCell=document.createElement("td");
@@ -228,6 +234,9 @@ function syncRfChannelSet(){
   if(document.activeElement!==sel) sel.value=mode;
   const blocked=rfChannelSetBusy||S.rfBuilderActive||rfSurveyLockActive;
   sel.disabled=blocked;
+  const poor=rfPoorEnabled(), poorBtn=$("#rfDisablePoor");
+  poorBtn.disabled=blocked||!poor.length;
+  poorBtn.title=poor.length?`Rated poor: ${poor.map(i=>"Ch "+rfRows[i][0]).join(", ")}`:"No enabled channel is rated poor.";
   for(const cb of $("#rfJournalBody").querySelectorAll("input[data-rf-enable]")){
     cb.disabled=blocked;
     cb.title="Let automatic recovery, the Journal Builder, Hop and Startup use this channel. Untick a channel that the ambient survey shows is always busy.";
@@ -267,6 +276,23 @@ function toggleRfChannel(idx, cb){
     log("RF channels: keep at least one channel enabled");
     return;
   }
+  rfChannelSetCustom=true;
+  writeRfChannelSet(bits);
+}
+// Asks instead of acting on its own: each Builder run overwrites the tested channels' journal values, so one run in
+// passing interference can rate a channel poor, and a disabled channel is never retested to clear it.
+export function disablePoorRfChannels(){
+  if(!rfEnabled||rfChannelSetBusy||S.rfBuilderActive||rfSurveyLockActive) return;
+  const poor=rfPoorEnabled();
+  if(!poor.length) return;
+  const list=poor.map(i=>rfChLabel(rfRows[i][0])).join("\n");
+  if(poor.length===rfEnabledCount()){
+    alert(`Every enabled channel is rated poor:\n\n${list}\n\nAt least one channel must stay enabled, so none were disabled. Enable more channels, or run the Journal Builder again to retest these.`);
+    return;
+  }
+  if(!confirm(`Disable ${poor.length} poor channel${poor.length>1?"s":""}?\n\n${list}\n\nThe poor rating comes from the latest Journal Builder run and smoothed history, so a temporary interference source can cause it. Disabled channels are no longer retested by the Builder or used by recovery; you can re-enable any of them from the On column.`)) return;
+  const bits=rfEnabled.slice();
+  for(const i of poor) bits[i]=false;
   rfChannelSetCustom=true;
   writeRfChannelSet(bits);
 }

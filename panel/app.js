@@ -2,7 +2,7 @@ import { S } from './state.js';
 import { $, DEBUG_UI, fmtSlider, log } from './util.js';
 import { autoConnect, connect, initProtocol, refresh, send, setField } from './protocol.js';
 import { CHORD_DPAD_FIELD, CHORD_FIELD, MODE_NAMES, SC_BITS, showModeDesc } from './status.js';
-import { changeRfChannelSet, clearJournalRf, manualJournalBuilderRf, manualSurveyRf } from './rf.js';
+import { changeRfChannelSet, clearJournalRf, disablePoorRfChannels, manualJournalBuilderRf, manualSurveyRf } from './rf.js';
 import { exportBackup, importBackup } from './backup.js';
 import { downloadCap, startCapture, stopCapture } from './capture.js';
 import { initDiag, loadFlightTrail, renderHangLog, trailAdd, updateStabUI } from './diag.js';
@@ -164,6 +164,7 @@ $("#rfSurvey").onclick=()=>manualSurveyRf();
 $("#rfBuilder").onclick=()=>manualJournalBuilderRf();
 $("#rfJournalClear").onclick=()=>clearJournalRf();
 $("#rfChannelSet").onchange=e=>changeRfChannelSet(e.target.value);
+$("#rfDisablePoor").onclick=()=>disablePoorRfChannels();
 for(const sel of document.querySelectorAll("select.chord")){
   sel.addEventListener("change", ()=>setField(CHORD_FIELD[+sel.dataset.i], +sel.value));
 }
