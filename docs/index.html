@@ -51,6 +51,10 @@
   .mapgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:14px;align-items:start;margin:0 0 16px}
   .mapgrid .card{margin:0}
   .mapgrid .card.span{grid-column:1/-1}
+  /* controller-input glyphs (panel/icons.js); the name is on hover */
+  .ic{display:inline-flex;vertical-align:middle;line-height:0}
+  .ic svg{height:18px;width:auto}
+  .ic-plus{color:var(--mut);margin:0 6px;vertical-align:middle}
   .card-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 14px}
   .card-head h2{margin:0}
   .card-head button{padding:5px 12px;font-size:12px}
@@ -325,27 +329,27 @@
 
     <div class="card">
       <h2>Mode shortcuts</h2>
-      <p class="note" style="margin-top:0">Hold the selected modifier (Quick Access or all four back paddles) plus a face button or D-pad direction to switch mode without the WebUI. <strong>A is always Steam</strong> — that is the way back out of any mode. B / X / Y and D-pad directions are configurable (defaults: B=Lizard, X=Xbox, Y=Switch Pro). Modifier + trackpad click toggles the touchpad.</p>
+      <p class="note" style="margin-top:0">Hold the selected modifier (Quick Access <span data-ic="qam"></span> or all four back paddles <span data-ic="back4"></span>) plus a face button or D-pad direction to switch mode without the WebUI. <strong>A is always Steam</strong> — that is the way back out of any mode. B / X / Y and D-pad directions are configurable (defaults: B=Lizard, X=Xbox, Y=Switch Pro). Modifier + trackpad click toggles the touchpad.</p>
       <div id="shortcutToggles" class="hide">
         <div class="row"><label>Shortcuts enabled</label><button id="scEnabled"></button></div>
-        <div class="row"><label>Shortcut modifier</label><button id="scQam"></button></div>
+        <div class="row"><label>Shortcut modifier</label><button id="scQam"><span class="ic-mod" data-ic="back4"></span></button></div>
         <div class="row"><label>Confirmation pulse</label><button id="scFeedback"></button></div>
-        <div class="row"><label>Quick Access + Select action (Switch Pro)</label><button id="scCapture"></button></div>
+        <div class="row"><label><span data-ic="qam"></span><span class="ic-plus">+</span><span data-ic="view"></span> action (Switch Pro)</label><button id="scCapture"></button></div>
       </div>
       <div class="chord-cols">
         <div>
           <div class="colhead">Face buttons</div>
-          <div class="row"><label>back4 + B</label><select class="chord" data-i="0"></select></div>
-          <div class="row"><label>back4 + X</label><select class="chord" data-i="1"></select></div>
-          <div class="row"><label>back4 + Y</label><select class="chord" data-i="2"></select></div>
+          <div class="row"><label><span class="ic-mod" data-ic="back4"></span><span class="ic-plus">+</span><span data-ic="B"></span></label><select class="chord" data-i="0"></select></div>
+          <div class="row"><label><span class="ic-mod" data-ic="back4"></span><span class="ic-plus">+</span><span data-ic="X"></span></label><select class="chord" data-i="1"></select></div>
+          <div class="row"><label><span class="ic-mod" data-ic="back4"></span><span class="ic-plus">+</span><span data-ic="Y"></span></label><select class="chord" data-i="2"></select></div>
         </div>
         <!-- D-pad chords (firmware >= v18). Older firmware has no D-pad chords at all -> the whole column hides (see #dpadChords in applyBlob). -->
         <div id="dpadChords" class="hide">
           <div class="colhead">D-pad</div>
-          <div class="row"><label>back4 + Left</label><select class="chordD" data-i="0"></select></div>
-          <div class="row"><label>back4 + Up</label><select class="chordD" data-i="1"></select></div>
-          <div class="row"><label>back4 + Right</label><select class="chordD" data-i="2"></select></div>
-          <div class="row"><label>back4 + Down</label><select class="chordD" data-i="3"></select></div>
+          <div class="row"><label><span class="ic-mod" data-ic="back4"></span><span class="ic-plus">+</span><span data-ic="left"></span></label><select class="chordD" data-i="0"></select></div>
+          <div class="row"><label><span class="ic-mod" data-ic="back4"></span><span class="ic-plus">+</span><span data-ic="up"></span></label><select class="chordD" data-i="1"></select></div>
+          <div class="row"><label><span class="ic-mod" data-ic="back4"></span><span class="ic-plus">+</span><span data-ic="right"></span></label><select class="chordD" data-i="2"></select></div>
+          <div class="row"><label><span class="ic-mod" data-ic="back4"></span><span class="ic-plus">+</span><span data-ic="down"></span></label><select class="chordD" data-i="3"></select></div>
         </div>
       </div>
       <p id="dpadOld" class="note hide">This puck's firmware predates the D-pad chords — update it to configure them.</p>
@@ -393,7 +397,7 @@
     <div id="swProParts" class="hide">
       <div id="swClickControls" class="hide"><div class="row"><label>Trackpad D-pad click feedback</label><select id="swClickFeedback"><option value="1">On</option><option value="0">Off</option></select></div>
         <p class="note">A short pulse on the clicked pad, once per press, in either trackpad D-pad mode. Independent of Trackpad haptics above.</p></div>
-      <div class="row hide" id="qamSelectRow"><label>Quick Access + Minus</label><select id="qamSelect"></select></div>
+      <div class="row hide" id="qamSelectRow"><label><span data-ic="qam"></span><span class="ic-plus">+</span><span data-ic="view"></span></label><select id="qamSelect"></select></div>
       <!-- Gyro mapping (firmware >= v19). Older firmware always uses the corrected mapping and has no field
            to set -> the whole block hides (see #swGyroMapBlock in applyBlob). -->
       <div id="swGyroMapBlock">
@@ -1291,6 +1295,47 @@ function openNav(el){
   showPage(el.dataset.page, el.dataset.type!==undefined ? +el.dataset.type : undefined);
 }
 
+// ---- panel/icons.js ----
+// Steam Controller input glyphs, drawn in currentColor so they follow the text around them. A glyph stands in for
+// the input's name, so its span carries that name as the tooltip and the accessible label.
+const LINE = 'fill="none" stroke="currentColor" stroke-width="1.6"';
+const svg = (w, h, body) => `<svg viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" fill="currentColor" aria-hidden="true">${body}</svg>`;
+
+// upper-left, upper-right, lower-left, lower-right: the L4, R4, L5, R5 order of the firmware's back[] fields
+const PADDLE_XY = [[7,5],[23,5],[7,15],[23,15]];
+const paddles = on => svg(30, 20, PADDLE_XY.map(([x,y],i) =>
+  `<ellipse cx="${x}" cy="${y}" rx="5.4" ry="3.6"${on[i] ? "" : " "+LINE+' opacity=".45"'}/>`).join(""));
+const face = l => svg(18, 18, `<circle cx="9" cy="9" r="8" ${LINE}/><text x="9" y="12.6" text-anchor="middle" font-size="10" font-weight="700" font-family="system-ui,sans-serif">${l}</text>`);
+const DPAD_ARM = {up:[7,1], down:[7,13], left:[1,7], right:[13,7]};
+// a faint cross with the one arm solid: an outline is too thick at label size to tell the arms apart
+const dpad = dir => svg(20, 20, `<path d="M7 1h6v6h6v6h-6v6H7v-6H1V7h6z" opacity=".35"/><rect x="${DPAD_ARM[dir][0]}" y="${DPAD_ARM[dir][1]}" width="6" height="6" rx="1"/>`);
+
+const ICONS = {
+  qam: ["Quick Access", svg(30, 16, `<rect x="1" y="1" width="28" height="14" rx="7" ${LINE}/><circle cx="9" cy="8" r="1.9"/><circle cx="15" cy="8" r="1.9"/><circle cx="21" cy="8" r="1.9"/>`)],
+  back4: ["All four back buttons", paddles([1,1,1,1])],
+  L4: ["L4 (back upper-left)", paddles([1,0,0,0])],
+  R4: ["R4 (back upper-right)", paddles([0,1,0,0])],
+  L5: ["L5 (back lower-left)", paddles([0,0,1,0])],
+  R5: ["R5 (back lower-right)", paddles([0,0,0,1])],
+  A: ["A", face("A")], B: ["B", face("B")], X: ["X", face("X")], Y: ["Y", face("Y")],
+  up: ["D-pad Up", dpad("up")], down: ["D-pad Down", dpad("down")],
+  left: ["D-pad Left", dpad("left")], right: ["D-pad Right", dpad("right")],
+  // the Select-side button: Back on Xbox, Minus on Switch, Create on PlayStation
+  view: ["View (Minus on Switch)", svg(20, 18, `<rect x="6.5" y="1.5" width="12" height="9" rx="2" ${LINE}/><rect x="1.5" y="7" width="12" height="9.5" rx="2"/>`)],
+};
+
+// a no-op when the glyph is already there: the status poll refills the modifier ones every 600 ms, and swapping the
+// SVG under the pointer would drop its tooltip
+function fillIcon(el, name){
+  if(el.dataset.ic === name && el.firstChild) return;
+  const [label, art] = ICONS[name];
+  el.dataset.ic = name; el.classList.add("ic"); el.setAttribute("role", "img");
+  el.setAttribute("aria-label", label); el.title = label; el.innerHTML = art;
+}
+function iconEl(name){ const el = document.createElement("span"); fillIcon(el, name); return el; }
+// static markup names its glyphs with data-ic
+function initIcons(){ for(const el of document.querySelectorAll("[data-ic]")) fillIcon(el, el.dataset.ic); }
+
 // ---- panel/types.js ----
 // Per-emulated-type config (must match firmware ET_* order: Xbox=0, Switch=1, DS4=2, DS5=3). Each type lists
 // only the remap targets that exist on that controller. Field id sent to firmware = 40 + et*9 + k
@@ -1304,7 +1349,8 @@ const TYPE_DEFS = [
 ];
 // Which emulated type a USB mode belongs to (mirror of firmware etypeForMode); -1 = puck mode (no type).
 function etypeForMode(m){ switch(m){case 1:case 10:return 0; case 2:case 4:return 1; case 6:case 8:case 9:return 2; case 5:case 7:return 3; default:return -1;} }
-const BACK_LABELS = ["L4 (back upper-left)","R4 (back upper-right)","L5 (back lower-left)","R5 (back lower-right)"];
+// the firmware's back[] order; each label is the paddle glyph (full name on hover) plus its short name
+const BACK_KEYS = ["L4","R4","L5","R5"];
 const typeEls = []; // one entry per TYPE_DEFS: {sec, tab, activeDot, back[], qam, abSwap, pad, led, ledV, rumble, padStick[]}
 // Trackpad -> joystick mapping (firmware PS_OFF/PS_LEFT/PS_RIGHT). Field id = PAD_STICK_FIELD0 + et*2 + pad
 // (pad 0 = left trackpad, 1 = right). While mapped and touched the pad drives that stick; on release the
@@ -1409,13 +1455,13 @@ function initTypes(){
       // back paddles
       const gBack=group("Back buttons");
       for(let i=0;i<4;i++){
-        const sel=mkSelect(def,true); row(gBack,BACK_LABELS[i],sel);
+        const sel=mkSelect(def,true); row(gBack,"",sel).querySelector("label").append(iconEl(BACK_KEYS[i])," "+BACK_KEYS[i]);
         sel.addEventListener("change",()=>setField(40+et*9+i, +sel.value));
         rec.back.push(sel);
       }
       // QAM + A/B swap
       const gBtn=group("Buttons");
-      { const sel=mkSelect(def,false); row(gBtn,"QAM (3 dots)",sel);
+      { const sel=mkSelect(def,false); row(gBtn,"",sel).querySelector("label").append(iconEl("qam"));
         sel.addEventListener("change",()=>setField(40+et*9+4, +sel.value));
         rec.qam=sel; }
       const ab=toggle(gBtn,"A/B + X/Y swap","off");
@@ -2617,9 +2663,10 @@ function applySw(s){
   if(document.activeElement!==$("#qamSelect")) $("#qamSelect").value=s[45];
   if(document.activeElement!==$("#hdPadScale")) $("#hdPadScale").value=s[40]*2;
   const flags=s[46],enabled=!!(flags&32);
-  for(const [id,bit] of SC_BITS){const el=$("#"+id);el.textContent=id==="scQam"?((flags&bit)?"Quick Access":"All four back buttons"):((flags&bit)?"on":"off");el.classList.toggle("active",!!(flags&bit));}
+  // scQam shows the modifier as its glyph (.ic-mod, like the chord labels) instead of on/off
+  for(const [id,bit] of SC_BITS){const el=$("#"+id);if(id!=="scQam")el.textContent=(flags&bit)?"on":"off";el.classList.toggle("active",!!(flags&bit));}
   for(const rec of typeEls)rec.qam.parentElement.classList.toggle("hide",enabled && !!(flags&1));
-  for(const el of document.querySelectorAll(".chord,.chordD")){const lab=el.parentElement.querySelector("label");if(lab)lab.textContent=lab.textContent.replace(/^(back4|Quick Access)/,(flags&1)?"Quick Access":"back4");}
+  for(const el of document.querySelectorAll(".ic-mod")) fillIcon(el,(flags&1)?"qam":"back4");
 }
 function applyBlob(p){
   for(const rec of typeEls) for(const sel of rec.padStick) for(const o of sel.options) if(+o.value>=3) o.disabled=p[0]<23;
@@ -3832,6 +3879,7 @@ async function stopCapture(){
 
 // ---- panel/app.js ----
 initDiag();
+initIcons();
 if(!DEBUG_UI) for(const el of document.querySelectorAll(".debugonly")) el.style.display="none";
 initTypes();
 initRfHelp();

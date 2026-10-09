@@ -7,6 +7,7 @@ import { renderHangLog, trailAdd } from './diag.js';
 import { checkUpdateNotice, updateFwGate, updateVersionUI } from './firmware.js';
 import { syncMapNav, syncNav } from './nav.js';
 import { syncMotionCap } from './motion.js';
+import { fillIcon } from './icons.js';
 
 export const MODE_NAMES = ["Steam","Xbox 360","Switch HORIPAD","Lizard","Switch Pro","PS5 DualSense","PS4 DualShock","PS5 DualSense (single HID)","PS4 DualShock (single HID)","PS3 DualShock","Original Xbox","DirectInput","SInput"];
 // display order for mode lists (MODE_NAMES is indexed by the firmware's mode number); single-HID after their base
@@ -44,9 +45,10 @@ export function applySw(s){
   if(document.activeElement!==$("#qamSelect")) $("#qamSelect").value=s[45];
   if(document.activeElement!==$("#hdPadScale")) $("#hdPadScale").value=s[40]*2;
   const flags=s[46],enabled=!!(flags&32);
-  for(const [id,bit] of SC_BITS){const el=$("#"+id);el.textContent=id==="scQam"?((flags&bit)?"Quick Access":"All four back buttons"):((flags&bit)?"on":"off");el.classList.toggle("active",!!(flags&bit));}
+  // scQam shows the modifier as its glyph (.ic-mod, like the chord labels) instead of on/off
+  for(const [id,bit] of SC_BITS){const el=$("#"+id);if(id!=="scQam")el.textContent=(flags&bit)?"on":"off";el.classList.toggle("active",!!(flags&bit));}
   for(const rec of typeEls)rec.qam.parentElement.classList.toggle("hide",enabled && !!(flags&1));
-  for(const el of document.querySelectorAll(".chord,.chordD")){const lab=el.parentElement.querySelector("label");if(lab)lab.textContent=lab.textContent.replace(/^(back4|Quick Access)/,(flags&1)?"Quick Access":"back4");}
+  for(const el of document.querySelectorAll(".ic-mod")) fillIcon(el,(flags&1)?"qam":"back4");
 }
 export function applyBlob(p){
   for(const rec of typeEls) for(const sel of rec.padStick) for(const o of sel.options) if(+o.value>=3) o.disabled=p[0]<23;

@@ -3,6 +3,7 @@ import { $, log } from './util.js';
 import { setField } from './protocol.js';
 import { MODE_NAMES, MODE_ORDER } from './status.js';
 import { openNav } from './nav.js';
+import { iconEl } from './icons.js';
 
 // Per-emulated-type config (must match firmware ET_* order: Xbox=0, Switch=1, DS4=2, DS5=3). Each type lists
 // only the remap targets that exist on that controller. Field id sent to firmware = 40 + et*9 + k
@@ -16,7 +17,8 @@ export const TYPE_DEFS = [
 ];
 // Which emulated type a USB mode belongs to (mirror of firmware etypeForMode); -1 = puck mode (no type).
 export function etypeForMode(m){ switch(m){case 1:case 10:return 0; case 2:case 4:return 1; case 6:case 8:case 9:return 2; case 5:case 7:return 3; default:return -1;} }
-const BACK_LABELS = ["L4 (back upper-left)","R4 (back upper-right)","L5 (back lower-left)","R5 (back lower-right)"];
+// the firmware's back[] order; each label is the paddle glyph (full name on hover) plus its short name
+const BACK_KEYS = ["L4","R4","L5","R5"];
 export const typeEls = []; // one entry per TYPE_DEFS: {sec, tab, activeDot, back[], qam, abSwap, pad, led, ledV, rumble, padStick[]}
 // Trackpad -> joystick mapping (firmware PS_OFF/PS_LEFT/PS_RIGHT). Field id = PAD_STICK_FIELD0 + et*2 + pad
 // (pad 0 = left trackpad, 1 = right). While mapped and touched the pad drives that stick; on release the
@@ -121,13 +123,13 @@ export function initTypes(){
       // back paddles
       const gBack=group("Back buttons");
       for(let i=0;i<4;i++){
-        const sel=mkSelect(def,true); row(gBack,BACK_LABELS[i],sel);
+        const sel=mkSelect(def,true); row(gBack,"",sel).querySelector("label").append(iconEl(BACK_KEYS[i])," "+BACK_KEYS[i]);
         sel.addEventListener("change",()=>setField(40+et*9+i, +sel.value));
         rec.back.push(sel);
       }
       // QAM + A/B swap
       const gBtn=group("Buttons");
-      { const sel=mkSelect(def,false); row(gBtn,"QAM (3 dots)",sel);
+      { const sel=mkSelect(def,false); row(gBtn,"",sel).querySelector("label").append(iconEl("qam"));
         sel.addEventListener("change",()=>setField(40+et*9+4, +sel.value));
         rec.qam=sel; }
       const ab=toggle(gBtn,"A/B + X/Y swap","off");
