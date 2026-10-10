@@ -1,6 +1,7 @@
 import { S } from './state.js';
 import { $, fwupEnabled, log, setFwupEnabled } from './util.js';
 import { USB_FILTERS, startPolling } from './protocol.js';
+import { MODE_NAMES } from './status.js';
 
 // Firmware update via the UF2 picker: selectedUf2 = {name, image} (image = the app binary extracted from the
 // .uf2 at pick time, so a bad file is rejected before anything is sent). dfuBusy blocks re-entry while an
@@ -117,7 +118,10 @@ async function fwupRun(image){
   // lost command); a stale no-progress ack (the surplus twin of a resent chunk) is read past WITHOUT
   // resending, so retries can't snowball. The ack's nextOff is authoritative — the firmware skips duplicate
   // chunks and re-acks, flash words are never written twice — so every path resynchronizes here.
-  let off=0, sends=0, lastShown=-1;
+  // A puck that is still enumerated but has stopped acking would otherwise be resent to for hours: give up
+  // after this many back-to-back ack timeouts (10 s at 2.5 s each; a page erase is ~85 ms).
+  const MAX_STALLS=4;
+  let off=0, sends=0, stalls=0, lastShown=-1;
   const maxSends=Math.ceil(image.length/128)*2+64;
   while(off<image.length){
     const len=Math.min(128,image.length-off);
@@ -125,10 +129,13 @@ async function fwupRun(image){
     if(++sends>maxSends) throw new Error("transfer not converging at offset "+off);
     for(let reads=0;reads<8;reads++){
       a=await fwupAckWait(2500);
-      if(a===null) break; // timeout: resend this chunk
+      if(a===null){ // timeout: resend this chunk
+        if(++stalls>=MAX_STALLS) throw new Error("the puck stopped responding at "+Math.floor(off*100/image.length)+"%");
+        break;
+      }
       if(a.status===3){ off=a.off; break; } // firmware says where it wants us — resend from there
       if(a.status!==0) throw new Error("chunk rejected at offset "+off+": "+(FWUP_ERR[a.status]||("code "+a.status)));
-      if(a.off>off){ off=a.off; break; } // progress
+      if(a.off>off){ off=a.off; stalls=0; break; } // progress
       // else: stale ack — keep reading, the real one is behind it
     }
     const pct=Math.floor(off*50/image.length)*2;
@@ -196,10 +203,21 @@ export function checkUpdateNotice(){
 // Firmware-tab gate: the connected puck must speak status v15+ (the 0x20..0x24 update ops) for ANY of the
 // update tab to be usable. Too old => banner explains + both cards go inert until a capable build is flashed
 // the manual way once.
+// The update also needs Steam mode: in PS5 mode a transfer stalled at 46% and never recovered, while the same
+// image flashed from Steam mode. Steam is the only mode it has been verified in.
+const UPDATE_MODE=0;
+const modeBlocksUpdate=()=>!S.isDongle && !!S.lastP && S.lastP[0]>=15 && S.lastP[1]!==UPDATE_MODE;
+const modeBlockMsg=()=>"This puck is in "+(MODE_NAMES[S.lastP[1]]||"another")+" mode. Firmware updates are only "
+  +"supported in Steam mode, so switch to it first (hold the shortcut modifier and press A on the controller), "
+  +"then come back here.";
 export function updateFwGate(){
-  const ok = S.isDongle || !!(S.lastP && S.lastP[0]>=15);
+  const verOk = S.isDongle || !!(S.lastP && S.lastP[0]>=15);
+  const modeBlocked = modeBlocksUpdate();
+  const ok = verOk && !modeBlocked;
   $("#updGate").classList.toggle("hide", ok);
-  if(!ok) $("#updGateMsg").textContent =
+  $("#updGateTitle").textContent = modeBlocked ? "Switch to Steam mode to update"
+    : "Panel updates not supported by this firmware";
+  if(!ok) $("#updGateMsg").textContent = modeBlocked ? modeBlockMsg() :
     "This puck is running "+(blobBuildId(S.lastP)||"an unknown build")+" (status v"+(S.lastP?S.lastP[0]:"?")
     +"), which predates panel updates (needs v15+), so updating from this page is disabled. One manual flash "
     +"gets you back: click “UF2 DFU” on the Device page, then drag a panel-update-capable .uf2 onto the UF2BOOT "
@@ -254,6 +272,7 @@ async function runUpdate(title, confirmText, getImage){
     log("this puck's firmware ("+(blobBuildId(S.lastP)||"?")+", status v"+(S.lastP?S.lastP[0]:"?")+") predates panel updates (needs v15+) — flash a panel-update-capable build once via UF2 DFU + drag-and-drop, then this works");
     return;
   }
+  if(modeBlocksUpdate()){ log(modeBlockMsg()); return; }
   if(!confirm(confirmText)) return;
   dfuBusy=true; updateUf2UI(); modalOpen(title);
   S.polling=false;        // the IN pipe belongs to the update acks now
@@ -284,7 +303,8 @@ async function runUpdate(title, confirmText, getImage){
   }catch(e){
     log("firmware update FAILED: "+e.message);
     modalDone(false,e.message+" — nothing was applied; the running firmware is untouched.");
-    try{ await fwupSend([0x24]); }catch(_e){} // best-effort disarm
+    // best-effort disarm; a wedged puck may never complete the write, which must not leave the panel busy
+    try{ await Promise.race([fwupSend([0x24]), dfuSleep(2000)]); }catch(_e){}
     if(S.dev) startPolling();
   }finally{
     dfuBusy=false; updateUf2UI();
