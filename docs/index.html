@@ -57,6 +57,7 @@
   /* square, so it reads smaller than the wide glyphs at the same height */
   .ic[data-ic^="pad"] svg{height:22px}
   .ic-plus{color:var(--mut);margin:0 6px;vertical-align:middle}
+  .ic + .ic{margin-left:3px}
   .hdr-item .ic{align-self:center}
   .hdr-item .ic svg{height:16px}
   /* glyph dropdown (panel/glyphselect.js): looks like a select, with each option's glyph beside its name */
@@ -72,7 +73,7 @@
   .gsel-opt.active{background:#222a3a}
   .gsel-opt[aria-selected="true"]{color:var(--acc)}
   .gsel-opt[aria-disabled="true"]{opacity:.4;cursor:default}
-  .gsel-ic{flex:0 0 34px;display:inline-flex;justify-content:center}
+  .gsel-ic{flex:0 0 40px;display:inline-flex;justify-content:center}
   .card-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 14px}
   .card-head h2{margin:0}
   .card-head button{padding:5px 12px;font-size:12px}
@@ -404,7 +405,7 @@
       </div>
     </div>
     <div class="card" id="mouseCard">
-      <h2>Trackpad mouse</h2>
+      <h2><span data-ic="padR"></span> Trackpad mouse</h2>
       <div class="row"><label>Sensitivity</label><input type="range" id="mDiv" min="4" max="200" step="1"><span class="val" id="mDivV"></span></div>
       <div class="row"><label>Glide / friction</label><input type="range" id="mFric" min="0" max="99" step="1"><span class="val" id="mFricV"></span></div>
       <p class="note">Right-pad cursor in Steam-mode lizard (Steam closed) and in Xbox mode. Sensitivity is a divisor — lower = faster pointer. Glide = how long the cursor coasts after a flick. One setting, shared by the Xbox and Lizard profiles.</p>
@@ -1319,7 +1320,9 @@ function openNav(el){
 // ---- panel/icons.js ----
 // Steam Controller input glyphs, drawn in currentColor so they follow the text around them. A glyph stands in for
 // the input's name, so its span carries that name as the tooltip and the accessible label.
-const LINE = 'fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"';
+// an outline stroke; a glyph that wants another weight asks for it, as a repeated attribute would be ignored
+const line = (w = 1.6) => `fill="none" stroke="currentColor" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round"`;
+const LINE = line();
 // a bold label centred on (cx, cy); the baseline sits about a third of the size below the centre
 const txt = (cx, cy, size, s) => `<text x="${cx}" y="${(cy + size * 0.36).toFixed(1)}" text-anchor="middle" font-size="${size}" font-weight="700" font-family="system-ui,sans-serif">${s}</text>`;
 const svg = (w, h, body) => `<svg viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" fill="currentColor" aria-hidden="true">${body}</svg>`;
@@ -1331,10 +1334,10 @@ const paddles = on => svg(30, 20, PADDLE_XY.map(([x,y],i) =>
 const face = l => svg(18, 18, `<circle cx="9" cy="9" r="8" ${LINE}/>${txt(9, 9, 10, l)}`);
 // PlayStation face buttons: bare symbols, no ring
 const PS_FACE = {
-  cross: `<path d="M4.6 4.6l8.8 8.8M13.4 4.6l-8.8 8.8" ${LINE} stroke-width="1.9"/>`,
-  circle: `<circle cx="9" cy="9" r="5.6" ${LINE} stroke-width="1.9"/>`,
-  square: `<rect x="3.8" y="3.8" width="10.4" height="10.4" rx="1.2" ${LINE} stroke-width="1.9"/>`,
-  triangle: `<path d="M9 3.2L15.2 14H2.8z" ${LINE} stroke-width="1.9"/>`,
+  cross: `<path d="M4.6 4.6l8.8 8.8M13.4 4.6l-8.8 8.8" ${line(1.9)}/>`,
+  circle: `<circle cx="9" cy="9" r="5.6" ${line(1.9)}/>`,
+  square: `<rect x="3.8" y="3.8" width="10.4" height="10.4" rx="1.2" ${line(1.9)}/>`,
+  triangle: `<path d="M9 3.2L15.2 14H2.8z" ${line(1.9)}/>`,
 };
 const psFace = k => svg(18, 18, PS_FACE[k]);
 
@@ -1349,28 +1352,57 @@ const stickDir = dir => svg(20, 18, `<circle cx="10" cy="9" r="8.4" ${LINE}/><ci
 // small round buttons, drawn in a ring like the face buttons
 const ring = body => svg(20, 18, `<circle cx="10" cy="9" r="8.2" ${LINE}/>${body}`);
 const SMALL = {
-  menu: ring(`<path d="M6 6.4h8M6 9h8M6 11.6h8" ${LINE} stroke-width="1.5"/>`),
-  minus: ring(`<path d="M6 9h8" ${LINE} stroke-width="1.7"/>`),
-  plus: ring(`<path d="M6 9h8M10 5v8" ${LINE} stroke-width="1.7"/>`),
-  home: ring(`<path d="M5.8 9.4L10 5.6l4.2 3.8M7.2 8.6V13h5.6V8.6" ${LINE} stroke-width="1.4"/>`),
+  menu: ring(`<path d="M6 6.4h8M6 9h8M6 11.6h8" ${line(1.5)}/>`),
+  minus: ring(`<path d="M6 9h8" ${line(1.7)}/>`),
+  plus: ring(`<path d="M6 9h8M10 5v8" ${line(1.7)}/>`),
+  home: ring(`<path d="M5.8 9.4L10 5.6l4.2 3.8M7.2 8.6V13h5.6V8.6" ${line(1.4)}/>`),
   guide: ring(`<circle cx="10" cy="9" r="3.6"/>`),
   ps: ring(txt(10, 9, 8, "PS")),
   steam: ring(txt(10, 9, 10, "S")),
 };
 const capture = () => svg(20, 18, `<rect x="2.5" y="2.5" width="15" height="13" rx="3" ${LINE}/><circle cx="10" cy="9" r="3.2" ${LINE}/>`);
-const mute = () => svg(20, 18, `<rect x="7.4" y="1.8" width="5.2" height="8" rx="2.6" ${LINE}/><path d="M4.8 8.6a5.2 5.2 0 0 0 10.4 0M10 13.8v2.6" ${LINE}/><path d="M3 2.5L17 15.5" ${LINE} stroke-width="1.8"/>`);
+const mute = () => svg(20, 18, `<rect x="7.4" y="1.8" width="5.2" height="8" rx="2.6" ${LINE}/><path d="M4.8 8.6a5.2 5.2 0 0 0 10.4 0M10 13.8v2.6" ${LINE}/><path d="M3 2.5L17 15.5" ${line(1.8)}/>`);
 
 // a rounded square with its top leaning in, like the controller's pads; the letter stays upright to stay legible
 const PAD_TILT = 12;
 const pad = (l, deg) => svg(20, 20, `<rect x="2.5" y="2.5" width="15" height="15" rx="3.5" transform="rotate(${deg} 10 10)" ${LINE}/>${txt(10, 10, 10, l)}`);
 // a pad pressed down: ripples to each side of it, the click you feel. A letter names the pad, a dot is a lone touchpad
 const ripples = side => [[3.4, 6, 8, 1.8], [1.4, 4, 12, 2.4]].map(([x, y, h, bulge]) =>
-  `<path d="M${side < 0 ? x : 28 - x} ${y}q${side * bulge} ${h / 2} 0 ${h}" ${LINE} stroke-width="1.4"/>`).join("");
+  `<path d="M${side < 0 ? x : 28 - x} ${y}q${side * bulge} ${h / 2} 0 ${h}" ${line(1.4)}/>`).join("");
 const padClick = (l, deg) => svg(28, 20, `<rect x="6.5" y="2.5" width="15" height="15" rx="3.5" transform="rotate(${deg} 14 10)" ${LINE}/>${l ? txt(14, 10, 10, l) : '<circle cx="14" cy="10" r="2.2"/>'}${ripples(-1)}${ripples(1)}`);
 
 const DPAD_ARM = {up:[7,1], down:[7,13], left:[1,7], right:[13,7]};
 // a faint cross with the one arm solid: an outline is too thick at label size to tell the arms apart
 const dpad = dir => svg(20, 20, `<path d="M7 1h6v6h6v6h-6v6H7v-6H1V7h6z" opacity=".35"/><rect x="${DPAD_ARM[dir][0]}" y="${DPAD_ARM[dir][1]}" width="6" height="6" rx="1"/>`);
+
+// Desktop outputs for the Lizard map: a mouse (with the pressed button filled), the wheel, the pointer, a keyboard, the
+// speaker for media keys, and the gyro.
+const MOUSE_BODY = `<rect x="4" y="1.5" width="12" height="17" rx="6" ${LINE}/><path d="M4 8.5h12M10 1.5v7" ${line(1.2)}/>`;
+const mouse = part => svg(20, 20, MOUSE_BODY + part);
+const SPEAKER = '<path d="M2 7h3.4L10 3.4v11.2L5.4 11H2z"/>';
+const DESKTOP = {
+  mouse: ["Mouse button", mouse("")],
+  mouseL: ["Left click", mouse('<path d="M10 1.5a6 6 0 0 0-6 6v1h6z"/>')],
+  mouseR: ["Right click", mouse('<path d="M10 1.5a6 6 0 0 1 6 6v1h-6z"/>')],
+  mouseM: ["Middle click", mouse('<rect x="8.8" y="3" width="2.4" height="4.6" rx="1.2"/>')],
+  wheel: ["Scroll wheel", svg(26, 20, `<rect x="3" y="1.5" width="12" height="17" rx="6" ${LINE}/><rect x="8.8" y="4" width="2.4" height="5" rx="1.2"/><path d="M19 7.4l2.5-3 2.5 3M19 12.6l2.5 3 2.5-3" ${LINE}/>`)],
+  pointer: ["Mouse move", svg(20, 20, '<path d="M5 2.5v14l3.6-3.4 2.6 5.4 2.4-1.2-2.6-5.2H15.5z"/>')],
+  kbd: ["Keyboard key", svg(26, 18, `<rect x="1" y="3" width="24" height="12" rx="2.5" ${LINE}/><path d="M8 12.2h10" ${LINE}/>` + [5, 9, 13, 17, 21].map(x => `<circle cx="${x}" cy="6.4" r=".95"/>`).join("") + [7, 11, 15, 19].map(x => `<circle cx="${x}" cy="9.3" r=".95"/>`).join(""))],
+  speaker: ["Media key", svg(20, 18, SPEAKER + `<path d="M12.8 6.3a3.8 3.8 0 0 1 0 5.4M15.2 4a7 7 0 0 1 0 10" ${line(1.4)}/>`)],
+  volUp: ["Volume +", svg(24, 18, SPEAKER + `<path d="M14.5 9h7M18 5.5v7" ${LINE}/>`)],
+  volDown: ["Volume −", svg(24, 18, SPEAKER + `<path d="M14.5 9h7" ${LINE}/>`)],
+  gyro: ["Gyro", svg(20, 20, `<ellipse cx="10" cy="10" rx="8.4" ry="3.4" transform="rotate(-35 10 10)" ${LINE}/><ellipse cx="10" cy="10" rx="8.4" ry="3.4" transform="rotate(35 10 10)" ${LINE} opacity=".5"/><circle cx="10" cy="10" r="2"/>`)],
+};
+
+// A keyboard key is drawn on demand as a keycap with its legend, named "key:<name>": there are too many to list.
+// Arrows are drawn, the rest is text.
+const CAP_TEXT = {Enter:"Enter", Backspace:"Bksp", Space:"Space", "Page Up":"PgUp", "Page Down":"PgDn", "Print Screen":"PrtSc", Delete:"Del", Insert:"Ins", "- _":"-", "= +":"=", "Win/⌘":"Win"};
+const CAP_ARROW = {"Arrow Up":"M9 4.5l4 5.5H5z", "Arrow Down":"M9 13.5l4-5.5H5z", "Arrow Left":"M4.5 9l5.5-4v8z", "Arrow Right":"M13.5 9L8 5v8z"};
+const keycap = name => {
+  const arrow = CAP_ARROW[name], t = CAP_TEXT[name] || name;
+  const w = arrow || t.length < 2 ? 18 : Math.round(8 + t.length * 5.8);
+  return [name, svg(w, 18, `<rect x="1" y="1.5" width="${w - 2}" height="15" rx="3.5" ${line(1.4)}/>` + (arrow ? `<path d="${arrow}"/>` : txt(w / 2, 9, t.length < 2 ? 10 : 7.5, t)))];
+};
 
 // Whole consoles, for the mode in the header. Plain shapes that suggest each family, not the makers' logos.
 // The X is cut out of the disc (even-odd) so it needs no mask, which would clash when the same id repeats.
@@ -1381,7 +1413,7 @@ const SYSTEMS = {
   // two detached halves with a stick each
   sysSwitch: ["Switch", svg(22, 20, `<rect x="1.2" y="2" width="8.2" height="16" rx="3.6" ${LINE}/><rect x="12.6" y="2" width="8.2" height="16" rx="3.6" ${LINE}/><circle cx="5.3" cy="6.6" r="1.6"/><circle cx="16.7" cy="13.4" r="1.6"/>`)],
   // the face-button diamond: triangle, circle, cross, square
-  sysPlayStation: ["PlayStation", svg(20, 20, `<path d="M10 1.6l3 5.2H7z" ${LINE} stroke-width="1.3"/><circle cx="16.4" cy="10" r="2.8" ${LINE} stroke-width="1.3"/><path d="M7.6 14.6l4.8 4.8M12.4 14.6l-4.8 4.8" ${LINE} stroke-width="1.3"/><rect x="1.2" y="7.4" width="5.6" height="5.6" rx=".6" ${LINE} stroke-width="1.3"/>`)],
+  sysPlayStation: ["PlayStation", svg(20, 20, `<path d="M10 1.6l3 5.2H7z" ${line(1.3)}/><circle cx="16.4" cy="10" r="2.8" ${line(1.3)}/><path d="M7.6 14.6l4.8 4.8M12.4 14.6l-4.8 4.8" ${line(1.3)}/><rect x="1.2" y="7.4" width="5.6" height="5.6" rx=".6" ${line(1.3)}/>`)],
   // a body with the two trackpads
   sysSteam: ["Steam Controller", svg(26, 18, `<rect x="1" y="2.5" width="24" height="13" rx="6.5" ${LINE}/><circle cx="8.4" cy="9" r="3.2" ${LINE}/><circle cx="17.6" cy="9" r="3.2" ${LINE}/>`)],
   sysLizard: ["Desktop (mouse and keyboard)", svg(16, 20, `<rect x="2" y="1.5" width="12" height="17" rx="6" ${LINE}/><path d="M8 1.5v6.5M2 8h12" ${LINE}/>`)],
@@ -1423,13 +1455,14 @@ const ICONS = {
   // Switch profile's lists, where it sits beside Plus.
   view: ["View (Back on Xbox, Minus on Switch, Create on PlayStation)", svg(20, 18, `<rect x="6.5" y="1.5" width="12" height="9" rx="2" ${LINE}/><rect x="1.5" y="7" width="12" height="9.5" rx="2"/>`)],
   ...SYSTEMS,
+  ...DESKTOP,
 };
 
 // a no-op when the glyph is already there: the status poll refills the modifier ones every 600 ms, and swapping the
 // SVG under the pointer would drop its tooltip
 function fillIcon(el, name){
   if(el.dataset.ic === name && el.firstChild) return;
-  const [label, art] = ICONS[name];
+  const [label, art] = name.startsWith("key:") ? keycap(name.slice(4)) : ICONS[name];
   el.dataset.ic = name; el.classList.add("ic"); el.setAttribute("role", "img");
   el.setAttribute("aria-label", label); el.title = label; el.innerHTML = art;
 }
@@ -1685,6 +1718,9 @@ function initTypes(){
       const group=title=>{ const g=document.createElement("div"); g.className="card"; const h=document.createElement("h2"); h.textContent=title; g.appendChild(h); sec.appendChild(g); return g; };
       const row=(g,label,...els)=>{ const r=document.createElement("div"); r.className="row"; const l=document.createElement("label"); l.textContent=label; r.append(l,...els); g.appendChild(r); return r; };
       const toggle=(g,label,txt)=>{ const b=document.createElement("button"); b.textContent=txt; row(g,label,b); return b; };
+      // a toggle's label made of glyphs and words, like the back-button labels
+      const plus=()=>{ const s=document.createElement("span"); s.className="ic-plus"; s.textContent="+"; return s; };
+      const relabel=(btn,...parts)=>{ const l=btn.parentElement.querySelector("label"); l.textContent=""; l.append(...parts); };
 
       // back paddles
       const gBack=group("Back buttons");
@@ -1698,7 +1734,8 @@ function initTypes(){
       { const sel=mkSelect(def,false); row(gBtn,"",glyphSelect(sel)).querySelector("label").append(iconEl("qam")," QAM");
         sel.addEventListener("change",()=>setField(40+et*9+4, +sel.value));
         rec.qam=sel; }
-      const ab=toggle(gBtn,"A/B + X/Y swap","off");
+      const ab=toggle(gBtn,"","off");
+      relabel(ab,iconEl("A"),iconEl("B"),plus(),iconEl("X"),iconEl("Y")," swap");
       // trackpad -> joystick mapping (one select per pad) + trackpad haptics
       const gPad=group("Trackpads");
       for(let pad=0; pad<2; pad++){
@@ -1754,7 +1791,8 @@ function initTypes(){
         sty.addEventListener("change",()=>setField(88, +sty.value));
         rec.audioStyle=sty;
         // Create button presses the touchpad click instead (protocol v29)
-        const ct=toggle(gBtn,"Create = touchpad click","off");
+        const ct=toggle(gBtn,"","off");
+        relabel(ct,iconEl("view")," Create = ",iconEl("padClick")," touchpad click");
         rec.createTouch=ct;
         ct.onclick=()=>setField(116, ct.classList.contains("active")?0:1);
         // Audio Haptics gain
@@ -3347,6 +3385,7 @@ function applyDeviceProfile(){
 const LZ_MAX = 32;
 const LZO = {NONE:0, KBD:1, MBTN:2, AXIS:3, SCROLL:4, CONSUMER:5};
 const LZ_OUT_LABELS = {0:"(disabled)", 1:"Keyboard key", 2:"Mouse button", 3:"Mouse move", 4:"Scroll wheel", 5:"Media key"};
+const LZ_OUT_GLYPH = {1:"kbd", 2:"mouse", 3:"pointer", 4:"wheel", 5:"speaker"};
 // Controller input bits (triton.h TB_* + virtual left-stick deflection bits). Single-bit triggers only.
 const LZ_BTNS = [
   [0x1,"A","A"],[0x2,"B","B"],[0x4,"X","X"],[0x8,"Y","Y"],
@@ -3373,12 +3412,18 @@ const LZ_KEYS = [[0,"— none —"]];
  [0x4a,"Home"],[0x4d,"End"],[0x4b,"Page Up"],[0x4e,"Page Down"],[0x49,"Insert"],[0x4c,"Delete"],
  [0x2d,"- _"],[0x2e,"= +"],[0x46,"Print Screen"]].forEach(k=>LZ_KEYS.push(k));
 for(let i=0;i<12;i++) LZ_KEYS.push([0x3a+i,"F"+(i+1)]);
-const LZ_MBTNS = [[1,"Left click"],[2,"Right click"],[4,"Middle click"]];
-const LZ_AXIS_SRC = [[0,"Right trackpad"],[1,"Left stick"],[2,"Gyro"]];
-const LZ_GYRO_ACT = [[0,"Always"],[1,"While right pad touched"],[2,"While left stick deflected"],[3,"While hold-button held"]];
-const LZ_CONSUMER = [[1,"Volume +"],[2,"Volume −"]];
+// every key is drawn as a keycap bearing its name (panel/icons.js)
+for(const k of LZ_KEYS) if(k[0]) k.push("key:"+k[1]);
+const LZ_MBTNS = [[1,"Left click","mouseL"],[2,"Right click","mouseR"],[4,"Middle click","mouseM"]];
+const LZ_AXIS_SRC = [[0,"Right trackpad","padR"],[1,"Left stick","stickL"],[2,"Gyro","gyro"]];
+const LZ_GYRO_ACT = [[0,"Always"],[1,"While right pad touched","padR"],[2,"While left stick deflected","stickL"],[3,"While hold-button held"]];
+const LZ_CONSUMER = [[1,"Volume +","volUp"],[2,"Volume −","volDown"]];
 
-function lzBtnLabel(mask){ const v=Number(mask)||0; const m=LZ_BTNS.find(b=>Number(b[0])===v); return m?m[1]:(v?("0x"+v.toString(16)):""); }
+// an input as its glyph and short name (the label up to its parenthesis), for the summary line
+function lzInput(mask){
+	const v=Number(mask)||0, m=LZ_BTNS.find(b=>Number(b[0])===v);
+	return m?[iconEl(m[2])," "+m[1].split(" (")[0]]:(v?["0x"+v.toString(16)]:[]);
+}
 // Read one [0xAA][count][count*16] frame, accumulating transferIn packets until complete.
 // Gives up after 3 s (null): an unanswered 0x11 must never block the IN pipe for good.
 async function readLizard(){
@@ -3474,17 +3519,28 @@ function lzV2Select(options,value,onchange,noneLabel){
 let lzDirty=false;
 function lzSetDirty(on){ lzDirty=on; const d=document.getElementById("lzDirty"); if(d) d.classList.toggle("hide",!on); }
 const lzName=(list,v)=>{ const m=list.find(x=>Number(x[0])===Number(v)); return m?m[1]:""; };
+const lzGlyph=(list,v)=>{ const m=list.find(x=>Number(x[0])===Number(v)); return m&&m[2]; };
+// a name with its glyph, when the value has one
+const lzNamed=(list,v,fallback)=>{ const n=lzName(list,v), g=lzGlyph(list,v); return n?[...(g?[iconEl(g)," "]:[]),n]:[fallback]; };
+// the summary line as nodes: glyphs where an input or output has one, words beside them
 function lzSummary(b){
-	const od=b.od, src=lzName(LZ_AXIS_SRC,od[0]);
-	if(b.outType===LZO.AXIS) return src+" → mouse pointer"+(od[0]===2?", "+lzName(LZ_GYRO_ACT,od[1]).toLowerCase()+(od[1]===3&&b.hold?" ("+lzBtnLabel(b.hold)+")":""):"");
-	if(b.outType===LZO.SCROLL) return "Left trackpad → scroll wheel";
+	const od=b.od;
+	if(b.outType===LZO.AXIS){
+		const n=[...lzNamed(LZ_AXIS_SRC,od[0],"source")," → ",iconEl(LZ_OUT_GLYPH[3])," mouse pointer"];
+		if(od[0]===2){ const g=lzGlyph(LZ_GYRO_ACT,od[1]); n.push(", ",...(g?[iconEl(g)," "]:[]),lzName(LZ_GYRO_ACT,od[1]).toLowerCase()); if(od[1]===3&&b.hold) n.push(" (",...lzInput(b.hold),")"); }
+		return n;
+	}
+	if(b.outType===LZO.SCROLL) return [iconEl("padL")," Left trackpad → ",iconEl(LZ_OUT_GLYPH[4])," scroll wheel"];
 	let out;
-	if(b.outType===LZO.KBD) out=[...LZ_MODS.filter(([bit])=>od[0]&bit).map(m=>m[1]),...od.slice(1).filter(Boolean).map(k=>lzName(LZ_KEYS,k)||"key 0x"+k.toString(16))].join(" + ")||"(no key)";
-	else if(b.outType===LZO.MBTN) out=lzName(LZ_MBTNS,od[0])||"mouse button";
-	else if(b.outType===LZO.CONSUMER) out=lzName(LZ_CONSUMER,od[0])||"media key";
-	else return "Disabled";
-	const input=[b.trig?lzBtnLabel(b.trig):"",b.hold?"holding "+lzBtnLabel(b.hold):""].filter(Boolean).join(" while ");
-	return (input||"no input chosen")+" → "+out;
+	if(b.outType===LZO.KBD){
+		const keys=[...LZ_MODS.filter(([bit])=>od[0]&bit).map(m=>m[1]),...od.slice(1).filter(Boolean).map(k=>lzName(LZ_KEYS,k)||"0x"+k.toString(16))];
+		out=keys.length?keys.flatMap((k,i)=>[...(i?[" + "]:[]),iconEl("key:"+k)]):["(no key)"];
+	}
+	else if(b.outType===LZO.MBTN) out=lzNamed(LZ_MBTNS,od[0],"mouse button");
+	else if(b.outType===LZO.CONSUMER) out=lzNamed(LZ_CONSUMER,od[0],"media key");
+	else return ["Disabled"];
+	const input=[...(b.trig?lzInput(b.trig):[]),...(b.trig&&b.hold?[" while "]:[]),...(b.hold?["holding ",...lzInput(b.hold)]:[])];
+	return [...(input.length?input:["no input chosen"])," → ",...out];
 }
 function lzField(label,el){
 	const f=document.createElement("div"); f.className="lz-f";
@@ -3505,16 +3561,16 @@ function lzV2Render(){
 		const box=document.createElement("div"); box.className="lz-row";
 		const head=document.createElement("div"); head.className="lz-head";
 		const num=document.createElement("span"); num.className="lz-idx"; num.textContent="#"+(idx+1);
-		const sum=document.createElement("span"); sum.className="lz-sum"; sum.textContent=lzSummary(b);
+		const sum=document.createElement("span"); sum.className="lz-sum"; sum.append(...lzSummary(b));
 		// a key/click/media binding with no input never fires as intended
 		const digital=b.outType===LZO.KBD||b.outType===LZO.MBTN||b.outType===LZO.CONSUMER;
-		if(digital&&!b.trig&&!b.hold){ sum.classList.add("warn"); sum.textContent="⚠ "+sum.textContent; }
+		if(digital&&!b.trig&&!b.hold){ sum.classList.add("warn"); sum.prepend("⚠ "); }
 		const del=document.createElement("button"); del.textContent="Remove";
 		del.onclick=()=>{ S.lizardBindings.splice(idx,1); lzSetDirty(true); lzV2Render(); };
 		head.append(num,sum,del); box.appendChild(head);
 
 		const fields=document.createElement("div"); fields.className="lz-fields";
-		const types=Object.keys(LZ_OUT_LABELS).map(Number).map(v=>[v,LZ_OUT_LABELS[v]]);
+		const types=Object.keys(LZ_OUT_LABELS).map(Number).map(v=>[v,LZ_OUT_LABELS[v],LZ_OUT_GLYPH[v]]);
 		fields.appendChild(lzField("Action",lzV2Select(types,b.outType,edit(v=>{b.outType=v;}))));
 		// analog outputs are driven by their source; only gyro "while hold-button held" reads the hold buttons
 		const analog=b.outType===LZO.AXIS||b.outType===LZO.SCROLL;
@@ -3526,7 +3582,7 @@ function lzV2Render(){
 			for(const [bit,label] of LZ_MODS){
 				const c=document.createElement("input"); c.type="checkbox"; c.checked=!!(b.od[0]&bit);
 				c.onchange=edit(()=>{ if(c.checked)b.od[0]|=bit;else b.od[0]&=~bit; });
-				const l=document.createElement("label"); l.append(c,label); mods.appendChild(l);
+				const l=document.createElement("label"); l.append(c,iconEl("key:"+label)); mods.appendChild(l);
 			}
 			fields.appendChild(lzField("Modifiers",mods));
 			// key 1 always; each further key slot appears once the one before it is set (up to 6)
@@ -3541,7 +3597,7 @@ function lzV2Render(){
 			if(b.od[0]===2) fields.appendChild(lzField("Gyro active",lzV2Select(LZ_GYRO_ACT,b.od[1],edit(v=>{b.od[1]=v;}))));
 		}else if(b.outType===LZO.SCROLL){
 			b.od[0]=0;
-			const s=document.createElement("span"); s.style.cssText="color:var(--fg);font-size:13px;padding-top:6px"; s.textContent="Left trackpad";
+			const s=document.createElement("span"); s.style.cssText="color:var(--fg);font-size:13px;padding-top:6px"; s.append(iconEl("padL")," Left trackpad");
 			fields.appendChild(lzField("Source",s));
 		}else if(b.outType===LZO.CONSUMER){
 			fields.appendChild(lzField("Media key",lzV2Select(LZ_CONSUMER,b.od[0],edit(v=>{b.od[0]=v;}))));

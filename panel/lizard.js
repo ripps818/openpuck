@@ -2,6 +2,7 @@ import { S } from './state.js';
 import { log } from './util.js';
 import { readIn, send, waitIdle } from './protocol.js';
 import { glyphSelect } from './glyphselect.js';
+import { iconEl } from './icons.js';
 
 // ===================== Lizard (desktop) binding map =====================
 // Mirrors firmware lizard_map.h. A binding is {outType, od:[7], trig, hold}. Output types and the
@@ -9,6 +10,7 @@ import { glyphSelect } from './glyphselect.js';
 export const LZ_MAX = 32;
 const LZO = {NONE:0, KBD:1, MBTN:2, AXIS:3, SCROLL:4, CONSUMER:5};
 const LZ_OUT_LABELS = {0:"(disabled)", 1:"Keyboard key", 2:"Mouse button", 3:"Mouse move", 4:"Scroll wheel", 5:"Media key"};
+const LZ_OUT_GLYPH = {1:"kbd", 2:"mouse", 3:"pointer", 4:"wheel", 5:"speaker"};
 // Controller input bits (triton.h TB_* + virtual left-stick deflection bits). Single-bit triggers only.
 const LZ_BTNS = [
   [0x1,"A","A"],[0x2,"B","B"],[0x4,"X","X"],[0x8,"Y","Y"],
@@ -35,12 +37,18 @@ const LZ_KEYS = [[0,"— none —"]];
  [0x4a,"Home"],[0x4d,"End"],[0x4b,"Page Up"],[0x4e,"Page Down"],[0x49,"Insert"],[0x4c,"Delete"],
  [0x2d,"- _"],[0x2e,"= +"],[0x46,"Print Screen"]].forEach(k=>LZ_KEYS.push(k));
 for(let i=0;i<12;i++) LZ_KEYS.push([0x3a+i,"F"+(i+1)]);
-const LZ_MBTNS = [[1,"Left click"],[2,"Right click"],[4,"Middle click"]];
-const LZ_AXIS_SRC = [[0,"Right trackpad"],[1,"Left stick"],[2,"Gyro"]];
-const LZ_GYRO_ACT = [[0,"Always"],[1,"While right pad touched"],[2,"While left stick deflected"],[3,"While hold-button held"]];
-const LZ_CONSUMER = [[1,"Volume +"],[2,"Volume −"]];
+// every key is drawn as a keycap bearing its name (panel/icons.js)
+for(const k of LZ_KEYS) if(k[0]) k.push("key:"+k[1]);
+const LZ_MBTNS = [[1,"Left click","mouseL"],[2,"Right click","mouseR"],[4,"Middle click","mouseM"]];
+const LZ_AXIS_SRC = [[0,"Right trackpad","padR"],[1,"Left stick","stickL"],[2,"Gyro","gyro"]];
+const LZ_GYRO_ACT = [[0,"Always"],[1,"While right pad touched","padR"],[2,"While left stick deflected","stickL"],[3,"While hold-button held"]];
+const LZ_CONSUMER = [[1,"Volume +","volUp"],[2,"Volume −","volDown"]];
 
-function lzBtnLabel(mask){ const v=Number(mask)||0; const m=LZ_BTNS.find(b=>Number(b[0])===v); return m?m[1]:(v?("0x"+v.toString(16)):""); }
+// an input as its glyph and short name (the label up to its parenthesis), for the summary line
+function lzInput(mask){
+	const v=Number(mask)||0, m=LZ_BTNS.find(b=>Number(b[0])===v);
+	return m?[iconEl(m[2])," "+m[1].split(" (")[0]]:(v?["0x"+v.toString(16)]:[]);
+}
 // Read one [0xAA][count][count*16] frame, accumulating transferIn packets until complete.
 // Gives up after 3 s (null): an unanswered 0x11 must never block the IN pipe for good.
 export async function readLizard(){
@@ -136,17 +144,28 @@ function lzV2Select(options,value,onchange,noneLabel){
 let lzDirty=false;
 function lzSetDirty(on){ lzDirty=on; const d=document.getElementById("lzDirty"); if(d) d.classList.toggle("hide",!on); }
 const lzName=(list,v)=>{ const m=list.find(x=>Number(x[0])===Number(v)); return m?m[1]:""; };
+const lzGlyph=(list,v)=>{ const m=list.find(x=>Number(x[0])===Number(v)); return m&&m[2]; };
+// a name with its glyph, when the value has one
+const lzNamed=(list,v,fallback)=>{ const n=lzName(list,v), g=lzGlyph(list,v); return n?[...(g?[iconEl(g)," "]:[]),n]:[fallback]; };
+// the summary line as nodes: glyphs where an input or output has one, words beside them
 function lzSummary(b){
-	const od=b.od, src=lzName(LZ_AXIS_SRC,od[0]);
-	if(b.outType===LZO.AXIS) return src+" → mouse pointer"+(od[0]===2?", "+lzName(LZ_GYRO_ACT,od[1]).toLowerCase()+(od[1]===3&&b.hold?" ("+lzBtnLabel(b.hold)+")":""):"");
-	if(b.outType===LZO.SCROLL) return "Left trackpad → scroll wheel";
+	const od=b.od;
+	if(b.outType===LZO.AXIS){
+		const n=[...lzNamed(LZ_AXIS_SRC,od[0],"source")," → ",iconEl(LZ_OUT_GLYPH[3])," mouse pointer"];
+		if(od[0]===2){ const g=lzGlyph(LZ_GYRO_ACT,od[1]); n.push(", ",...(g?[iconEl(g)," "]:[]),lzName(LZ_GYRO_ACT,od[1]).toLowerCase()); if(od[1]===3&&b.hold) n.push(" (",...lzInput(b.hold),")"); }
+		return n;
+	}
+	if(b.outType===LZO.SCROLL) return [iconEl("padL")," Left trackpad → ",iconEl(LZ_OUT_GLYPH[4])," scroll wheel"];
 	let out;
-	if(b.outType===LZO.KBD) out=[...LZ_MODS.filter(([bit])=>od[0]&bit).map(m=>m[1]),...od.slice(1).filter(Boolean).map(k=>lzName(LZ_KEYS,k)||"key 0x"+k.toString(16))].join(" + ")||"(no key)";
-	else if(b.outType===LZO.MBTN) out=lzName(LZ_MBTNS,od[0])||"mouse button";
-	else if(b.outType===LZO.CONSUMER) out=lzName(LZ_CONSUMER,od[0])||"media key";
-	else return "Disabled";
-	const input=[b.trig?lzBtnLabel(b.trig):"",b.hold?"holding "+lzBtnLabel(b.hold):""].filter(Boolean).join(" while ");
-	return (input||"no input chosen")+" → "+out;
+	if(b.outType===LZO.KBD){
+		const keys=[...LZ_MODS.filter(([bit])=>od[0]&bit).map(m=>m[1]),...od.slice(1).filter(Boolean).map(k=>lzName(LZ_KEYS,k)||"0x"+k.toString(16))];
+		out=keys.length?keys.flatMap((k,i)=>[...(i?[" + "]:[]),iconEl("key:"+k)]):["(no key)"];
+	}
+	else if(b.outType===LZO.MBTN) out=lzNamed(LZ_MBTNS,od[0],"mouse button");
+	else if(b.outType===LZO.CONSUMER) out=lzNamed(LZ_CONSUMER,od[0],"media key");
+	else return ["Disabled"];
+	const input=[...(b.trig?lzInput(b.trig):[]),...(b.trig&&b.hold?[" while "]:[]),...(b.hold?["holding ",...lzInput(b.hold)]:[])];
+	return [...(input.length?input:["no input chosen"])," → ",...out];
 }
 function lzField(label,el){
 	const f=document.createElement("div"); f.className="lz-f";
@@ -167,16 +186,16 @@ export function lzV2Render(){
 		const box=document.createElement("div"); box.className="lz-row";
 		const head=document.createElement("div"); head.className="lz-head";
 		const num=document.createElement("span"); num.className="lz-idx"; num.textContent="#"+(idx+1);
-		const sum=document.createElement("span"); sum.className="lz-sum"; sum.textContent=lzSummary(b);
+		const sum=document.createElement("span"); sum.className="lz-sum"; sum.append(...lzSummary(b));
 		// a key/click/media binding with no input never fires as intended
 		const digital=b.outType===LZO.KBD||b.outType===LZO.MBTN||b.outType===LZO.CONSUMER;
-		if(digital&&!b.trig&&!b.hold){ sum.classList.add("warn"); sum.textContent="⚠ "+sum.textContent; }
+		if(digital&&!b.trig&&!b.hold){ sum.classList.add("warn"); sum.prepend("⚠ "); }
 		const del=document.createElement("button"); del.textContent="Remove";
 		del.onclick=()=>{ S.lizardBindings.splice(idx,1); lzSetDirty(true); lzV2Render(); };
 		head.append(num,sum,del); box.appendChild(head);
 
 		const fields=document.createElement("div"); fields.className="lz-fields";
-		const types=Object.keys(LZ_OUT_LABELS).map(Number).map(v=>[v,LZ_OUT_LABELS[v]]);
+		const types=Object.keys(LZ_OUT_LABELS).map(Number).map(v=>[v,LZ_OUT_LABELS[v],LZ_OUT_GLYPH[v]]);
 		fields.appendChild(lzField("Action",lzV2Select(types,b.outType,edit(v=>{b.outType=v;}))));
 		// analog outputs are driven by their source; only gyro "while hold-button held" reads the hold buttons
 		const analog=b.outType===LZO.AXIS||b.outType===LZO.SCROLL;
@@ -188,7 +207,7 @@ export function lzV2Render(){
 			for(const [bit,label] of LZ_MODS){
 				const c=document.createElement("input"); c.type="checkbox"; c.checked=!!(b.od[0]&bit);
 				c.onchange=edit(()=>{ if(c.checked)b.od[0]|=bit;else b.od[0]&=~bit; });
-				const l=document.createElement("label"); l.append(c,label); mods.appendChild(l);
+				const l=document.createElement("label"); l.append(c,iconEl("key:"+label)); mods.appendChild(l);
 			}
 			fields.appendChild(lzField("Modifiers",mods));
 			// key 1 always; each further key slot appears once the one before it is set (up to 6)
@@ -203,7 +222,7 @@ export function lzV2Render(){
 			if(b.od[0]===2) fields.appendChild(lzField("Gyro active",lzV2Select(LZ_GYRO_ACT,b.od[1],edit(v=>{b.od[1]=v;}))));
 		}else if(b.outType===LZO.SCROLL){
 			b.od[0]=0;
-			const s=document.createElement("span"); s.style.cssText="color:var(--fg);font-size:13px;padding-top:6px"; s.textContent="Left trackpad";
+			const s=document.createElement("span"); s.style.cssText="color:var(--fg);font-size:13px;padding-top:6px"; s.append(iconEl("padL")," Left trackpad");
 			fields.appendChild(lzField("Source",s));
 		}else if(b.outType===LZO.CONSUMER){
 			fields.appendChild(lzField("Media key",lzV2Select(LZ_CONSUMER,b.od[0],edit(v=>{b.od[0]=v;}))));

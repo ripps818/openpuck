@@ -130,6 +130,9 @@ export function initTypes(){
       const group=title=>{ const g=document.createElement("div"); g.className="card"; const h=document.createElement("h2"); h.textContent=title; g.appendChild(h); sec.appendChild(g); return g; };
       const row=(g,label,...els)=>{ const r=document.createElement("div"); r.className="row"; const l=document.createElement("label"); l.textContent=label; r.append(l,...els); g.appendChild(r); return r; };
       const toggle=(g,label,txt)=>{ const b=document.createElement("button"); b.textContent=txt; row(g,label,b); return b; };
+      // a toggle's label made of glyphs and words, like the back-button labels
+      const plus=()=>{ const s=document.createElement("span"); s.className="ic-plus"; s.textContent="+"; return s; };
+      const relabel=(btn,...parts)=>{ const l=btn.parentElement.querySelector("label"); l.textContent=""; l.append(...parts); };
 
       // back paddles
       const gBack=group("Back buttons");
@@ -143,7 +146,8 @@ export function initTypes(){
       { const sel=mkSelect(def,false); row(gBtn,"",glyphSelect(sel)).querySelector("label").append(iconEl("qam")," QAM");
         sel.addEventListener("change",()=>setField(40+et*9+4, +sel.value));
         rec.qam=sel; }
-      const ab=toggle(gBtn,"A/B + X/Y swap","off");
+      const ab=toggle(gBtn,"","off");
+      relabel(ab,iconEl("A"),iconEl("B"),plus(),iconEl("X"),iconEl("Y")," swap");
       // trackpad -> joystick mapping (one select per pad) + trackpad haptics
       const gPad=group("Trackpads");
       for(let pad=0; pad<2; pad++){
@@ -199,7 +203,8 @@ export function initTypes(){
         sty.addEventListener("change",()=>setField(88, +sty.value));
         rec.audioStyle=sty;
         // Create button presses the touchpad click instead (protocol v29)
-        const ct=toggle(gBtn,"Create = touchpad click","off");
+        const ct=toggle(gBtn,"","off");
+        relabel(ct,iconEl("view")," Create = ",iconEl("padClick")," touchpad click");
         rec.createTouch=ct;
         ct.onclick=()=>setField(116, ct.classList.contains("active")?0:1);
         // Audio Haptics gain

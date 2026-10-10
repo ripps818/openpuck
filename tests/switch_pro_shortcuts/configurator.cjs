@@ -55,7 +55,11 @@ const secs=[...$('#typeCfgs').children];
  assert.deepEqual(labs.slice(0,4).map(l=>l.textContent.trim()+'|'+l.querySelector('.ic').title),['L4|L4 (back upper-left)','R4|R4 (back upper-right)','L5|L5 (back lower-left)','R5|R5 (back lower-right)']);
  assert.equal(labs[4].querySelector('.ic').dataset.ic,'qam');assert.equal(labs[4].textContent.trim(),'QAM');
  // the trackpad mapping rows are labelled by the left / right pad glyph plus the word
- assert.deepEqual([...secs[0].querySelectorAll('.row label .ic[data-ic^=pad]')].map(e=>e.title+'|'+e.nextSibling.textContent),['Left trackpad| Trackpad','Right trackpad| Trackpad']);}
+ assert.deepEqual([...secs[0].querySelectorAll('.row label .ic[data-ic^=pad]')].map(e=>e.title+'|'+e.nextSibling.textContent),['Left trackpad| Trackpad','Right trackpad| Trackpad']);
+ // the A/B swap and Create toggles are labelled with their glyphs too
+ const swapLab=labs.find(l=>l.querySelector('.ic[data-ic=A]')),createLab=[...secs[3].querySelectorAll('.row label')].find(l=>l.querySelector('.ic[data-ic=padClick]'));
+ assert.deepEqual([...swapLab.querySelectorAll('.ic')].map(e=>e.dataset.ic),['A','B','X','Y']);assert(swapLab.textContent.endsWith(' swap'));
+ assert.deepEqual([...createLab.querySelectorAll('.ic')].map(e=>e.dataset.ic),['view','padClick']);assert(/Create = .*touchpad click$/.test(createLab.textContent));}
 const typeRow=(et,label)=>[...secs[et].querySelectorAll('.row')].find(r=>r.querySelector('label') && r.querySelector('label').textContent===label);
 const scl=et=>typeRow(et,'Grip rumble strength').querySelector('select');
 for(let et=0;et<4;et++)assert(!typeRow(et,'Rumble style'));
@@ -132,17 +136,36 @@ assert(document.querySelectorAll('.modebtn').length>=11);assert($('#lizardList')
  assert.deepEqual(await act(()=>{key('ArrowDown');key('Enter');}),[2,40,1]);assert.equal(txt(),'A');
  key('ArrowDown');assert(!list.classList.contains('hide'));key('Escape');assert(list.classList.contains('hide'));
  p[73]=0;await apply();b.blur();
- // the Lizard editor's input pickers carry glyphs too, pad touch and pad click apart
+ // the Lizard editor: every picker carries glyphs, and the summary line and modifiers are glyphs and words
  const {lzV2Render}=await mod('lizard.js');
- S.lizardBindings=[{outType:1,od:[0,4,0,0,0,0,0],trig:0x20000,hold:0x80000}];lzV2Render();
- const lz=[...$('#lizardList').querySelectorAll('.gsel')];assert.equal(lz.length,2);
- assert.deepEqual(lz.map(x=>x.querySelector('.gsel-txt').textContent+'|'+x.querySelector('.gsel-btn .ic').title),['L4 (back upper-left)|L4 (back upper-left)','LB (bumper)|LB (left bumper)']);
- const lzSel=lz[0].querySelector('select');
- assert(![...lzSel.options].some(o=>o.value!=='0'&&!o.dataset.glyph));
+ const field=name=>[...$('#lizardList').querySelectorAll('.lz-f')].find(f=>f.firstChild.textContent===name).querySelector('.gsel');
+ const shown=g=>g.querySelector('.gsel-txt').textContent+'|'+g.querySelector('.gsel-btn .ic').title;
+ const noGlyph=sel=>[...sel.options].filter(o=>o.value!=='0'&&!o.dataset.glyph).map(o=>o.textContent);
+ S.lizardBindings=[{outType:1,od:[0x03,4,0x50,0,0,0,0],trig:0x20000,hold:0x80000}];lzV2Render();
+ assert.equal(shown(field('Action')),'Keyboard key|Keyboard key');
+ assert.deepEqual([shown(field('When pressed')),shown(field('While holding'))],['L4 (back upper-left)|L4 (back upper-left)','LB (bumper)|LB (left bumper)']);
+ assert.deepEqual([shown(field('Key')),shown(field('Key 2'))],['A|A','Arrow Left|Arrow Left']);
+ const lzSel=field('When pressed').querySelector('select');
+ assert.deepEqual(noGlyph(lzSel),[]);
  assert.deepEqual([...lzSel.options].filter(o=>/^(Left|Right) pad/.test(o.textContent)).map(o=>o.textContent+'='+o.dataset.glyph),['Right pad click=padClickR','Left pad click=padClickL','Right pad touch=padR','Left pad touch=padL']);
- lz[0].querySelector('.gsel-btn').click();
- [...lz[0].querySelector('.gsel-list').children].find(r=>r.lastChild.textContent==='Y').click();
- assert.equal(S.lizardBindings[0].trig,8);assert.equal($('#lizardList .gsel .gsel-txt').textContent,'Y');
+ // every key, action, mouse button, source, gyro and media entry has a glyph, drawn as keycaps for the keys
+ assert.deepEqual(noGlyph(field('Key').querySelector('select')),[]);assert.deepEqual(noGlyph(field('Action').querySelector('select')).filter(n=>n!=='(disabled)'),[]);
+ assert.deepEqual([...field('Key').querySelector('select').options].slice(1,4).map(o=>o.dataset.glyph),['key:A','key:B','key:C']);
+ // the summary: L4 while holding LB -> Ctrl + Shift + A + ... as glyphs with their words
+ const sum=()=>$('#lizardList .lz-sum'),icons=el=>[...el.querySelectorAll('.ic')].map(e=>e.dataset.ic);
+ assert.deepEqual(icons(sum()),['L4','LB','key:Ctrl','key:Shift','key:A','key:Arrow Left']);
+ assert(/L4 while holding LB.* → Ctrl \+ Shift \+ A \+/.test(sum().textContent.replace(/\s+/g,' ')),sum().textContent);
+ // modifiers are keycaps
+ assert.deepEqual(icons($('#lizardList .lz-mods')),['key:Ctrl','key:Shift','key:Alt','key:Win/⌘']);
+ // a mouse click, media key, scroll and gyro each get theirs
+ S.lizardBindings=[{outType:2,od:[2,0,0,0,0,0,0],trig:0x4000000,hold:0},{outType:5,od:[1,0,0,0,0,0,0],trig:0x1,hold:0},{outType:4,od:[0,0,0,0,0,0,0],trig:0,hold:0},{outType:3,od:[2,1,0,0,0,0,0],trig:0,hold:0}];lzV2Render();
+ assert.deepEqual([...$('#lizardList').querySelectorAll('.lz-sum')].map(icons),[['padClickL','mouseR'],['A','volUp'],['padL','wheel'],['gyro','pointer','padR']].map(a=>a));
+ assert.deepEqual(noGlyph(field('Mouse button').querySelector('select')),[]);
+ // picking an input from the list sets the binding and redraws
+ S.lizardBindings=[{outType:1,od:[0,4,0,0,0,0,0],trig:0x20000,hold:0}];lzV2Render();
+ field('When pressed').querySelector('.gsel-btn').click();
+ [...field('When pressed').querySelector('.gsel-list').children].find(r=>r.lastChild.textContent==='Y').click();
+ assert.equal(S.lizardBindings[0].trig,8);assert.equal(field('When pressed').querySelector('.gsel-txt').textContent,'Y');
  S.lizardBindings=[];lzV2Render();}
 s[46]=57;await apply();
 const backup=buildBackup(p,bp);

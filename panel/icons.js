@@ -1,6 +1,8 @@
 // Steam Controller input glyphs, drawn in currentColor so they follow the text around them. A glyph stands in for
 // the input's name, so its span carries that name as the tooltip and the accessible label.
-const LINE = 'fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"';
+// an outline stroke; a glyph that wants another weight asks for it, as a repeated attribute would be ignored
+const line = (w = 1.6) => `fill="none" stroke="currentColor" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round"`;
+const LINE = line();
 // a bold label centred on (cx, cy); the baseline sits about a third of the size below the centre
 const txt = (cx, cy, size, s) => `<text x="${cx}" y="${(cy + size * 0.36).toFixed(1)}" text-anchor="middle" font-size="${size}" font-weight="700" font-family="system-ui,sans-serif">${s}</text>`;
 const svg = (w, h, body) => `<svg viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" fill="currentColor" aria-hidden="true">${body}</svg>`;
@@ -12,10 +14,10 @@ const paddles = on => svg(30, 20, PADDLE_XY.map(([x,y],i) =>
 const face = l => svg(18, 18, `<circle cx="9" cy="9" r="8" ${LINE}/>${txt(9, 9, 10, l)}`);
 // PlayStation face buttons: bare symbols, no ring
 const PS_FACE = {
-  cross: `<path d="M4.6 4.6l8.8 8.8M13.4 4.6l-8.8 8.8" ${LINE} stroke-width="1.9"/>`,
-  circle: `<circle cx="9" cy="9" r="5.6" ${LINE} stroke-width="1.9"/>`,
-  square: `<rect x="3.8" y="3.8" width="10.4" height="10.4" rx="1.2" ${LINE} stroke-width="1.9"/>`,
-  triangle: `<path d="M9 3.2L15.2 14H2.8z" ${LINE} stroke-width="1.9"/>`,
+  cross: `<path d="M4.6 4.6l8.8 8.8M13.4 4.6l-8.8 8.8" ${line(1.9)}/>`,
+  circle: `<circle cx="9" cy="9" r="5.6" ${line(1.9)}/>`,
+  square: `<rect x="3.8" y="3.8" width="10.4" height="10.4" rx="1.2" ${line(1.9)}/>`,
+  triangle: `<path d="M9 3.2L15.2 14H2.8z" ${line(1.9)}/>`,
 };
 const psFace = k => svg(18, 18, PS_FACE[k]);
 
@@ -30,28 +32,57 @@ const stickDir = dir => svg(20, 18, `<circle cx="10" cy="9" r="8.4" ${LINE}/><ci
 // small round buttons, drawn in a ring like the face buttons
 const ring = body => svg(20, 18, `<circle cx="10" cy="9" r="8.2" ${LINE}/>${body}`);
 const SMALL = {
-  menu: ring(`<path d="M6 6.4h8M6 9h8M6 11.6h8" ${LINE} stroke-width="1.5"/>`),
-  minus: ring(`<path d="M6 9h8" ${LINE} stroke-width="1.7"/>`),
-  plus: ring(`<path d="M6 9h8M10 5v8" ${LINE} stroke-width="1.7"/>`),
-  home: ring(`<path d="M5.8 9.4L10 5.6l4.2 3.8M7.2 8.6V13h5.6V8.6" ${LINE} stroke-width="1.4"/>`),
+  menu: ring(`<path d="M6 6.4h8M6 9h8M6 11.6h8" ${line(1.5)}/>`),
+  minus: ring(`<path d="M6 9h8" ${line(1.7)}/>`),
+  plus: ring(`<path d="M6 9h8M10 5v8" ${line(1.7)}/>`),
+  home: ring(`<path d="M5.8 9.4L10 5.6l4.2 3.8M7.2 8.6V13h5.6V8.6" ${line(1.4)}/>`),
   guide: ring(`<circle cx="10" cy="9" r="3.6"/>`),
   ps: ring(txt(10, 9, 8, "PS")),
   steam: ring(txt(10, 9, 10, "S")),
 };
 const capture = () => svg(20, 18, `<rect x="2.5" y="2.5" width="15" height="13" rx="3" ${LINE}/><circle cx="10" cy="9" r="3.2" ${LINE}/>`);
-const mute = () => svg(20, 18, `<rect x="7.4" y="1.8" width="5.2" height="8" rx="2.6" ${LINE}/><path d="M4.8 8.6a5.2 5.2 0 0 0 10.4 0M10 13.8v2.6" ${LINE}/><path d="M3 2.5L17 15.5" ${LINE} stroke-width="1.8"/>`);
+const mute = () => svg(20, 18, `<rect x="7.4" y="1.8" width="5.2" height="8" rx="2.6" ${LINE}/><path d="M4.8 8.6a5.2 5.2 0 0 0 10.4 0M10 13.8v2.6" ${LINE}/><path d="M3 2.5L17 15.5" ${line(1.8)}/>`);
 
 // a rounded square with its top leaning in, like the controller's pads; the letter stays upright to stay legible
 const PAD_TILT = 12;
 const pad = (l, deg) => svg(20, 20, `<rect x="2.5" y="2.5" width="15" height="15" rx="3.5" transform="rotate(${deg} 10 10)" ${LINE}/>${txt(10, 10, 10, l)}`);
 // a pad pressed down: ripples to each side of it, the click you feel. A letter names the pad, a dot is a lone touchpad
 const ripples = side => [[3.4, 6, 8, 1.8], [1.4, 4, 12, 2.4]].map(([x, y, h, bulge]) =>
-  `<path d="M${side < 0 ? x : 28 - x} ${y}q${side * bulge} ${h / 2} 0 ${h}" ${LINE} stroke-width="1.4"/>`).join("");
+  `<path d="M${side < 0 ? x : 28 - x} ${y}q${side * bulge} ${h / 2} 0 ${h}" ${line(1.4)}/>`).join("");
 const padClick = (l, deg) => svg(28, 20, `<rect x="6.5" y="2.5" width="15" height="15" rx="3.5" transform="rotate(${deg} 14 10)" ${LINE}/>${l ? txt(14, 10, 10, l) : '<circle cx="14" cy="10" r="2.2"/>'}${ripples(-1)}${ripples(1)}`);
 
 const DPAD_ARM = {up:[7,1], down:[7,13], left:[1,7], right:[13,7]};
 // a faint cross with the one arm solid: an outline is too thick at label size to tell the arms apart
 const dpad = dir => svg(20, 20, `<path d="M7 1h6v6h6v6h-6v6H7v-6H1V7h6z" opacity=".35"/><rect x="${DPAD_ARM[dir][0]}" y="${DPAD_ARM[dir][1]}" width="6" height="6" rx="1"/>`);
+
+// Desktop outputs for the Lizard map: a mouse (with the pressed button filled), the wheel, the pointer, a keyboard, the
+// speaker for media keys, and the gyro.
+const MOUSE_BODY = `<rect x="4" y="1.5" width="12" height="17" rx="6" ${LINE}/><path d="M4 8.5h12M10 1.5v7" ${line(1.2)}/>`;
+const mouse = part => svg(20, 20, MOUSE_BODY + part);
+const SPEAKER = '<path d="M2 7h3.4L10 3.4v11.2L5.4 11H2z"/>';
+const DESKTOP = {
+  mouse: ["Mouse button", mouse("")],
+  mouseL: ["Left click", mouse('<path d="M10 1.5a6 6 0 0 0-6 6v1h6z"/>')],
+  mouseR: ["Right click", mouse('<path d="M10 1.5a6 6 0 0 1 6 6v1h-6z"/>')],
+  mouseM: ["Middle click", mouse('<rect x="8.8" y="3" width="2.4" height="4.6" rx="1.2"/>')],
+  wheel: ["Scroll wheel", svg(26, 20, `<rect x="3" y="1.5" width="12" height="17" rx="6" ${LINE}/><rect x="8.8" y="4" width="2.4" height="5" rx="1.2"/><path d="M19 7.4l2.5-3 2.5 3M19 12.6l2.5 3 2.5-3" ${LINE}/>`)],
+  pointer: ["Mouse move", svg(20, 20, '<path d="M5 2.5v14l3.6-3.4 2.6 5.4 2.4-1.2-2.6-5.2H15.5z"/>')],
+  kbd: ["Keyboard key", svg(26, 18, `<rect x="1" y="3" width="24" height="12" rx="2.5" ${LINE}/><path d="M8 12.2h10" ${LINE}/>` + [5, 9, 13, 17, 21].map(x => `<circle cx="${x}" cy="6.4" r=".95"/>`).join("") + [7, 11, 15, 19].map(x => `<circle cx="${x}" cy="9.3" r=".95"/>`).join(""))],
+  speaker: ["Media key", svg(20, 18, SPEAKER + `<path d="M12.8 6.3a3.8 3.8 0 0 1 0 5.4M15.2 4a7 7 0 0 1 0 10" ${line(1.4)}/>`)],
+  volUp: ["Volume +", svg(24, 18, SPEAKER + `<path d="M14.5 9h7M18 5.5v7" ${LINE}/>`)],
+  volDown: ["Volume −", svg(24, 18, SPEAKER + `<path d="M14.5 9h7" ${LINE}/>`)],
+  gyro: ["Gyro", svg(20, 20, `<ellipse cx="10" cy="10" rx="8.4" ry="3.4" transform="rotate(-35 10 10)" ${LINE}/><ellipse cx="10" cy="10" rx="8.4" ry="3.4" transform="rotate(35 10 10)" ${LINE} opacity=".5"/><circle cx="10" cy="10" r="2"/>`)],
+};
+
+// A keyboard key is drawn on demand as a keycap with its legend, named "key:<name>": there are too many to list.
+// Arrows are drawn, the rest is text.
+const CAP_TEXT = {Enter:"Enter", Backspace:"Bksp", Space:"Space", "Page Up":"PgUp", "Page Down":"PgDn", "Print Screen":"PrtSc", Delete:"Del", Insert:"Ins", "- _":"-", "= +":"=", "Win/⌘":"Win"};
+const CAP_ARROW = {"Arrow Up":"M9 4.5l4 5.5H5z", "Arrow Down":"M9 13.5l4-5.5H5z", "Arrow Left":"M4.5 9l5.5-4v8z", "Arrow Right":"M13.5 9L8 5v8z"};
+const keycap = name => {
+  const arrow = CAP_ARROW[name], t = CAP_TEXT[name] || name;
+  const w = arrow || t.length < 2 ? 18 : Math.round(8 + t.length * 5.8);
+  return [name, svg(w, 18, `<rect x="1" y="1.5" width="${w - 2}" height="15" rx="3.5" ${line(1.4)}/>` + (arrow ? `<path d="${arrow}"/>` : txt(w / 2, 9, t.length < 2 ? 10 : 7.5, t)))];
+};
 
 // Whole consoles, for the mode in the header. Plain shapes that suggest each family, not the makers' logos.
 // The X is cut out of the disc (even-odd) so it needs no mask, which would clash when the same id repeats.
@@ -62,7 +93,7 @@ const SYSTEMS = {
   // two detached halves with a stick each
   sysSwitch: ["Switch", svg(22, 20, `<rect x="1.2" y="2" width="8.2" height="16" rx="3.6" ${LINE}/><rect x="12.6" y="2" width="8.2" height="16" rx="3.6" ${LINE}/><circle cx="5.3" cy="6.6" r="1.6"/><circle cx="16.7" cy="13.4" r="1.6"/>`)],
   // the face-button diamond: triangle, circle, cross, square
-  sysPlayStation: ["PlayStation", svg(20, 20, `<path d="M10 1.6l3 5.2H7z" ${LINE} stroke-width="1.3"/><circle cx="16.4" cy="10" r="2.8" ${LINE} stroke-width="1.3"/><path d="M7.6 14.6l4.8 4.8M12.4 14.6l-4.8 4.8" ${LINE} stroke-width="1.3"/><rect x="1.2" y="7.4" width="5.6" height="5.6" rx=".6" ${LINE} stroke-width="1.3"/>`)],
+  sysPlayStation: ["PlayStation", svg(20, 20, `<path d="M10 1.6l3 5.2H7z" ${line(1.3)}/><circle cx="16.4" cy="10" r="2.8" ${line(1.3)}/><path d="M7.6 14.6l4.8 4.8M12.4 14.6l-4.8 4.8" ${line(1.3)}/><rect x="1.2" y="7.4" width="5.6" height="5.6" rx=".6" ${line(1.3)}/>`)],
   // a body with the two trackpads
   sysSteam: ["Steam Controller", svg(26, 18, `<rect x="1" y="2.5" width="24" height="13" rx="6.5" ${LINE}/><circle cx="8.4" cy="9" r="3.2" ${LINE}/><circle cx="17.6" cy="9" r="3.2" ${LINE}/>`)],
   sysLizard: ["Desktop (mouse and keyboard)", svg(16, 20, `<rect x="2" y="1.5" width="12" height="17" rx="6" ${LINE}/><path d="M8 1.5v6.5M2 8h12" ${LINE}/>`)],
@@ -104,13 +135,14 @@ const ICONS = {
   // Switch profile's lists, where it sits beside Plus.
   view: ["View (Back on Xbox, Minus on Switch, Create on PlayStation)", svg(20, 18, `<rect x="6.5" y="1.5" width="12" height="9" rx="2" ${LINE}/><rect x="1.5" y="7" width="12" height="9.5" rx="2"/>`)],
   ...SYSTEMS,
+  ...DESKTOP,
 };
 
 // a no-op when the glyph is already there: the status poll refills the modifier ones every 600 ms, and swapping the
 // SVG under the pointer would drop its tooltip
 export function fillIcon(el, name){
   if(el.dataset.ic === name && el.firstChild) return;
-  const [label, art] = ICONS[name];
+  const [label, art] = name.startsWith("key:") ? keycap(name.slice(4)) : ICONS[name];
   el.dataset.ic = name; el.classList.add("ic"); el.setAttribute("role", "img");
   el.setAttribute("aria-label", label); el.title = label; el.innerHTML = art;
 }
