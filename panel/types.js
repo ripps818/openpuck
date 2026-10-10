@@ -4,11 +4,20 @@ import { setField } from './protocol.js';
 import { MODE_NAMES, MODE_ORDER } from './status.js';
 import { openNav } from './nav.js';
 import { iconEl } from './icons.js';
+import { glyphSelect } from './glyphselect.js';
 
 // Per-emulated-type config (must match firmware ET_* order: Xbox=0, Switch=1, DS4=2, DS5=3). Each type lists
 // only the remap targets that exist on that controller. Field id sent to firmware = 40 + et*9 + k
 // (k: 0..3 back paddles, 4 QAM, 5 A/B-swap, 6 trackpad-haptics, 7 LED brightness, 8 rumble). Blob v17 reads them back at p[73 + et*9 + ...].
 const DPAD = {12:"D-pad Up",13:"D-pad Down",14:"D-pad Left",15:"D-pad Right"};
+// each label's glyph, shown beside the name in the remap lists (panel/icons.js)
+const BTN_GLYPH = {
+  A:"A", B:"B", X:"X", Y:"Y", LB:"LB", RB:"RB", L3:"L3", R3:"R3", Back:"view", Start:"menu", Guide:"guide", LT:"LT", RT:"RT",
+  "D-pad Up":"up", "D-pad Down":"down", "D-pad Left":"left", "D-pad Right":"right",
+  L:"swL", R:"swR", "L-Stick":"L3", "R-Stick":"R3", Minus:"minus", Plus:"plus", Home:"home", ZL:"ZL", ZR:"ZR", "Capture / Screenshot":"capture",
+  Cross:"cross", Circle:"circle", Square:"square", Triangle:"triangle", L1:"L1", R1:"R1", Create:"view", Options:"menu", PS:"ps", L2:"L2", R2:"R2",
+  "Touchpad Click":"padClick", Mute:"mute",
+};
 export const TYPE_DEFS = [
   {key:"XBOX", name:"Xbox", labels:{1:"A",2:"B",3:"X",4:"Y",5:"LB",6:"RB",7:"L3",8:"R3",9:"Back",10:"Start",11:"Guide",19:"LT",20:"RT",...DPAD}},
   {key:"SWITCH", name:"Switch", labels:{1:"A",2:"B",3:"X",4:"Y",5:"L",6:"R",7:"L-Stick",8:"R-Stick",9:"Minus",10:"Plus",11:"Home",19:"ZL",20:"ZR",...DPAD,18:"Capture / Screenshot"}},
@@ -24,13 +33,15 @@ export const typeEls = []; // one entry per TYPE_DEFS: {sec, tab, activeDot, bac
 // (pad 0 = left trackpad, 1 = right). While mapped and touched the pad drives that stick; on release the
 // stick re-centers, and an untouched mapped pad leaves the physical stick in control.
 export const PAD_STICK_FIELD0 = 80;
-const PAD_STICK_OPTS = [[0,"Off (touchpad)"],[1,"Left stick"],[2,"Right stick"]];
+const PAD_STICK_OPTS = [[0,"Off (touchpad)"],[1,"Left stick","stickL"],[2,"Right stick","stickR"]];
 function mkSelect(def, includeNone){
   const sel=document.createElement("select");
   if(includeNone){ const o=document.createElement("option"); o.value=0; o.textContent="— none —"; sel.appendChild(o); }
   else { const o=document.createElement("option"); o.value=0; o.textContent="Default (per-mode)"; sel.appendChild(o); }
   for(const c of Object.keys(def.labels).map(Number).sort((a,b)=>a-b)){
-    const o=document.createElement("option"); o.value=c; o.textContent=def.labels[c]; sel.appendChild(o); }
+    const o=document.createElement("option"); o.value=c; o.textContent=def.labels[c];
+    if(BTN_GLYPH[def.labels[c]]) o.dataset.glyph=BTN_GLYPH[def.labels[c]];
+    sel.appendChild(o); }
   return sel;
 }
 // s = 0xAE frame payload: [ver][37 unused][swDpadHaptics][storageState][hdPadScale/2][4 unused]
@@ -101,6 +112,7 @@ const HD_PAD_SCALES=Array.from({length:251},(_,i)=>i*2);
 
 export function initTypes(){
   for(const o of mkSelect(TYPE_DEFS[1],true).options){const c=o.cloneNode(true);if(+c.value===18)c.textContent="Take screenshot";$("#qamSelect").appendChild(c);}
+  glyphSelect($("#qamSelect"));
   $("#swClickFeedback").onchange=()=>setField(230,+$("#swClickFeedback").value);
   (function buildTypeCfgs(){
     const host=document.getElementById("typeCfgs"), tabs=document.getElementById("mapTabs");
@@ -122,13 +134,13 @@ export function initTypes(){
       // back paddles
       const gBack=group("Back buttons");
       for(let i=0;i<4;i++){
-        const sel=mkSelect(def,true); row(gBack,"",sel).querySelector("label").append(iconEl(BACK_KEYS[i])," "+BACK_KEYS[i]);
+        const sel=mkSelect(def,true); row(gBack,"",glyphSelect(sel)).querySelector("label").append(iconEl(BACK_KEYS[i])," "+BACK_KEYS[i]);
         sel.addEventListener("change",()=>setField(40+et*9+i, +sel.value));
         rec.back.push(sel);
       }
       // QAM + A/B swap
       const gBtn=group("Buttons");
-      { const sel=mkSelect(def,false); row(gBtn,"",sel).querySelector("label").append(iconEl("qam")," QAM");
+      { const sel=mkSelect(def,false); row(gBtn,"",glyphSelect(sel)).querySelector("label").append(iconEl("qam")," QAM");
         sel.addEventListener("change",()=>setField(40+et*9+4, +sel.value));
         rec.qam=sel; }
       const ab=toggle(gBtn,"A/B + X/Y swap","off");
@@ -136,8 +148,8 @@ export function initTypes(){
       const gPad=group("Trackpads");
       for(let pad=0; pad<2; pad++){
         const sel=document.createElement("select");
-        for(const [v,lbl] of (et===1 ? [...PAD_STICK_OPTS,[3,"D-pad on touch (Switch Pro)"],[4,"D-pad on click (Switch Pro)"]] : PAD_STICK_OPTS)){ const o=document.createElement("option"); o.value=v; o.textContent=lbl; sel.appendChild(o); }
-        row(gPad,"",sel).querySelector("label").append(iconEl(pad?"padR":"padL")," Trackpad");
+        for(const [v,lbl,glyph] of (et===1 ? [...PAD_STICK_OPTS,[3,"D-pad on touch (Switch Pro)"],[4,"D-pad on click (Switch Pro)"]] : PAD_STICK_OPTS)){ const o=document.createElement("option"); o.value=v; o.textContent=lbl; o.dataset.glyph=glyph||(v===4?(pad?"padClickR":"padClickL"):(pad?"padR":"padL")); sel.appendChild(o); }
+        row(gPad,"",glyphSelect(sel)).querySelector("label").append(iconEl(pad?"padR":"padL")," Trackpad");
         sel.addEventListener("change",()=>setField(PAD_STICK_FIELD0+et*2+pad, +sel.value));
         rec.padStick.push(sel);
       }

@@ -1,6 +1,9 @@
 
 export function fmtDur(s){ s=Math.round(s); return s>=60 ? (Math.floor(s/60)+"m "+(s%60)+"s") : (s+"s"); }
 export const $ = s=>document.querySelector(s);
+// true while the user is on this control, so the status poll leaves its value alone; a glyph dropdown (panel/
+// glyphselect.js) hides its <select>, so it is the dropdown's button that holds the focus
+export const held = el=>document.activeElement===el || (!!el.parentElement && el.parentElement.classList.contains("gsel") && el.parentElement.contains(document.activeElement));
 // Debug UI gate: developer/diagnostic controls (stability test, clear-stuck-buzz, land-all-0x87) and the
 // forensic cards (Hang log, Loop-state trail, Flight recorder) only show with ?debug=true in the URL.
 // Everything still RUNS regardless (the trail keeps recording to localStorage, stability auto-resume works)

@@ -1,6 +1,7 @@
 import { S } from './state.js';
 import { log } from './util.js';
 import { readIn, send, waitIdle } from './protocol.js';
+import { glyphSelect } from './glyphselect.js';
 
 // ===================== Lizard (desktop) binding map =====================
 // Mirrors firmware lizard_map.h. A binding is {outType, od:[7], trig, hold}. Output types and the
@@ -10,18 +11,18 @@ const LZO = {NONE:0, KBD:1, MBTN:2, AXIS:3, SCROLL:4, CONSUMER:5};
 const LZ_OUT_LABELS = {0:"(disabled)", 1:"Keyboard key", 2:"Mouse button", 3:"Mouse move", 4:"Scroll wheel", 5:"Media key"};
 // Controller input bits (triton.h TB_* + virtual left-stick deflection bits). Single-bit triggers only.
 const LZ_BTNS = [
-  [0x1,"A"],[0x2,"B"],[0x4,"X"],[0x8,"Y"],
-  [0x10,"QAM (• • •)"],[0x40,"View"],[0x4000,"Menu"],[0x10000,"Steam"],
-  [0x20,"R3 (stick click)"],[0x8000,"L3 (stick click)"],
-  [0x80,"R4 (back upper-right)"],[0x100,"R5 (back lower-right)"],
-  [0x20000,"L4 (back upper-left)"],[0x40000,"L5 (back lower-left)"],
-  [0x200,"RB (bumper)"],[0x80000,"LB (bumper)"],
-  [0x800000,"R2 (trigger pull)"],[0x8000000,"L2 (trigger pull)"],
-  [0x2000,"D-pad Up"],[0x400,"D-pad Down"],[0x1000,"D-pad Left"],[0x800,"D-pad Right"],
-  [0x400000,"Right pad click"],[0x4000000,"Left pad click"],
-  [0x200000,"Right pad touch"],[0x2000000,"Left pad touch"],
-  [Math.pow(2,32),"L-stick → right"],[Math.pow(2,33),"L-stick → left"],[Math.pow(2,34),"L-stick → down"],[Math.pow(2,35),"L-stick → up"],
-[Math.pow(2,36),"R-stick → right"],[Math.pow(2,37),"R-stick → left"],[Math.pow(2,38),"R-stick → down"],[Math.pow(2,39),"R-stick → up"],
+  [0x1,"A","A"],[0x2,"B","B"],[0x4,"X","X"],[0x8,"Y","Y"],
+  [0x10,"QAM (• • •)","qam"],[0x40,"View","view"],[0x4000,"Menu","menu"],[0x10000,"Steam","steam"],
+  [0x20,"R3 (stick click)","R3"],[0x8000,"L3 (stick click)","L3"],
+  [0x80,"R4 (back upper-right)","R4"],[0x100,"R5 (back lower-right)","R5"],
+  [0x20000,"L4 (back upper-left)","L4"],[0x40000,"L5 (back lower-left)","L5"],
+  [0x200,"RB (bumper)","RB"],[0x80000,"LB (bumper)","LB"],
+  [0x800000,"R2 (trigger pull)","R2"],[0x8000000,"L2 (trigger pull)","L2"],
+  [0x2000,"D-pad Up","up"],[0x400,"D-pad Down","down"],[0x1000,"D-pad Left","left"],[0x800,"D-pad Right","right"],
+  [0x400000,"Right pad click","padClickR"],[0x4000000,"Left pad click","padClickL"],
+  [0x200000,"Right pad touch","padR"],[0x2000000,"Left pad touch","padL"],
+  [Math.pow(2,32),"L-stick → right","lsRight"],[Math.pow(2,33),"L-stick → left","lsLeft"],[Math.pow(2,34),"L-stick → down","lsDown"],[Math.pow(2,35),"L-stick → up","lsUp"],
+  [Math.pow(2,36),"R-stick → right","rsRight"],[Math.pow(2,37),"R-stick → left","rsLeft"],[Math.pow(2,38),"R-stick → down","rsDown"],[Math.pow(2,39),"R-stick → up","rsUp"],
 ];
 // Keyboard modifier bits (od[0] for KBD output).
 const LZ_MODS = [[0x01,"Ctrl"],[0x02,"Shift"],[0x04,"Alt"],[0x08,"Win/⌘"]];
@@ -123,12 +124,13 @@ function lzV2Select(options,value,onchange,noneLabel){
 	if(noneLabel!==undefined){
 		const o=document.createElement("option"); o.value="0"; o.textContent=noneLabel; s.appendChild(o);
 	}
-	for(const [v,label] of options){
-		const o=document.createElement("option"); o.value=String(v); o.textContent=label; s.appendChild(o);
+	for(const [v,label,glyph] of options){
+		const o=document.createElement("option"); o.value=String(v); o.textContent=label; if(glyph) o.dataset.glyph=glyph; s.appendChild(o);
 	}
 	s.value=String(Number(value)||0);
 	s.onchange=()=>onchange(Number(s.value));
-	return s;
+	// the input lists show each input's glyph beside its name
+	return options.some(o=>o[2]) ? glyphSelect(s) : s;
 }
 // ---- lizard editor: one block per binding, a readable summary line on top, labelled fields below ----
 let lzDirty=false;
