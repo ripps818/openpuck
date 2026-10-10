@@ -98,6 +98,52 @@ assert.deepEqual([...document.querySelectorAll('#mapTabs .slot-tab')].map(e=>e.f
 assert.equal($('#hdrMode').textContent,'Steam');const chips=document.querySelectorAll('#hdrCtlrs .ctlr-chip');assert.equal(chips.length,1);assert(chips[0].classList.contains('off')); // one bonded, offline
 // Original per-type mapping and mode controls remain present.
 assert(document.querySelectorAll('.modebtn').length>=11);assert($('#lizardList'));
+// The header names the mode and shows its console's glyph.
+{const hg=()=>$('#hdrModeIc');
+ assert(!hg().classList.contains('hide'));assert.deepEqual([hg().dataset.ic,hg().title],['sysSteam','Steam Controller']);
+ for(const [mode,ic] of [[1,'sysXbox'],[4,'sysSwitch'],[5,'sysPlayStation'],[3,'sysLizard'],[11,'sysGamepad']]){p[1]=mode;await apply();assert.equal(hg().dataset.ic,ic,'mode '+mode);}
+ p[1]=0;await apply();assert.equal(hg().dataset.ic,'sysSteam');}
+// The remap lists draw a dropdown over each (hidden) select so every target's glyph shows beside its name.
+{const gsel=sel=>sel.parentElement,btnOf=sel=>gsel(sel).querySelector('.gsel-btn'),listOf=sel=>gsel(sel).querySelector('.gsel-list');
+ const sels=[...document.querySelectorAll('.gsel > select')];
+ // per profile: four back buttons, QAM and the two trackpad-to-stick pickers; plus the Switch QAM + View picker
+ assert.equal(sels.length,4*7+1);
+ for(const sel of sels){assert(sel.hidden);assert(listOf(sel).classList.contains('hide'));}
+ // every target on every controller has a glyph (only the none / default entry has none), by the right name
+ const g=et=>Object.fromEntries([...secs[et].querySelector('select').options].map(o=>[o.textContent,o.dataset.glyph||'']));
+ for(let et=0;et<4;et++)for(const [name,gl] of Object.entries(g(et)))if(!/^(— none —|Default)/.test(name))assert(gl,et+' '+name);
+ assert.deepEqual(['A','LB','Back','Start','D-pad Up','Guide','LT'].map(n=>g(0)[n]),['A','LB','view','menu','up','guide','LT']);
+ assert.deepEqual(['Minus','ZL','L','L-Stick','Capture / Screenshot'].map(n=>g(1)[n]),['minus','ZL','swL','L3','capture']);
+ assert.deepEqual(['Cross','Touchpad Click','Options','PS','Mute','R2'].map(n=>g(3)[n]),['cross','padClick','menu','ps','mute','R2']);
+ // picking from the list writes the same field the plain select did, and the button shows the choice
+ const l4=secs[0].querySelector('select'),b=btnOf(l4),list=listOf(l4),txt=()=>b.querySelector('.gsel-txt').textContent;
+ b.click();assert(!list.classList.contains('hide'));assert.equal(b.getAttribute('aria-expanded'),'true');
+ const rows=[...list.children];assert.equal(rows.length,l4.options.length);
+ assert(rows.every((r,i)=>!!r.querySelector('.gsel-ic .ic')===!!l4.options[i].dataset.glyph));
+ assert.deepEqual(await act(()=>rows.find(r=>r.lastChild.textContent==='LB').click()),[2,40,5]);
+ assert(list.classList.contains('hide'));assert.equal(l4.value,'5');assert.equal(txt(),'LB');assert.equal(b.querySelector('.ic').title,'LB (left bumper)');
+ // the status poll redraws the button, but leaves it alone while the user is on it
+ b.blur();p[73]=6;await apply();assert.equal(l4.value,'6');assert.equal(txt(),'RB');
+ b.focus();p[73]=7;await apply();assert.equal(l4.value,'6');assert.equal(txt(),'RB');b.blur();
+ p[73]=0;await apply();assert.equal(txt(),'— none —');assert.equal(b.querySelector('.ic'),null);
+ // keyboard: arrows open and move, Enter picks, Escape closes
+ const key=k=>b.dispatchEvent(new w.KeyboardEvent('keydown',{key:k,bubbles:true,cancelable:true}));
+ b.focus();key('ArrowDown');assert(!list.classList.contains('hide'));
+ assert.deepEqual(await act(()=>{key('ArrowDown');key('Enter');}),[2,40,1]);assert.equal(txt(),'A');
+ key('ArrowDown');assert(!list.classList.contains('hide'));key('Escape');assert(list.classList.contains('hide'));
+ p[73]=0;await apply();b.blur();
+ // the Lizard editor's input pickers carry glyphs too, pad touch and pad click apart
+ const {lzV2Render}=await mod('lizard.js');
+ S.lizardBindings=[{outType:1,od:[0,4,0,0,0,0,0],trig:0x20000,hold:0x80000}];lzV2Render();
+ const lz=[...$('#lizardList').querySelectorAll('.gsel')];assert.equal(lz.length,2);
+ assert.deepEqual(lz.map(x=>x.querySelector('.gsel-txt').textContent+'|'+x.querySelector('.gsel-btn .ic').title),['L4 (back upper-left)|L4 (back upper-left)','LB (bumper)|LB (left bumper)']);
+ const lzSel=lz[0].querySelector('select');
+ assert(![...lzSel.options].some(o=>o.value!=='0'&&!o.dataset.glyph));
+ assert.deepEqual([...lzSel.options].filter(o=>/^(Left|Right) pad/.test(o.textContent)).map(o=>o.textContent+'='+o.dataset.glyph),['Right pad click=padClickR','Left pad click=padClickL','Right pad touch=padR','Left pad touch=padL']);
+ lz[0].querySelector('.gsel-btn').click();
+ [...lz[0].querySelector('.gsel-list').children].find(r=>r.lastChild.textContent==='Y').click();
+ assert.equal(S.lizardBindings[0].trig,8);assert.equal($('#lizardList .gsel .gsel-txt').textContent,'Y');
+ S.lizardBindings=[];lzV2Render();}
 s[46]=57;await apply();
 const backup=buildBackup(p,bp);
 assert.equal(backup.config.shortcutFlags,57);for(const k of ['swProfiles','rumblePresets','strengthSteps','rumbleSlot','strengthSlots','rumbleStyle'])assert(!(k in backup.config),k);

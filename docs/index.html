@@ -57,6 +57,22 @@
   /* square, so it reads smaller than the wide glyphs at the same height */
   .ic[data-ic^="pad"] svg{height:22px}
   .ic-plus{color:var(--mut);margin:0 6px;vertical-align:middle}
+  .hdr-item .ic{align-self:center}
+  .hdr-item .ic svg{height:16px}
+  /* glyph dropdown (panel/glyphselect.js): looks like a select, with each option's glyph beside its name */
+  .gsel{position:relative;display:inline-block;flex:1;min-width:120px}
+  .lz-f .gsel{min-width:0;width:100%}
+  .gsel-btn{display:flex;align-items:center;gap:8px;width:100%;min-height:34px;padding:4px 8px;text-align:left;background:#0e1017;border-color:#313a4f}
+  .gsel-btn::after{content:"";flex:0 0 auto;margin-left:auto;padding:2.5px;border:solid var(--mut);border-width:0 1.6px 1.6px 0;transform:rotate(45deg) translateY(-2px)}
+  .gsel-btn:focus-visible{outline:2px solid var(--acc2);outline-offset:1px}
+  .gsel-txt{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .gsel-list{position:absolute;left:0;top:calc(100% + 3px);width:max-content;min-width:100%;max-width:min(380px,90vw);max-height:min(320px,55vh);overflow-x:hidden;overflow-y:auto;z-index:30;box-sizing:border-box;padding:4px;background:#0e1017;border:1px solid #313a4f;border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.5)}
+  .gsel-list.up{top:auto;bottom:calc(100% + 3px)}
+  .gsel-opt{display:flex;align-items:center;gap:8px;padding:5px 18px 5px 8px;border-radius:6px;cursor:pointer;white-space:nowrap}
+  .gsel-opt.active{background:#222a3a}
+  .gsel-opt[aria-selected="true"]{color:var(--acc)}
+  .gsel-opt[aria-disabled="true"]{opacity:.4;cursor:default}
+  .gsel-ic{flex:0 0 34px;display:inline-flex;justify-content:center}
   .card-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 14px}
   .card-head h2{margin:0}
   .card-head button{padding:5px 12px;font-size:12px}
@@ -199,7 +215,7 @@
   <button id="connectBtn" class="primary">Connect</button>
   <span id="hdrInfo" class="hdr-info hide">
     <span class="hdr-item puck-only" title="Firmware build running on the puck"><span class="k">Firmware</span><span id="hdrFw">—</span></span>
-    <span class="hdr-item puck-only" title="Current USB mode"><span class="k">Mode</span><span id="hdrMode">—</span></span>
+    <span class="hdr-item puck-only" title="Current USB mode"><span class="k">Mode</span><span id="hdrModeIc" class="hide"></span><span id="hdrMode">—</span></span>
     <span id="hdrCtlrs" class="hdr-ctlrs puck-only"></span>
   </span>
   <span class="spacer"></span>
@@ -717,6 +733,9 @@ const S = {
 // ---- panel/util.js ----
 function fmtDur(s){ s=Math.round(s); return s>=60 ? (Math.floor(s/60)+"m "+(s%60)+"s") : (s+"s"); }
 const $ = s=>document.querySelector(s);
+// true while the user is on this control, so the status poll leaves its value alone; a glyph dropdown (panel/
+// glyphselect.js) hides its <select>, so it is the dropdown's button that holds the focus
+const held = el=>document.activeElement===el || (!!el.parentElement && el.parentElement.classList.contains("gsel") && el.parentElement.contains(document.activeElement));
 // Debug UI gate: developer/diagnostic controls (stability test, clear-stuck-buzz, land-all-0x87) and the
 // forensic cards (Hang log, Loop-state trail, Flight recorder) only show with ?debug=true in the URL.
 // Everything still RUNS regardless (the trail keeps recording to localStorage, stability auto-resume works)
@@ -1300,20 +1319,75 @@ function openNav(el){
 // ---- panel/icons.js ----
 // Steam Controller input glyphs, drawn in currentColor so they follow the text around them. A glyph stands in for
 // the input's name, so its span carries that name as the tooltip and the accessible label.
-const LINE = 'fill="none" stroke="currentColor" stroke-width="1.6"';
+const LINE = 'fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"';
+// a bold label centred on (cx, cy); the baseline sits about a third of the size below the centre
+const txt = (cx, cy, size, s) => `<text x="${cx}" y="${(cy + size * 0.36).toFixed(1)}" text-anchor="middle" font-size="${size}" font-weight="700" font-family="system-ui,sans-serif">${s}</text>`;
 const svg = (w, h, body) => `<svg viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" fill="currentColor" aria-hidden="true">${body}</svg>`;
 
 // upper-left, upper-right, lower-left, lower-right: the L4, R4, L5, R5 order of the firmware's back[] fields
 const PADDLE_XY = [[7,5],[23,5],[7,15],[23,15]];
 const paddles = on => svg(30, 20, PADDLE_XY.map(([x,y],i) =>
   `<ellipse cx="${x}" cy="${y}" rx="5.4" ry="3.6"${on[i] ? "" : " "+LINE+' opacity=".45"'}/>`).join(""));
-const face = l => svg(18, 18, `<circle cx="9" cy="9" r="8" ${LINE}/><text x="9" y="12.6" text-anchor="middle" font-size="10" font-weight="700" font-family="system-ui,sans-serif">${l}</text>`);
+const face = l => svg(18, 18, `<circle cx="9" cy="9" r="8" ${LINE}/>${txt(9, 9, 10, l)}`);
+// PlayStation face buttons: bare symbols, no ring
+const PS_FACE = {
+  cross: `<path d="M4.6 4.6l8.8 8.8M13.4 4.6l-8.8 8.8" ${LINE} stroke-width="1.9"/>`,
+  circle: `<circle cx="9" cy="9" r="5.6" ${LINE} stroke-width="1.9"/>`,
+  square: `<rect x="3.8" y="3.8" width="10.4" height="10.4" rx="1.2" ${LINE} stroke-width="1.9"/>`,
+  triangle: `<path d="M9 3.2L15.2 14H2.8z" ${LINE} stroke-width="1.9"/>`,
+};
+const psFace = k => svg(18, 18, PS_FACE[k]);
+
+// shoulder buttons: a flat pill; triggers: a bowl, deeper than the bumper above it
+const bumper = t => svg(28, 18, `<rect x="1.5" y="4" width="25" height="10" rx="5" ${LINE}/>${txt(14, 9, t.length > 1 ? 8 : 10, t)}`);
+const trigger = t => svg(28, 18, `<path d="M3 3.5Q3 1.5 5 1.5H23Q25 1.5 25 3.5V8Q25 16.5 14 16.5Q3 16.5 3 8Z" ${LINE}/>${txt(14, 8.2, 8, t)}`);
+// a stick seen from above; the letter is the side, or with a direction the cap is pushed that way
+const stick = l => svg(20, 18, `<circle cx="10" cy="9" r="8.4" ${LINE}/><circle cx="10" cy="9" r="5" ${LINE} opacity=".6"/>${txt(10, 9, 7, l)}`);
+const STICK_DIR = {right:[1,0], left:[-1,0], down:[0,1], up:[0,-1]};
+const stickDir = dir => svg(20, 18, `<circle cx="10" cy="9" r="8.4" ${LINE}/><circle cx="${10 + STICK_DIR[dir][0] * 4}" cy="${9 + STICK_DIR[dir][1] * 4}" r="3.4"/>`);
+
+// small round buttons, drawn in a ring like the face buttons
+const ring = body => svg(20, 18, `<circle cx="10" cy="9" r="8.2" ${LINE}/>${body}`);
+const SMALL = {
+  menu: ring(`<path d="M6 6.4h8M6 9h8M6 11.6h8" ${LINE} stroke-width="1.5"/>`),
+  minus: ring(`<path d="M6 9h8" ${LINE} stroke-width="1.7"/>`),
+  plus: ring(`<path d="M6 9h8M10 5v8" ${LINE} stroke-width="1.7"/>`),
+  home: ring(`<path d="M5.8 9.4L10 5.6l4.2 3.8M7.2 8.6V13h5.6V8.6" ${LINE} stroke-width="1.4"/>`),
+  guide: ring(`<circle cx="10" cy="9" r="3.6"/>`),
+  ps: ring(txt(10, 9, 8, "PS")),
+  steam: ring(txt(10, 9, 10, "S")),
+};
+const capture = () => svg(20, 18, `<rect x="2.5" y="2.5" width="15" height="13" rx="3" ${LINE}/><circle cx="10" cy="9" r="3.2" ${LINE}/>`);
+const mute = () => svg(20, 18, `<rect x="7.4" y="1.8" width="5.2" height="8" rx="2.6" ${LINE}/><path d="M4.8 8.6a5.2 5.2 0 0 0 10.4 0M10 13.8v2.6" ${LINE}/><path d="M3 2.5L17 15.5" ${LINE} stroke-width="1.8"/>`);
+
 // a rounded square with its top leaning in, like the controller's pads; the letter stays upright to stay legible
 const PAD_TILT = 12;
-const pad = (l, deg) => svg(20, 20, `<rect x="2.5" y="2.5" width="15" height="15" rx="3.5" transform="rotate(${deg} 10 10)" ${LINE}/><text x="10" y="13.6" text-anchor="middle" font-size="10" font-weight="700" font-family="system-ui,sans-serif">${l}</text>`);
+const pad = (l, deg) => svg(20, 20, `<rect x="2.5" y="2.5" width="15" height="15" rx="3.5" transform="rotate(${deg} 10 10)" ${LINE}/>${txt(10, 10, 10, l)}`);
+// a pad pressed down: ripples to each side of it, the click you feel. A letter names the pad, a dot is a lone touchpad
+const ripples = side => [[3.4, 6, 8, 1.8], [1.4, 4, 12, 2.4]].map(([x, y, h, bulge]) =>
+  `<path d="M${side < 0 ? x : 28 - x} ${y}q${side * bulge} ${h / 2} 0 ${h}" ${LINE} stroke-width="1.4"/>`).join("");
+const padClick = (l, deg) => svg(28, 20, `<rect x="6.5" y="2.5" width="15" height="15" rx="3.5" transform="rotate(${deg} 14 10)" ${LINE}/>${l ? txt(14, 10, 10, l) : '<circle cx="14" cy="10" r="2.2"/>'}${ripples(-1)}${ripples(1)}`);
+
 const DPAD_ARM = {up:[7,1], down:[7,13], left:[1,7], right:[13,7]};
 // a faint cross with the one arm solid: an outline is too thick at label size to tell the arms apart
 const dpad = dir => svg(20, 20, `<path d="M7 1h6v6h6v6h-6v6H7v-6H1V7h6z" opacity=".35"/><rect x="${DPAD_ARM[dir][0]}" y="${DPAD_ARM[dir][1]}" width="6" height="6" rx="1"/>`);
+
+// Whole consoles, for the mode in the header. Plain shapes that suggest each family, not the makers' logos.
+// The X is cut out of the disc (even-odd) so it needs no mask, which would clash when the same id repeats.
+const xCut = (cx, cy, a, b) => "M" + [[b,a],[b,b],[a,b],[a,-b],[b,-b],[b,-a],[-b,-a],[-b,-b],[-a,-b],[-a,b],[-b,b],[-b,a]]
+  .map(([x, y]) => `${(cx + (x - y) * Math.SQRT1_2).toFixed(2)} ${(cy + (x + y) * Math.SQRT1_2).toFixed(2)}`).join("L") + "Z";
+const SYSTEMS = {
+  sysXbox: ["Xbox", svg(20, 20, `<path fill-rule="evenodd" d="M10 1a9 9 0 1 0 0 18a9 9 0 1 0 0-18Z${xCut(10, 10, 5.8, 1.7)}"/>`)],
+  // two detached halves with a stick each
+  sysSwitch: ["Switch", svg(22, 20, `<rect x="1.2" y="2" width="8.2" height="16" rx="3.6" ${LINE}/><rect x="12.6" y="2" width="8.2" height="16" rx="3.6" ${LINE}/><circle cx="5.3" cy="6.6" r="1.6"/><circle cx="16.7" cy="13.4" r="1.6"/>`)],
+  // the face-button diamond: triangle, circle, cross, square
+  sysPlayStation: ["PlayStation", svg(20, 20, `<path d="M10 1.6l3 5.2H7z" ${LINE} stroke-width="1.3"/><circle cx="16.4" cy="10" r="2.8" ${LINE} stroke-width="1.3"/><path d="M7.6 14.6l4.8 4.8M12.4 14.6l-4.8 4.8" ${LINE} stroke-width="1.3"/><rect x="1.2" y="7.4" width="5.6" height="5.6" rx=".6" ${LINE} stroke-width="1.3"/>`)],
+  // a body with the two trackpads
+  sysSteam: ["Steam Controller", svg(26, 18, `<rect x="1" y="2.5" width="24" height="13" rx="6.5" ${LINE}/><circle cx="8.4" cy="9" r="3.2" ${LINE}/><circle cx="17.6" cy="9" r="3.2" ${LINE}/>`)],
+  sysLizard: ["Desktop (mouse and keyboard)", svg(16, 20, `<rect x="2" y="1.5" width="12" height="17" rx="6" ${LINE}/><path d="M8 1.5v6.5M2 8h12" ${LINE}/>`)],
+  // d-pad on the left, two buttons on the right
+  sysGamepad: ["Gamepad", svg(26, 18, `<rect x="1" y="2.5" width="24" height="13" rx="6.5" ${LINE}/><path d="M6.4 6.6v4.8M4 9h4.8" ${LINE}/><circle cx="17" cy="10.4" r="1.4"/><circle cx="20.6" cy="7.8" r="1.4"/>`)],
+};
 
 const ICONS = {
   qam: ["Quick Access", svg(30, 16, `<rect x="1" y="1" width="28" height="14" rx="7" ${LINE}/><circle cx="9" cy="8" r="1.9"/><circle cx="15" cy="8" r="1.9"/><circle cx="21" cy="8" r="1.9"/>`)],
@@ -1323,11 +1397,32 @@ const ICONS = {
   L5: ["L5 (back lower-left)", paddles([0,0,1,0])],
   R5: ["R5 (back lower-right)", paddles([0,0,0,1])],
   A: ["A", face("A")], B: ["B", face("B")], X: ["X", face("X")], Y: ["Y", face("Y")],
+  cross: ["Cross", psFace("cross")], circle: ["Circle", psFace("circle")], square: ["Square", psFace("square")], triangle: ["Triangle", psFace("triangle")],
+  LB: ["LB (left bumper)", bumper("LB")], RB: ["RB (right bumper)", bumper("RB")],
+  L1: ["L1 (left bumper)", bumper("L1")], R1: ["R1 (right bumper)", bumper("R1")],
+  swL: ["L (left shoulder)", bumper("L")], swR: ["R (right shoulder)", bumper("R")],
+  LT: ["LT (left trigger)", trigger("LT")], RT: ["RT (right trigger)", trigger("RT")],
+  L2: ["L2 (left trigger)", trigger("L2")], R2: ["R2 (right trigger)", trigger("R2")],
+  ZL: ["ZL (left trigger)", trigger("ZL")], ZR: ["ZR (right trigger)", trigger("ZR")],
+  L3: ["L3 (left stick click)", stick("L")], R3: ["R3 (right stick click)", stick("R")],
+  stickL: ["Left stick", stick("L")], stickR: ["Right stick", stick("R")],
+  lsRight: ["Left stick right", stickDir("right")], lsLeft: ["Left stick left", stickDir("left")],
+  lsDown: ["Left stick down", stickDir("down")], lsUp: ["Left stick up", stickDir("up")],
+  rsRight: ["Right stick right", stickDir("right")], rsLeft: ["Right stick left", stickDir("left")],
+  rsDown: ["Right stick down", stickDir("down")], rsUp: ["Right stick up", stickDir("up")],
   up: ["D-pad Up", dpad("up")], down: ["D-pad Down", dpad("down")],
   left: ["D-pad Left", dpad("left")], right: ["D-pad Right", dpad("right")],
+  menu: ["Menu (Start on Xbox, Options on PlayStation)", SMALL.menu],
+  minus: ["Minus", SMALL.minus], plus: ["Plus", SMALL.plus], home: ["Home", SMALL.home],
+  guide: ["Guide", SMALL.guide], ps: ["PS", SMALL.ps], steam: ["Steam", SMALL.steam],
+  capture: ["Capture", capture()], mute: ["Mute", mute()],
   padL: ["Left trackpad", pad("L", PAD_TILT)], padR: ["Right trackpad", pad("R", -PAD_TILT)],
-  // the Select-side button: Back on Xbox, Minus on Switch, Create on PlayStation
-  view: ["View (Minus on Switch)", svg(20, 18, `<rect x="6.5" y="1.5" width="12" height="9" rx="2" ${LINE}/><rect x="1.5" y="7" width="12" height="9.5" rx="2"/>`)],
+  padClick: ["Touchpad click", padClick("", 0)],
+  padClickL: ["Left trackpad click", padClick("L", PAD_TILT)], padClickR: ["Right trackpad click", padClick("R", -PAD_TILT)],
+  // the Select-side button: Back on Xbox, Minus on Switch, Create on PlayStation. Minus has its own ring glyph for the
+  // Switch profile's lists, where it sits beside Plus.
+  view: ["View (Back on Xbox, Minus on Switch, Create on PlayStation)", svg(20, 18, `<rect x="6.5" y="1.5" width="12" height="9" rx="2" ${LINE}/><rect x="1.5" y="7" width="12" height="9.5" rx="2"/>`)],
+  ...SYSTEMS,
 };
 
 // a no-op when the glyph is already there: the status poll refills the modifier ones every 600 ms, and swapping the
@@ -1342,11 +1437,142 @@ function iconEl(name){ const el = document.createElement("span"); fillIcon(el, n
 // static markup names its glyphs with data-ic
 function initIcons(){ for(const el of document.querySelectorAll("[data-ic]")) fillIcon(el, el.dataset.ic); }
 
+// ---- panel/glyphselect.js ----
+// A native <option> cannot hold a picture, so a <select> whose options carry data-glyph gets a button and a listbox
+// drawn in its place. The <select> stays in the DOM, hidden, as the one source of truth: the panel reads its value and
+// change event and writes its value. Setting a value from code does not redraw the button, so whatever sets one calls
+// repaintGlyphSelects() afterwards (the status poll does).
+let gselUid = 0;
+
+function glyphSelect(sel){
+  // the select's own window rather than globals, so the panel's jsdom tests can load this too
+  const win = sel.ownerDocument.defaultView;
+  const wrap = document.createElement("span"); wrap.className = "gsel";
+  const btn = document.createElement("button"); btn.type = "button"; btn.className = "gsel-btn";
+  const list = document.createElement("div"); list.className = "gsel-list hide"; list.id = "gsel" + (++gselUid);
+  btn.setAttribute("role", "combobox"); btn.setAttribute("aria-haspopup", "listbox");
+  btn.setAttribute("aria-expanded", "false"); btn.setAttribute("aria-controls", list.id);
+  list.setAttribute("role", "listbox");
+  if(sel.parentNode) sel.replaceWith(wrap);
+  sel.hidden = true; sel.tabIndex = -1; sel.setAttribute("aria-hidden", "true");
+  wrap.append(sel, btn, list);
+
+  let opts = [], active = -1, typed = "", typedAt = 0, shown = null;
+  const isOpen = () => !list.classList.contains("hide");
+  const glyphOf = o => o.dataset.glyph ? iconEl(o.dataset.glyph) : null;
+
+  // the status poll sets the value every 600 ms: leave the button alone unless what it shows has changed
+  function paint(){
+    const o = sel.options[sel.selectedIndex] || null;
+    btn.disabled = sel.disabled;
+    if(isOpen()) [...list.children].forEach((li, i) => li.setAttribute("aria-selected", String(i === sel.selectedIndex)));
+    if(shown && shown.o === o && shown.text === (o && o.textContent)) return;
+    shown = {o, text: o && o.textContent};
+    btn.textContent = "";
+    if(!o) return;
+    const g = glyphOf(o); if(g) btn.append(g);
+    const t = document.createElement("span"); t.className = "gsel-txt"; t.textContent = o.textContent; btn.append(t);
+  }
+  function build(){
+    list.textContent = ""; opts = [...sel.options];
+    opts.forEach((o, i) => {
+      const li = document.createElement("div"); li.className = "gsel-opt"; li.id = list.id + "-" + i;
+      li.setAttribute("role", "option"); li.setAttribute("aria-selected", String(i === sel.selectedIndex));
+      if(o.disabled) li.setAttribute("aria-disabled", "true");
+      // every row keeps the glyph column, so the names line up where an option has no glyph
+      const slot = document.createElement("span"); slot.className = "gsel-ic"; const g = glyphOf(o); if(g) slot.append(g);
+      const t = document.createElement("span"); t.textContent = o.textContent;
+      li.append(slot, t);
+      li.addEventListener("click", () => choose(i));
+      li.addEventListener("mousemove", () => setActive(i, false));
+      list.append(li);
+    });
+  }
+  function setActive(i, scroll = true){
+    if(i === active || i < 0 || i >= opts.length) return;
+    if(list.children[active]) list.children[active].classList.remove("active");
+    active = i;
+    const li = list.children[i]; li.classList.add("active"); btn.setAttribute("aria-activedescendant", li.id);
+    if(scroll && li.scrollIntoView) li.scrollIntoView({block: "nearest"});
+  }
+  const away = e => { if(!wrap.contains(e.target)) close(); };
+  function open(){
+    if(sel.disabled || isOpen()) return;
+    build(); active = -1;
+    list.classList.remove("hide"); btn.setAttribute("aria-expanded", "true");
+    // open upward when the page below is too short for the list and there is more room above
+    const r = btn.getBoundingClientRect();
+    list.classList.toggle("up", win.innerHeight - r.bottom < Math.min(list.scrollHeight, 320) + 8 && r.top > win.innerHeight - r.bottom);
+    setActive(Math.max(0, sel.selectedIndex));
+    document.addEventListener("pointerdown", away, true);
+  }
+  function close(){
+    if(!isOpen()) return;
+    list.classList.add("hide"); btn.setAttribute("aria-expanded", "false"); btn.removeAttribute("aria-activedescendant");
+    active = -1; document.removeEventListener("pointerdown", away, true);
+  }
+  function choose(i){
+    const o = opts[i]; if(!o || o.disabled) return;
+    close();
+    if(i !== sel.selectedIndex){ sel.selectedIndex = i; paint(); sel.dispatchEvent(new win.Event("change", {bubbles: true})); }
+    btn.focus();
+  }
+  function step(dir){
+    for(let i = active + dir; i >= 0 && i < opts.length; i += dir) if(!opts[i].disabled){ setActive(i); return; }
+  }
+
+  btn.addEventListener("click", () => isOpen() ? close() : open());
+  btn.addEventListener("blur", close);
+  // focus stays on the button while the pointer picks from the list
+  list.addEventListener("mousedown", e => e.preventDefault());
+  // the field's name is its row label; wired on first focus, when the row exists
+  btn.addEventListener("focus", () => {
+    if(btn.hasAttribute("aria-labelledby")) return;
+    const lab = wrap.closest(".row, .lz-f"); const name = lab && lab.querySelector("label, span");
+    if(name && !name.contains(wrap)){ if(!name.id) name.id = list.id + "-name"; btn.setAttribute("aria-labelledby", name.id); }
+  });
+  btn.addEventListener("keydown", e => {
+    switch(e.key){
+      case "ArrowDown": case "ArrowUp": e.preventDefault(); if(isOpen()) step(e.key === "ArrowDown" ? 1 : -1); else open(); break;
+      case "Home": case "End":
+        if(!isOpen()) break;
+        e.preventDefault(); { const idx = opts.map((o, i) => i).filter(i => !opts[i].disabled); setActive(e.key === "Home" ? idx[0] : idx[idx.length - 1]); }
+        break;
+      case "Enter": case " ": e.preventDefault(); if(isOpen()) choose(active); else open(); break;
+      case "Escape": if(isOpen()){ e.preventDefault(); e.stopPropagation(); close(); } break;
+      case "Tab": close(); break;
+      default:
+        if(e.key.length !== 1 || e.ctrlKey || e.metaKey || e.altKey) break;
+        { const now = Date.now(); typed = (now - typedAt > 700 ? "" : typed) + e.key.toLowerCase(); typedAt = now; }
+        if(!isOpen()) open();
+        for(let k = 0, from = typed.length > 1 ? Math.max(active, 0) : active + 1; k < opts.length; k++){
+          const i = (from + k) % opts.length;
+          if(!opts[i].disabled && opts[i].textContent.toLowerCase().startsWith(typed)){ setActive(i); break; }
+        }
+    }
+  });
+
+  wrap.repaint = paint;
+  new win.MutationObserver(paint).observe(sel, {childList: true, subtree: true, attributes: true, characterData: true});
+  paint();
+  return wrap;
+}
+
+function repaintGlyphSelects(){ for(const w of document.querySelectorAll(".gsel")) w.repaint(); }
+
 // ---- panel/types.js ----
 // Per-emulated-type config (must match firmware ET_* order: Xbox=0, Switch=1, DS4=2, DS5=3). Each type lists
 // only the remap targets that exist on that controller. Field id sent to firmware = 40 + et*9 + k
 // (k: 0..3 back paddles, 4 QAM, 5 A/B-swap, 6 trackpad-haptics, 7 LED brightness, 8 rumble). Blob v17 reads them back at p[73 + et*9 + ...].
 const DPAD = {12:"D-pad Up",13:"D-pad Down",14:"D-pad Left",15:"D-pad Right"};
+// each label's glyph, shown beside the name in the remap lists (panel/icons.js)
+const BTN_GLYPH = {
+  A:"A", B:"B", X:"X", Y:"Y", LB:"LB", RB:"RB", L3:"L3", R3:"R3", Back:"view", Start:"menu", Guide:"guide", LT:"LT", RT:"RT",
+  "D-pad Up":"up", "D-pad Down":"down", "D-pad Left":"left", "D-pad Right":"right",
+  L:"swL", R:"swR", "L-Stick":"L3", "R-Stick":"R3", Minus:"minus", Plus:"plus", Home:"home", ZL:"ZL", ZR:"ZR", "Capture / Screenshot":"capture",
+  Cross:"cross", Circle:"circle", Square:"square", Triangle:"triangle", L1:"L1", R1:"R1", Create:"view", Options:"menu", PS:"ps", L2:"L2", R2:"R2",
+  "Touchpad Click":"padClick", Mute:"mute",
+};
 const TYPE_DEFS = [
   {key:"XBOX", name:"Xbox", labels:{1:"A",2:"B",3:"X",4:"Y",5:"LB",6:"RB",7:"L3",8:"R3",9:"Back",10:"Start",11:"Guide",19:"LT",20:"RT",...DPAD}},
   {key:"SWITCH", name:"Switch", labels:{1:"A",2:"B",3:"X",4:"Y",5:"L",6:"R",7:"L-Stick",8:"R-Stick",9:"Minus",10:"Plus",11:"Home",19:"ZL",20:"ZR",...DPAD,18:"Capture / Screenshot"}},
@@ -1362,13 +1588,15 @@ const typeEls = []; // one entry per TYPE_DEFS: {sec, tab, activeDot, back[], qa
 // (pad 0 = left trackpad, 1 = right). While mapped and touched the pad drives that stick; on release the
 // stick re-centers, and an untouched mapped pad leaves the physical stick in control.
 const PAD_STICK_FIELD0 = 80;
-const PAD_STICK_OPTS = [[0,"Off (touchpad)"],[1,"Left stick"],[2,"Right stick"]];
+const PAD_STICK_OPTS = [[0,"Off (touchpad)"],[1,"Left stick","stickL"],[2,"Right stick","stickR"]];
 function mkSelect(def, includeNone){
   const sel=document.createElement("select");
   if(includeNone){ const o=document.createElement("option"); o.value=0; o.textContent="— none —"; sel.appendChild(o); }
   else { const o=document.createElement("option"); o.value=0; o.textContent="Default (per-mode)"; sel.appendChild(o); }
   for(const c of Object.keys(def.labels).map(Number).sort((a,b)=>a-b)){
-    const o=document.createElement("option"); o.value=c; o.textContent=def.labels[c]; sel.appendChild(o); }
+    const o=document.createElement("option"); o.value=c; o.textContent=def.labels[c];
+    if(BTN_GLYPH[def.labels[c]]) o.dataset.glyph=BTN_GLYPH[def.labels[c]];
+    sel.appendChild(o); }
   return sel;
 }
 // s = 0xAE frame payload: [ver][37 unused][swDpadHaptics][storageState][hdPadScale/2][4 unused]
@@ -1439,6 +1667,7 @@ const HD_PAD_SCALES=Array.from({length:251},(_,i)=>i*2);
 
 function initTypes(){
   for(const o of mkSelect(TYPE_DEFS[1],true).options){const c=o.cloneNode(true);if(+c.value===18)c.textContent="Take screenshot";$("#qamSelect").appendChild(c);}
+  glyphSelect($("#qamSelect"));
   $("#swClickFeedback").onchange=()=>setField(230,+$("#swClickFeedback").value);
   (function buildTypeCfgs(){
     const host=document.getElementById("typeCfgs"), tabs=document.getElementById("mapTabs");
@@ -1460,13 +1689,13 @@ function initTypes(){
       // back paddles
       const gBack=group("Back buttons");
       for(let i=0;i<4;i++){
-        const sel=mkSelect(def,true); row(gBack,"",sel).querySelector("label").append(iconEl(BACK_KEYS[i])," "+BACK_KEYS[i]);
+        const sel=mkSelect(def,true); row(gBack,"",glyphSelect(sel)).querySelector("label").append(iconEl(BACK_KEYS[i])," "+BACK_KEYS[i]);
         sel.addEventListener("change",()=>setField(40+et*9+i, +sel.value));
         rec.back.push(sel);
       }
       // QAM + A/B swap
       const gBtn=group("Buttons");
-      { const sel=mkSelect(def,false); row(gBtn,"",sel).querySelector("label").append(iconEl("qam")," QAM");
+      { const sel=mkSelect(def,false); row(gBtn,"",glyphSelect(sel)).querySelector("label").append(iconEl("qam")," QAM");
         sel.addEventListener("change",()=>setField(40+et*9+4, +sel.value));
         rec.qam=sel; }
       const ab=toggle(gBtn,"A/B + X/Y swap","off");
@@ -1474,8 +1703,8 @@ function initTypes(){
       const gPad=group("Trackpads");
       for(let pad=0; pad<2; pad++){
         const sel=document.createElement("select");
-        for(const [v,lbl] of (et===1 ? [...PAD_STICK_OPTS,[3,"D-pad on touch (Switch Pro)"],[4,"D-pad on click (Switch Pro)"]] : PAD_STICK_OPTS)){ const o=document.createElement("option"); o.value=v; o.textContent=lbl; sel.appendChild(o); }
-        row(gPad,"",sel).querySelector("label").append(iconEl(pad?"padR":"padL")," Trackpad");
+        for(const [v,lbl,glyph] of (et===1 ? [...PAD_STICK_OPTS,[3,"D-pad on touch (Switch Pro)"],[4,"D-pad on click (Switch Pro)"]] : PAD_STICK_OPTS)){ const o=document.createElement("option"); o.value=v; o.textContent=lbl; o.dataset.glyph=glyph||(v===4?(pad?"padClickR":"padClickL"):(pad?"padR":"padL")); sel.appendChild(o); }
+        row(gPad,"",glyphSelect(sel)).querySelector("label").append(iconEl(pad?"padR":"padL")," Trackpad");
         sel.addEventListener("change",()=>setField(PAD_STICK_FIELD0+et*2+pad, +sel.value));
         rec.padStick.push(sel);
       }
@@ -2635,6 +2864,8 @@ function syncMotionCap(p){
 const MODE_NAMES = ["Steam","Xbox 360","Switch HORIPAD","Lizard","Switch Pro","PS5 DualSense","PS4 DualShock","PS5 DualSense (single HID)","PS4 DualShock (single HID)","PS3 DualShock","Original Xbox","DirectInput","SInput"];
 // display order for mode lists (MODE_NAMES is indexed by the firmware's mode number); single-HID after their base
 const MODE_ORDER = [0, 3, 1, 10, 4, 2, 9, 6, 8, 5, 7, 11, 12];
+// the glyph for each mode's console (panel/icons.js), indexed like MODE_NAMES
+const MODE_GLYPHS = ["sysSteam","sysXbox","sysSwitch","sysLizard","sysSwitch","sysPlayStation","sysPlayStation","sysPlayStation","sysPlayStation","sysPlayStation","sysXbox","sysGamepad","sysGamepad"];
 // one line per mode for the Mode page (shown for the running mode, or the mode button under the pointer/focus)
 const MODE_DESC = [
   "The Steam Controller puck: Steam Input sees a genuine Steam Controller. Without Steam running it works as a keyboard and mouse.",
@@ -2665,12 +2896,12 @@ function applySw(s){
   $("#hdPadBlock").classList.toggle("hide",!s);
   $("#qamSelectRow").classList.toggle("hide",!s);
   if(!s) return;
-  if(document.activeElement!==$("#qamSelect")) $("#qamSelect").value=s[45];
+  if(!held($("#qamSelect"))){ $("#qamSelect").value=s[45]; repaintGlyphSelects(); }
   if(document.activeElement!==$("#hdPadScale")) $("#hdPadScale").value=s[40]*2;
   const flags=s[46],enabled=!!(flags&32);
   // scQam shows the modifier as its glyph (.ic-mod, like the chord labels) instead of on/off
   for(const [id,bit] of SC_BITS){const el=$("#"+id);if(id!=="scQam")el.textContent=(flags&bit)?"on":"off";el.classList.toggle("active",!!(flags&bit));}
-  for(const rec of typeEls)rec.qam.parentElement.classList.toggle("hide",enabled && !!(flags&1));
+  for(const rec of typeEls)rec.qam.closest(".row").classList.toggle("hide",enabled && !!(flags&1));
   for(const el of document.querySelectorAll(".ic-mod")) fillIcon(el,(flags&1)?"qam":"back4");
 }
 function applyBlob(p){
@@ -2700,6 +2931,8 @@ function applyBlob(p){
   for(const b of document.querySelectorAll(".modebtn")) b.classList.toggle("active", +b.dataset.mode===mode);
   if(!document.querySelector(".modebtn:hover, .modebtn:focus-visible")) showModeDesc(mode);
   $("#hdrMode").textContent = MODE_NAMES[mode] || ("mode "+mode);
+  $("#hdrModeIc").classList.toggle("hide", !MODE_GLYPHS[mode]);
+  if(MODE_GLYPHS[mode]) fillIcon($("#hdrModeIc"), MODE_GLYPHS[mode]);
   $("#mouseCard").style.opacity = (mode===1||mode===3)?1:0.5;
   // The custom map applies ONLY to pure Lizard mode. Firmware v28+ edits the saved map from any mode;
   // before that the map ops hit the running map, which outside Lizard mode is the built-in defaults, so a save
@@ -2918,8 +3151,8 @@ function applyBlob(p){
     typeEls.forEach((rec,et)=>{
       const q=73+et*9;
       const back=[p[q],p[q+1],p[q+2],p[q+3]], qam=p[q+4], ab=p[q+5], pad=p[q+6], led=p[q+7], rum=p[q+8];
-      rec.back.forEach((sel,i)=>{ if(document.activeElement!==sel) sel.value=back[i]; });
-      if(document.activeElement!==rec.qam) rec.qam.value=qam;
+      rec.back.forEach((sel,i)=>{ if(!held(sel)) sel.value=back[i]; });
+      if(!held(rec.qam)) rec.qam.value=qam;
       rec.abSwap.textContent=ab?"on":"off"; rec.abSwap.classList.toggle("active",!!ab);
       if(document.activeElement!==rec.pad) rec.pad.value=pad;
       rec.rumble.textContent=rum?"on":"off"; rec.rumble.classList.toggle("active",!!rum);
@@ -2957,8 +3190,8 @@ function applyBlob(p){
       if(document.activeElement!==rec.led){ rec.led.value=led; rec.ledV.textContent=(led===0)?"Auto":led+"%"; }
       rec.padStick.forEach((sel,pad)=>{
         // hidden entirely on firmware too old to speak the mapping, so the panel never shows a dead control
-        sel.parentNode.classList.toggle("hide", !padStickCap);
-        if(padStickCap && document.activeElement!==sel) sel.value=p[185+et*2+pad];
+        sel.closest(".row").classList.toggle("hide", !padStickCap);
+        if(padStickCap && !held(sel)) sel.value=p[185+et*2+pad];
       });
       // dot marks the type matching the current puck mode
       rec.activeDot.style.display = (et===activeEt) ? "" : "none";
@@ -3040,6 +3273,7 @@ function applyBlob(p){
   $("#dpadChords").classList.toggle("hide", !dpadCap);
   $("#dpadOld").classList.toggle("hide", dpadCap);
   if(dpadCap) for(const sel of document.querySelectorAll("select.chordD")){ if(document.activeElement!==sel) sel.value=chordD[+sel.dataset.i]; }
+  repaintGlyphSelects();
   syncNav(); // cards above may have appeared or hidden (lizard, triggers, RF, logging build)
 }
 const SC_BITS=[['scQam',1],['scFeedback',8],['scCapture',16],['scEnabled',32]];
@@ -3115,18 +3349,18 @@ const LZO = {NONE:0, KBD:1, MBTN:2, AXIS:3, SCROLL:4, CONSUMER:5};
 const LZ_OUT_LABELS = {0:"(disabled)", 1:"Keyboard key", 2:"Mouse button", 3:"Mouse move", 4:"Scroll wheel", 5:"Media key"};
 // Controller input bits (triton.h TB_* + virtual left-stick deflection bits). Single-bit triggers only.
 const LZ_BTNS = [
-  [0x1,"A"],[0x2,"B"],[0x4,"X"],[0x8,"Y"],
-  [0x10,"QAM (• • •)"],[0x40,"View"],[0x4000,"Menu"],[0x10000,"Steam"],
-  [0x20,"R3 (stick click)"],[0x8000,"L3 (stick click)"],
-  [0x80,"R4 (back upper-right)"],[0x100,"R5 (back lower-right)"],
-  [0x20000,"L4 (back upper-left)"],[0x40000,"L5 (back lower-left)"],
-  [0x200,"RB (bumper)"],[0x80000,"LB (bumper)"],
-  [0x800000,"R2 (trigger pull)"],[0x8000000,"L2 (trigger pull)"],
-  [0x2000,"D-pad Up"],[0x400,"D-pad Down"],[0x1000,"D-pad Left"],[0x800,"D-pad Right"],
-  [0x400000,"Right pad click"],[0x4000000,"Left pad click"],
-  [0x200000,"Right pad touch"],[0x2000000,"Left pad touch"],
-  [Math.pow(2,32),"L-stick → right"],[Math.pow(2,33),"L-stick → left"],[Math.pow(2,34),"L-stick → down"],[Math.pow(2,35),"L-stick → up"],
-[Math.pow(2,36),"R-stick → right"],[Math.pow(2,37),"R-stick → left"],[Math.pow(2,38),"R-stick → down"],[Math.pow(2,39),"R-stick → up"],
+  [0x1,"A","A"],[0x2,"B","B"],[0x4,"X","X"],[0x8,"Y","Y"],
+  [0x10,"QAM (• • •)","qam"],[0x40,"View","view"],[0x4000,"Menu","menu"],[0x10000,"Steam","steam"],
+  [0x20,"R3 (stick click)","R3"],[0x8000,"L3 (stick click)","L3"],
+  [0x80,"R4 (back upper-right)","R4"],[0x100,"R5 (back lower-right)","R5"],
+  [0x20000,"L4 (back upper-left)","L4"],[0x40000,"L5 (back lower-left)","L5"],
+  [0x200,"RB (bumper)","RB"],[0x80000,"LB (bumper)","LB"],
+  [0x800000,"R2 (trigger pull)","R2"],[0x8000000,"L2 (trigger pull)","L2"],
+  [0x2000,"D-pad Up","up"],[0x400,"D-pad Down","down"],[0x1000,"D-pad Left","left"],[0x800,"D-pad Right","right"],
+  [0x400000,"Right pad click","padClickR"],[0x4000000,"Left pad click","padClickL"],
+  [0x200000,"Right pad touch","padR"],[0x2000000,"Left pad touch","padL"],
+  [Math.pow(2,32),"L-stick → right","lsRight"],[Math.pow(2,33),"L-stick → left","lsLeft"],[Math.pow(2,34),"L-stick → down","lsDown"],[Math.pow(2,35),"L-stick → up","lsUp"],
+  [Math.pow(2,36),"R-stick → right","rsRight"],[Math.pow(2,37),"R-stick → left","rsLeft"],[Math.pow(2,38),"R-stick → down","rsDown"],[Math.pow(2,39),"R-stick → up","rsUp"],
 ];
 // Keyboard modifier bits (od[0] for KBD output).
 const LZ_MODS = [[0x01,"Ctrl"],[0x02,"Shift"],[0x04,"Alt"],[0x08,"Win/⌘"]];
@@ -3228,12 +3462,13 @@ function lzV2Select(options,value,onchange,noneLabel){
 	if(noneLabel!==undefined){
 		const o=document.createElement("option"); o.value="0"; o.textContent=noneLabel; s.appendChild(o);
 	}
-	for(const [v,label] of options){
-		const o=document.createElement("option"); o.value=String(v); o.textContent=label; s.appendChild(o);
+	for(const [v,label,glyph] of options){
+		const o=document.createElement("option"); o.value=String(v); o.textContent=label; if(glyph) o.dataset.glyph=glyph; s.appendChild(o);
 	}
 	s.value=String(Number(value)||0);
 	s.onchange=()=>onchange(Number(s.value));
-	return s;
+	// the input lists show each input's glyph beside its name
+	return options.some(o=>o[2]) ? glyphSelect(s) : s;
 }
 // ---- lizard editor: one block per binding, a readable summary line on top, labelled fields below ----
 let lzDirty=false;

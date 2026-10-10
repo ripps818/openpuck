@@ -1,5 +1,5 @@
 import { S } from './state.js';
-import { $, fmtDur, log, setSlider } from './util.js';
+import { $, fmtDur, held, log, setSlider } from './util.js';
 import { LIZARD_TAB, RUMBLE_SCALES, TYPE_DEFS, currentType, etypeForMode, setTab, swStatusApply, typeEls } from './types.js';
 import { refreshRfStatus } from './rf.js';
 import { renderCtlrChips, renderSlotTabs } from './slots.js';
@@ -7,11 +7,14 @@ import { renderHangLog, trailAdd } from './diag.js';
 import { checkUpdateNotice, updateFwGate, updateVersionUI } from './firmware.js';
 import { syncMapNav, syncNav } from './nav.js';
 import { syncMotionCap } from './motion.js';
+import { repaintGlyphSelects } from './glyphselect.js';
 import { fillIcon } from './icons.js';
 
 export const MODE_NAMES = ["Steam","Xbox 360","Switch HORIPAD","Lizard","Switch Pro","PS5 DualSense","PS4 DualShock","PS5 DualSense (single HID)","PS4 DualShock (single HID)","PS3 DualShock","Original Xbox","DirectInput","SInput"];
 // display order for mode lists (MODE_NAMES is indexed by the firmware's mode number); single-HID after their base
 export const MODE_ORDER = [0, 3, 1, 10, 4, 2, 9, 6, 8, 5, 7, 11, 12];
+// the glyph for each mode's console (panel/icons.js), indexed like MODE_NAMES
+const MODE_GLYPHS = ["sysSteam","sysXbox","sysSwitch","sysLizard","sysSwitch","sysPlayStation","sysPlayStation","sysPlayStation","sysPlayStation","sysPlayStation","sysXbox","sysGamepad","sysGamepad"];
 // one line per mode for the Mode page (shown for the running mode, or the mode button under the pointer/focus)
 const MODE_DESC = [
   "The Steam Controller puck: Steam Input sees a genuine Steam Controller. Without Steam running it works as a keyboard and mouse.",
@@ -42,12 +45,12 @@ export function applySw(s){
   $("#hdPadBlock").classList.toggle("hide",!s);
   $("#qamSelectRow").classList.toggle("hide",!s);
   if(!s) return;
-  if(document.activeElement!==$("#qamSelect")) $("#qamSelect").value=s[45];
+  if(!held($("#qamSelect"))){ $("#qamSelect").value=s[45]; repaintGlyphSelects(); }
   if(document.activeElement!==$("#hdPadScale")) $("#hdPadScale").value=s[40]*2;
   const flags=s[46],enabled=!!(flags&32);
   // scQam shows the modifier as its glyph (.ic-mod, like the chord labels) instead of on/off
   for(const [id,bit] of SC_BITS){const el=$("#"+id);if(id!=="scQam")el.textContent=(flags&bit)?"on":"off";el.classList.toggle("active",!!(flags&bit));}
-  for(const rec of typeEls)rec.qam.parentElement.classList.toggle("hide",enabled && !!(flags&1));
+  for(const rec of typeEls)rec.qam.closest(".row").classList.toggle("hide",enabled && !!(flags&1));
   for(const el of document.querySelectorAll(".ic-mod")) fillIcon(el,(flags&1)?"qam":"back4");
 }
 export function applyBlob(p){
@@ -77,6 +80,8 @@ export function applyBlob(p){
   for(const b of document.querySelectorAll(".modebtn")) b.classList.toggle("active", +b.dataset.mode===mode);
   if(!document.querySelector(".modebtn:hover, .modebtn:focus-visible")) showModeDesc(mode);
   $("#hdrMode").textContent = MODE_NAMES[mode] || ("mode "+mode);
+  $("#hdrModeIc").classList.toggle("hide", !MODE_GLYPHS[mode]);
+  if(MODE_GLYPHS[mode]) fillIcon($("#hdrModeIc"), MODE_GLYPHS[mode]);
   $("#mouseCard").style.opacity = (mode===1||mode===3)?1:0.5;
   // The custom map applies ONLY to pure Lizard mode. Firmware v28+ edits the saved map from any mode;
   // before that the map ops hit the running map, which outside Lizard mode is the built-in defaults, so a save
@@ -295,8 +300,8 @@ export function applyBlob(p){
     typeEls.forEach((rec,et)=>{
       const q=73+et*9;
       const back=[p[q],p[q+1],p[q+2],p[q+3]], qam=p[q+4], ab=p[q+5], pad=p[q+6], led=p[q+7], rum=p[q+8];
-      rec.back.forEach((sel,i)=>{ if(document.activeElement!==sel) sel.value=back[i]; });
-      if(document.activeElement!==rec.qam) rec.qam.value=qam;
+      rec.back.forEach((sel,i)=>{ if(!held(sel)) sel.value=back[i]; });
+      if(!held(rec.qam)) rec.qam.value=qam;
       rec.abSwap.textContent=ab?"on":"off"; rec.abSwap.classList.toggle("active",!!ab);
       if(document.activeElement!==rec.pad) rec.pad.value=pad;
       rec.rumble.textContent=rum?"on":"off"; rec.rumble.classList.toggle("active",!!rum);
@@ -334,8 +339,8 @@ export function applyBlob(p){
       if(document.activeElement!==rec.led){ rec.led.value=led; rec.ledV.textContent=(led===0)?"Auto":led+"%"; }
       rec.padStick.forEach((sel,pad)=>{
         // hidden entirely on firmware too old to speak the mapping, so the panel never shows a dead control
-        sel.parentNode.classList.toggle("hide", !padStickCap);
-        if(padStickCap && document.activeElement!==sel) sel.value=p[185+et*2+pad];
+        sel.closest(".row").classList.toggle("hide", !padStickCap);
+        if(padStickCap && !held(sel)) sel.value=p[185+et*2+pad];
       });
       // dot marks the type matching the current puck mode
       rec.activeDot.style.display = (et===activeEt) ? "" : "none";
@@ -417,6 +422,7 @@ export function applyBlob(p){
   $("#dpadChords").classList.toggle("hide", !dpadCap);
   $("#dpadOld").classList.toggle("hide", dpadCap);
   if(dpadCap) for(const sel of document.querySelectorAll("select.chordD")){ if(document.activeElement!==sel) sel.value=chordD[+sel.dataset.i]; }
+  repaintGlyphSelects();
   syncNav(); // cards above may have appeared or hidden (lizard, triggers, RF, logging build)
 }
 export const SC_BITS=[['scQam',1],['scFeedback',8],['scCapture',16],['scEnabled',32]];
