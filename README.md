@@ -54,17 +54,17 @@ Similarly you can hold the modifier and press Y to switch (teehee) over to a **S
 ### Mode shortcuts
 Hold the modifier and press a button. The modifier is all four back buttons by default; the configurator's **Mode shortcuts** card can change it to Quick Access, reassign every shortcut except A, add a confirmation pulse, or turn shortcuts off.
 
-| Modifier + | Default | Notes |
+| Modifier (<img src="docs/glyphs/back4.svg" height="18" alt="all four back buttons"> by default) + | Default | Notes |
 |---|---|---|
-| A | Steam | Fixed: always the way back |
-| B | Lizard | Configurable |
-| X | Xbox 360 | Configurable |
-| Y | Switch Pro | Configurable |
-| D-pad Left | PS3 | Configurable |
-| D-pad Up | PS4 DualShock (single HID) | Configurable |
-| D-pad Right | PS5 DualSense (single HID) | Configurable |
-| D-pad Down | Switch HORIPAD | Configurable |
-| Trackpad click (L/R) | Toggle touchpad | High buzz = on, low buzz = off |
+| <img src="docs/glyphs/A.svg" height="18" alt="A"> | Steam | Fixed: always the way back |
+| <img src="docs/glyphs/B.svg" height="18" alt="B"> | Lizard | Configurable |
+| <img src="docs/glyphs/X.svg" height="18" alt="X"> | Xbox 360 | Configurable |
+| <img src="docs/glyphs/Y.svg" height="18" alt="Y"> | Switch Pro | Configurable |
+| <img src="docs/glyphs/left.svg" height="18" alt="D-pad"> Left | PS3 | Configurable |
+| <img src="docs/glyphs/up.svg" height="18" alt="D-pad"> Up | PS4 DualShock (single HID) | Configurable |
+| <img src="docs/glyphs/right.svg" height="18" alt="D-pad"> Right | PS5 DualSense (single HID) | Configurable |
+| <img src="docs/glyphs/down.svg" height="18" alt="D-pad"> Down | Switch HORIPAD | Configurable |
+| <img src="docs/glyphs/padClickL.svg" height="18" alt="Left"> <img src="docs/glyphs/padClickR.svg" height="18" alt="Right"> Trackpad click | Toggle touchpad | High buzz = on, low buzz = off |
 
 Also in every mode: **Steam + Y held for 2 seconds** turns the controller off. In Switch Pro mode, **Quick Access + Minus** can take a screenshot (turn on "Quick Access + Select action" in the Mode shortcuts card).
 

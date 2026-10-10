@@ -78,7 +78,7 @@ const DESKTOP = {
 // Arrows are drawn, the rest is text.
 const CAP_TEXT = {Enter:"Enter", Backspace:"Bksp", Space:"Space", "Page Up":"PgUp", "Page Down":"PgDn", "Print Screen":"PrtSc", Delete:"Del", Insert:"Ins", "- _":"-", "= +":"=", "Win/⌘":"Win"};
 const CAP_ARROW = {"Arrow Up":"M9 4.5l4 5.5H5z", "Arrow Down":"M9 13.5l4-5.5H5z", "Arrow Left":"M4.5 9l5.5-4v8z", "Arrow Right":"M13.5 9L8 5v8z"};
-const keycap = name => {
+export const keycap = name => {
   const arrow = CAP_ARROW[name], t = CAP_TEXT[name] || name;
   const w = arrow || t.length < 2 ? 18 : Math.round(8 + t.length * 5.8);
   return [name, svg(w, 18, `<rect x="1" y="1.5" width="${w - 2}" height="15" rx="3.5" ${line(1.4)}/>` + (arrow ? `<path d="${arrow}"/>` : txt(w / 2, 9, t.length < 2 ? 10 : 7.5, t)))];
@@ -101,7 +101,7 @@ const SYSTEMS = {
   sysGamepad: ["Gamepad", svg(26, 18, `<rect x="1" y="2.5" width="24" height="13" rx="6.5" ${LINE}/><path d="M6.4 6.6v4.8M4 9h4.8" ${LINE}/><circle cx="17" cy="10.4" r="1.4"/><circle cx="20.6" cy="7.8" r="1.4"/>`)],
 };
 
-const ICONS = {
+export const ICONS = {
   qam: ["Quick Access", svg(30, 16, `<rect x="1" y="1" width="28" height="14" rx="7" ${LINE}/><circle cx="9" cy="8" r="1.9"/><circle cx="15" cy="8" r="1.9"/><circle cx="21" cy="8" r="1.9"/>`)],
   back4: ["All four back buttons", paddles([1,1,1,1])],
   L4: ["L4 (back upper-left)", paddles([1,0,0,0])],
