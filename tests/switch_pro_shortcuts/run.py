@@ -37,7 +37,7 @@ bool blocked=false;
 int pulses=0;
 uint8_t emittedSide=0, emittedBond=0;
 bool haptic82Blocked(int){return blocked;}
-bool relayEnqueue(uint8_t rid,const uint8_t *p,uint8_t n,bool haptic,uint8_t slot){
+bool relayEnqueueFront(uint8_t rid,const uint8_t *p,uint8_t n,bool haptic,uint8_t slot){
  assert(rid==0x82 && n==3 && haptic && p[1]==2 && p[2]==0xF7);
  ++pulses;emittedSide=p[0];emittedBond=slot;return true;
 }
