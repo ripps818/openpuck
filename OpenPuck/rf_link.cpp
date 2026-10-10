@@ -114,9 +114,12 @@ static bool g_channelRecoveryDecidedThisResidence = false;
 #define RF_CHANNEL_HISTORY_BAD_WINDOWS 3u
 #define RF_CHANNEL_HISTORY_PERSIST_MAX_WRITES_PER_BOOT 4u
 #define RF_CHANNEL_HISTORY_PERSIST_MIN_INTERVAL_MS 30000u
-// 3 = one row per candidate channel. 2 = one row per member of the old fixed
-// pool, still read once so an upgrade keeps its learned history.
-#define RF_CHANNEL_JOURNAL_FORMAT 3u
+// 4 = one row per candidate channel, the six arrays stored inverted so an
+// unexplored row is erased flash and never needs programming. 3 = the same
+// layout stored plain; 2 = one row per member of the old fixed pool. Both are
+// still read, and rewritten as 4 on the next checkpoint, so no history is lost.
+#define RF_CHANNEL_JOURNAL_FORMAT 4u
+#define RF_CHANNEL_JOURNAL_V3_FORMAT 3u
 #define RF_CHANNEL_JOURNAL_V2_FORMAT 2u
 #define RF_CHANNEL_JOURNAL_V2_POOL_COUNT 14u
 #define RF_CHANNEL_JOURNAL_WORD_INTERVAL_US 8000u
@@ -319,7 +322,7 @@ static_assert(sizeof(RfChannelJournalRecord) == 256u,
 #define RF_CHANNEL_JOURNAL_TOTAL_RECORDS \
 	(RF_CHANNEL_JOURNAL_RECORDS_PER_PAGE * RF_CHANNEL_JOURNAL_PAGE_COUNT)
 
-// Format 2 tiles the pages at a 104-byte stride. Its slots and format-3 slots
+// Format 2 tiles the pages at a 104-byte stride. Its slots and format-3/4 slots
 // can share a page without overlapping: each format only writes into a fully
 // erased slot of its own stride and rejects the other's records by format.
 struct RfChannelJournalRecordV2 {
@@ -346,7 +349,7 @@ static_assert(sizeof(RfChannelJournalRecordV2) == 104u,
 static uint32_t g_channelJournalSequence = 0;
 static int16_t g_channelJournalLatestSlot = -1;
 // Page holding the v2 record imported at boot (0xFF = none). Reclaim keeps it
-// until a format-3 record supersedes it, so an upgrade never loses history.
+// until a format-4 record supersedes it, so an upgrade never loses history.
 static uint8_t g_channelJournalV2Page = 0xFFu;
 static int16_t g_channelJournalFreeSlot = -1;
 static RfChannelJournalRecord g_channelJournalJob = {};
@@ -1407,7 +1410,8 @@ static bool rfChannelJournalReadValid(uint16_t slot,
 	       sizeof *out);
 	if (out->magic != RF_CHANNEL_JOURNAL_MAGIC ||
 	    out->commit != RF_CHANNEL_JOURNAL_COMMIT ||
-	    out->format != RF_CHANNEL_JOURNAL_FORMAT ||
+	    (out->format != RF_CHANNEL_JOURNAL_FORMAT &&
+	     out->format != RF_CHANNEL_JOURNAL_V3_FORMAT) ||
 	    out->poolCount != RF_RECOVERY_CHANNEL_COUNT)
 		return false;
 	return out->crc32 ==
@@ -1436,7 +1440,7 @@ static bool rfChannelJournalReadValidV2(uint16_t slot,
 }
 
 // Seed the per-candidate history from the newest v2 record and mark it dirty,
-// so the next checkpoint rewrites it as format 3.
+// so the next checkpoint rewrites it as format 4.
 static void rfChannelJournalImportV2()
 {
 	static RfChannelJournalRecordV2 rec, latest;
@@ -1588,6 +1592,15 @@ static int16_t rfChannelJournalFindFreeSlot()
 	return -1;
 }
 
+// Rows are stored inverted (format 4): zero, the value of every unexplored
+// channel, becomes 0xFF and the words holding only such rows stay erased.
+static void rfChannelJournalCopyRows(uint8_t *dst, const uint8_t *src,
+				     bool plain)
+{
+	for (uint8_t i = 0; i < RF_RECOVERY_CHANNEL_COUNT; i++)
+		dst[i] = plain ? src[i] : (uint8_t)~src[i];
+}
+
 static void rfChannelJournalLoad()
 {
 	if (g_channelHistoryPersistentLoaded)
@@ -1617,21 +1630,27 @@ static void rfChannelJournalLoad()
 		}
 	}
 	if (haveLatest) {
-		memcpy(g_channelHistoryPersistentWorstPct, latest.worstPct,
-		       sizeof g_channelHistoryPersistentWorstPct);
-		memcpy(g_channelHistoryPersistentMeanPct, latest.meanPct,
-		       sizeof g_channelHistoryPersistentMeanPct);
-		memcpy(g_channelHistoryPersistentConfidence, latest.confidence,
-		       sizeof g_channelHistoryPersistentConfidence);
-		memcpy(g_channelHistoryPersistentTrials, latest.trials,
-		       sizeof g_channelHistoryPersistentTrials);
-		memcpy(g_channelHistoryPersistentPenalty, latest.penalty,
-		       sizeof g_channelHistoryPersistentPenalty);
-		memcpy(g_channelHistoryPersistentRecentOrder,
-		       latest.recentOrder,
-		       sizeof g_channelHistoryPersistentRecentOrder);
+		const bool plain = latest.format ==
+				   RF_CHANNEL_JOURNAL_V3_FORMAT;
+		rfChannelJournalCopyRows(g_channelHistoryPersistentWorstPct,
+					 latest.worstPct, plain);
+		rfChannelJournalCopyRows(g_channelHistoryPersistentMeanPct,
+					 latest.meanPct, plain);
+		rfChannelJournalCopyRows(g_channelHistoryPersistentConfidence,
+					 latest.confidence, plain);
+		rfChannelJournalCopyRows(g_channelHistoryPersistentTrials,
+					 latest.trials, plain);
+		rfChannelJournalCopyRows(g_channelHistoryPersistentPenalty,
+					 latest.penalty, plain);
+		rfChannelJournalCopyRows(g_channelHistoryPersistentRecentOrder,
+					 latest.recentOrder, plain);
 		g_channelHistoryPersistentOrderCounter = latest.orderCounter;
 		g_channelJournalSequence = latest.sequence;
+		// a plain (format 3) record is rewritten as format 4 at the next checkpoint
+		if (plain) {
+			g_channelHistoryPersistentDirty = true;
+			g_channelHistoryPersistentGeneration++;
+		}
 	} else {
 		rfChannelJournalImportV2();
 	}
@@ -1640,27 +1659,38 @@ static void rfChannelJournalLoad()
 
 static void rfChannelJournalBuildRecord(RfChannelJournalRecord *rec)
 {
-	memset(rec, 0, sizeof *rec);
+	memset(rec, 0xFF, sizeof *rec);
 	rec->magic = RF_CHANNEL_JOURNAL_MAGIC;
 	rec->sequence = g_channelJournalSequence + 1u;
 	rec->format = RF_CHANNEL_JOURNAL_FORMAT;
 	rec->poolCount = RF_RECOVERY_CHANNEL_COUNT;
 	rec->orderCounter = g_channelHistoryPersistentOrderCounter;
-	memcpy(rec->worstPct, g_channelHistoryPersistentWorstPct,
-	       sizeof rec->worstPct);
-	memcpy(rec->meanPct, g_channelHistoryPersistentMeanPct,
-	       sizeof rec->meanPct);
-	memcpy(rec->confidence, g_channelHistoryPersistentConfidence,
-	       sizeof rec->confidence);
-	memcpy(rec->trials, g_channelHistoryPersistentTrials,
-	       sizeof rec->trials);
-	memcpy(rec->penalty, g_channelHistoryPersistentPenalty,
-	       sizeof rec->penalty);
-	memcpy(rec->recentOrder, g_channelHistoryPersistentRecentOrder,
-	       sizeof rec->recentOrder);
+	rfChannelJournalCopyRows(rec->worstPct,
+				 g_channelHistoryPersistentWorstPct, false);
+	rfChannelJournalCopyRows(rec->meanPct,
+				 g_channelHistoryPersistentMeanPct, false);
+	rfChannelJournalCopyRows(rec->confidence,
+				 g_channelHistoryPersistentConfidence, false);
+	rfChannelJournalCopyRows(rec->trials, g_channelHistoryPersistentTrials,
+				 false);
+	rfChannelJournalCopyRows(rec->penalty,
+				 g_channelHistoryPersistentPenalty, false);
+	rfChannelJournalCopyRows(rec->recentOrder,
+				 g_channelHistoryPersistentRecentOrder, false);
 	rec->crc32 = rfChannelJournalCrc32(rec, offsetof(RfChannelJournalRecord,
 							 crc32));
 	rec->commit = RF_CHANNEL_JOURNAL_COMMIT;
+}
+
+// A word equal to the erased state needs no programming, so the writer passes
+// over it; the commit word is never one, so it is still programmed last.
+static void rfChannelJournalSkipErasedWords()
+{
+	const uint8_t words = sizeof(RfChannelJournalRecord) / 4u;
+	const uint32_t *job = (const uint32_t *)&g_channelJournalJob;
+	while (g_channelJournalJobWord < words &&
+	       job[g_channelJournalJobWord] == 0xFFFFFFFFu)
+		g_channelJournalJobWord++;
 }
 
 static bool rfChannelJournalStartWrite()
@@ -1709,13 +1739,16 @@ static void rfChannelJournalStep(uint32_t now, uint8_t liveMask)
 	if (live && (g_channelJournalLiveWriteUnsafe ||
 		     g_channelJournalSoftDeviceEnabled))
 		return;
+	const uint8_t words = sizeof(RfChannelJournalRecord) / 4u;
+	rfChannelJournalSkipErasedWords();
+	if (g_channelJournalJobWord >= words) {
+		rfChannelJournalFinishWrite(now);
+		return;
+	}
 	const uint32_t us = micros();
 	if (g_channelJournalLastWordUs &&
 	    (uint32_t)(us - g_channelJournalLastWordUs) <
 		    RF_CHANNEL_JOURNAL_WORD_INTERVAL_US)
-		return;
-	const uint8_t words = sizeof(RfChannelJournalRecord) / 4u;
-	if (g_channelJournalJobWord >= words)
 		return;
 	const uint8_t word = g_channelJournalJobWord;
 	// Commit is the last 32-bit word by construction. Sequential programming
@@ -1738,6 +1771,7 @@ static void rfChannelJournalStep(uint32_t now, uint8_t liveMask)
 	else if (live && durationUs > RF_CHANNEL_JOURNAL_LIVE_WORD_MAX_US)
 		g_channelJournalLiveWriteUnsafe = true;
 	g_channelJournalJobWord++;
+	rfChannelJournalSkipErasedWords();
 	if (g_channelJournalJobWord >= words)
 		rfChannelJournalFinishWrite(now);
 }
@@ -1753,6 +1787,7 @@ static void rfChannelJournalDrainBuilderWrite(uint32_t now)
 	    g_rfChGroupActive)
 		return;
 	const uint8_t words = sizeof(RfChannelJournalRecord) / 4u;
+	rfChannelJournalSkipErasedWords();
 	while (g_channelJournalJobActive && g_channelJournalJobWord < words) {
 		const uint8_t word = g_channelJournalJobWord;
 		const uint32_t value =
@@ -1769,6 +1804,7 @@ static void rfChannelJournalDrainBuilderWrite(uint32_t now)
 			return;
 		}
 		g_channelJournalJobWord++;
+		rfChannelJournalSkipErasedWords();
 	}
 	if (g_channelJournalJobActive && g_channelJournalJobWord >= words)
 		rfChannelJournalFinishWrite(now);
