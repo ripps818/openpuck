@@ -16,6 +16,8 @@
 - Grip limiter (Switch and DS5 tabs): each tab has its own; changing one must leave the other alone, survive a
   reboot, and change how the strongest hits feel in Switch HD rumble (Wave style) or DualSense wave haptics (100 = off
   is the punchiest, 50 the softest).
+- A fresh config starts the Switch tab on Tone with 100% grip strength, and the other tabs at 200% (the DS5 tab on Wave).
+  A config that already has per-type strengths keeps them.
 - Haptics style (Switch tab: Wave, Tone, Split, Rumble; DS5 tab: its Audio haptics card): each tab keeps its own
   across a reboot, and switching style mid-effect must stop the old style's vibration. On the Switch, play the same
   HD rumble in each style, or run `tools/switch_hd_test.py pulse`, and check nothing keeps buzzing or clicks after it ends.

@@ -383,9 +383,12 @@ assert.deepEqual(model[3].maps[2][0],4);assert.equal(model[3].active,2);assert.d
  assert.deepEqual(await fieldsOf(()=>change(typeEls[1].hdStyle,'2')),[[125,2]]);
  assert.deepEqual(await fieldsOf(()=>change(typeEls[3].audioStyle,'0')),[[127,0]]);
  // Reset to defaults writes each type's own pair, not the shared fields
- for(const [et,lim,sty] of [[1,121,125],[3,123,127]]){
+ // (the Switch starts on tones at 100% grip strength, the others on the wave at 200%)
+ for(const [et,lim,sty,style,scale] of [[1,121,125,1,50],[3,123,127,3,100]]){
   setTab(et);const f=await fieldsOf(()=>$reset());
-  assert.deepEqual([f.find(x=>x[0]===lim),f.find(x=>x[0]===sty)],[[lim,70],[sty,3]]);assert(!f.some(x=>x[0]===115||x[0]===88));}
+  assert.deepEqual([f.find(x=>x[0]===lim),f.find(x=>x[0]===sty),f.find(x=>x[0]===108+et)],[[lim,70],[sty,style],[108+et,scale]]);assert(!f.some(x=>x[0]===115||x[0]===88));}
+ const dflt=sel=>[...sel.options].filter(o=>o.textContent.includes('(default)')).map(o=>o.value);
+ assert.deepEqual(dflt(typeEls[1].hdStyle),['1']);assert.deepEqual(dflt(typeEls[1].rumbleScl),['100']);assert.deepEqual(dflt(typeEls[3].rumbleScl),['200']);
  p.length=210;await apply();}
 console.log('Mapping profile panel: visibility, loading, labels, edits, copy/reset, trackpads, gesture, reset to defaults and backup tests passed');cleanup();
 })().catch(e=>{cleanup();console.error(e);process.exitCode=1;});

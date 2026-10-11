@@ -506,7 +506,7 @@ Messages:
     (120 + type; only Switch and DS5 take them) with the values of `115`, status blob `p[216..219]` (payload bytes
     214..217).
     Haptic style per type (blob version >= 30): `124`-`127` (124 + type; only Switch and DS5), `0` rumble, `1`
-    tone, `2` split, `3` wave (default), status blob `p[220..223]` (payload bytes 218..221). On the DualSense it is
+    tone, `2` split, `3` wave (default for the DualSense; the Switch's is tone), status blob `p[220..223]` (payload bytes 218..221). On the DualSense it is
     the audio haptics style that `88` set (`88` still sets it; `p[205]` reports it). On the Switch it sets how the
     grips play HD rumble: wave streams both bands as PCM, tone plays each side's stronger band as a `0x83` grip tone,
     split plays the low band as `0x80` rumble and the high band as a grip tone, rumble plays each side's stronger band

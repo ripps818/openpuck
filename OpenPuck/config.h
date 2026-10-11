@@ -180,6 +180,8 @@ extern const TypeCfg g_typeDefault[ET_COUNT];
 // edit to it is kept with rumbleStoreActive(). The rumble style is not a setting: applyActiveType picks HD
 // Emulation in Switch Pro mode and Normal everywhere else.
 extern uint16_t g_typeRumbleScale[ET_COUNT];
+// what each type starts with, and what a config that predates its own value falls back to
+extern const uint16_t g_typeRumbleScaleDefault[ET_COUNT];
 void rumbleStoreActive();
 
 // What touching a trackpad does, per emulated type: {left pad, right pad}. PS_OFF is the mode's own use of the

@@ -24,6 +24,8 @@ void applyActiveType(){++applied;}
 #define ET_NONE 0xFF
 #define RUMBLE_SCALE_MIN 10u
 #define RUMBLE_SCALE_MAX 500u
+#define RUMBLE_SCALE_PCT 200u
+const uint16_t g_typeRumbleScaleDefault[ET_COUNT]={200,100,200,200};
 uint8_t g_etype=1;uint16_t g_typeRumbleScale[ET_COUNT]={};
 uint8_t etypeForMode(uint8_t m){return m==MODE_SW_PRO?1:ET_NONE;}
 '''
@@ -47,11 +49,14 @@ ta=s.index('\tif (c.hdPadScale2 <= 250)');tb=s.index('\t// resolve the active em
 head += 'struct Tail {uint8_t hdPadScale2,reservedRumbleStyles[2],reservedWaveform,reservedWavePresets[2],reservedWaveThird,reservedWaveSlot,swQamSelect,shortcutFlags,reservedShortcutRumble[12],reservedTypeRumbleStyle[4],typeRumbleScale2[4];};\nvoid loadTail(Tail c){\n'+s[ta:tb]+'}\n'
 body='''int main(){
  Tail old;memset(&old,255,sizeof old);loadTail(old);assert(g_shortcutFlags==SHORTCUT_ENABLED); // fork default: back-4 modifier
- // a file without per-type strength seeds every type from the legacy global strength
- for(int et=0;et<ET_COUNT;et++)assert(g_typeRumbleScale[et]==200);
+ // a file without per-type strength gives each type its own default: the Switch starts at 100%
+ assert(g_typeRumbleScale[0]==200 && g_typeRumbleScale[1]==100 && g_typeRumbleScale[2]==200 && g_typeRumbleScale[3]==200);
+ // ...unless the legacy global strength was changed, which seeds every type
+ g_rumbleScale=300;loadTail(old);for(int et=0;et<ET_COUNT;et++)assert(g_typeRumbleScale[et]==300);
+ g_rumbleScale=200;
  Tail typed=old;typed.typeRumbleScale2[0]=50;typed.typeRumbleScale2[1]=75;typed.typeRumbleScale2[2]=1;
  g_rumbleScale=200;loadTail(typed);
- assert(g_typeRumbleScale[0]==100 && g_typeRumbleScale[1]==150 && g_typeRumbleScale[2]==200); // invalid -> global
+ assert(g_typeRumbleScale[0]==100 && g_typeRumbleScale[1]==150 && g_typeRumbleScale[2]==200 && g_typeRumbleScale[3]==200); // invalid -> default
  // bits 1/2 (ex profiles / D-pad haptic shortcuts) are dropped from saved flags
  Tail savedTail=old;savedTail.hdPadScale2=150;savedTail.shortcutFlags=62;
  loadTail(savedTail);assert(g_hdPadScale==300 && g_shortcutFlags==56);

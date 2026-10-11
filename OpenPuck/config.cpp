@@ -71,8 +71,14 @@ uint8_t g_typeLimitKnee[ET_COUNT] = { HAPTIC_LIMIT_KNEE_DEFAULT,
 				      HAPTIC_LIMIT_KNEE_DEFAULT,
 				      HAPTIC_LIMIT_KNEE_DEFAULT,
 				      HAPTIC_LIMIT_KNEE_DEFAULT };
-uint8_t g_typeHapticStyle[ET_COUNT] = { AUDIO_STYLE_WAVE, AUDIO_STYLE_WAVE,
-					AUDIO_STYLE_WAVE, AUDIO_STYLE_WAVE };
+// The Switch starts on tones: the wave style's two full-scale bands made it rough at its grip strength
+static const uint8_t kHapticStyleDefault[ET_COUNT] = {
+	AUDIO_STYLE_WAVE, AUDIO_STYLE_TONE, AUDIO_STYLE_WAVE, AUDIO_STYLE_WAVE
+};
+uint8_t g_typeHapticStyle[ET_COUNT] = { kHapticStyleDefault[0],
+					kHapticStyleDefault[1],
+					kHapticStyleDefault[2],
+					kHapticStyleDefault[3] };
 uint8_t g_createAsTouch = 0;
 uint8_t g_trigInner = 0, g_trigOuter = 100;
 uint8_t g_ledBright = 0;
@@ -82,8 +88,14 @@ uint8_t g_swQamSelect = 18;
 // Default = the original shortcut arrangement: all four back buttons, controller modes, no D-pad haptic
 // shortcuts, no confirmation pulses, no Quick Access + Select capture.
 uint8_t g_shortcutFlags = SHORTCUT_ENABLED;
-uint16_t g_typeRumbleScale[ET_COUNT] = { RUMBLE_SCALE_PCT, RUMBLE_SCALE_PCT,
-					 RUMBLE_SCALE_PCT, RUMBLE_SCALE_PCT };
+// 200% drove the Switch's tones to their full level, which felt rough, so it starts at 100%
+const uint16_t g_typeRumbleScaleDefault[ET_COUNT] = { RUMBLE_SCALE_PCT, 100u,
+						      RUMBLE_SCALE_PCT,
+						      RUMBLE_SCALE_PCT };
+uint16_t g_typeRumbleScale[ET_COUNT] = { g_typeRumbleScaleDefault[0],
+					 g_typeRumbleScaleDefault[1],
+					 g_typeRumbleScaleDefault[2],
+					 g_typeRumbleScaleDefault[3] };
 
 void rumbleStoreActive()
 {
@@ -451,7 +463,7 @@ void loadCfg()
 	g_rfChannelMask = rfChannelMaskValid(rfMask) ? rfMask :
 						       RF_CHANNEL_MASK_DEFAULT;
 	// per-type limiter and haptic style; a file from before them seeds every type with the legacy shared value
-	// (g_hapticLimitKnee, g_audioHapticStyle), and the Switch with the wave style it always played
+	// (g_hapticLimitKnee, g_audioHapticStyle), and the Switch with its default tones
 	for (uint8_t et = 0; et < ET_COUNT; et++) {
 		uint8_t knee = c.typeLimitKnee[et],
 			style = c.typeHapticStyle[et];
@@ -459,18 +471,21 @@ void loadCfg()
 			(knee >= 50 && knee <= 100) ? knee : g_hapticLimitKnee;
 		g_typeHapticStyle[et] = style <= AUDIO_STYLE_WAVE ? style :
 					et == ET_DS5 ? g_audioHapticStyle :
-						       AUDIO_STYLE_WAVE;
+						       kHapticStyleDefault[et];
 	}
 	if (c.swDpadHaptics <= 1)
 		g_swDpadHaptics = c.swDpadHaptics;
 	if (c.hdPadScale2 <= 250)
 		g_hdPadScale = (uint16_t)c.hdPadScale2 * 2;
-	// per-type grip strength; a file from before it seeds every type with the legacy global value
+	// per-type grip strength; a file from before it seeds every type with the legacy global value, unless that
+	// was never changed from the default, which leaves each type its own
 	for (uint8_t et = 0; et < ET_COUNT; et++) {
 		uint8_t sc2 = c.typeRumbleScale2[et];
 		g_typeRumbleScale[et] = (sc2 * 2u >= RUMBLE_SCALE_MIN &&
 					 sc2 * 2u <= RUMBLE_SCALE_MAX) ?
 						(uint16_t)(sc2 * 2u) :
+					g_rumbleScale == RUMBLE_SCALE_PCT ?
+						g_typeRumbleScaleDefault[et] :
 						g_rumbleScale;
 	}
 	if (c.swQamSelect <= 20)

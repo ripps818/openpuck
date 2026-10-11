@@ -91,7 +91,7 @@ const limSel=lim[1].querySelector('select');limSel.value='100';assert.deepEqual(
 const resetOf=async et=>{document.querySelector('#mapTabs .slot-tab[data-type="'+et+'"]').click();const n=writes.length;await $('#mapReset').onclick();return writes.slice(n).filter(x=>x[0]===2).map(x=>x.slice(1));};
 const base=et=>[5,6,7,8,et===1?18:0,et===1?1:0,et===1?0:1,0,1].map((v,k)=>[40+et*9+k,v]);
 assert.deepEqual(await resetOf(0),[...base(0),[80,0],[81,0],[108,100]]);
-assert.deepEqual(await resetOf(1),[...base(1),[82,0],[83,0],[109,100],[115,70],[38,0],[230,1],[231,50],[239,18]]);
+assert.deepEqual(await resetOf(1),[...base(1),[82,0],[83,0],[109,50],[115,70],[38,0],[230,1],[231,50],[239,18]]);
 assert.deepEqual(await resetOf(2),[...base(2),[84,0],[85,0],[110,100]]);
 assert.deepEqual(await resetOf(3),[...base(3),[86,0],[87,0],[111,100],[115,70],[31,1],[88,3],[30,0],[114,0]]);
 {const p29=p.slice();p29[0]=29;p=p29;applyBlob(new Uint8Array(p29));const d=await resetOf(3);assert.deepEqual(d[d.length-1],[116,0]);p=p27;applyBlob(new Uint8Array(p27));}
