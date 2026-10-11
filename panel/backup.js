@@ -3,9 +3,9 @@ import { log } from './util.js';
 import { readBlob, readFrame, send, waitIdle } from './protocol.js';
 import { CHORD_DPAD_FIELD } from './status.js';
 import { PAD_STICK_FIELD0, TYPE_DEFS } from './types.js';
-import { LZ_MAX, lizardCapable, readLizard } from './lizard.js';
+import { LZ_MAX, lizardCapable, lzReadProfile, lzWriteProfile, readLizard } from './lizard.js';
 import { modalDone, modalOpen, modalStage } from './firmware.js';
-import { profilesCapable, profilesLoad } from './profiles.js';
+import { LZ_TYPE, profilesCapable, profilesLoad } from './profiles.js';
 
 // ---- Backup / clone ----
 // A backup file is { magic, version, bonds[4], config{} }. bonds come from the 0x09 export (0xA7 frame); the
@@ -53,6 +53,13 @@ export function buildBackup(p, bp){
     cfg.profiles=S.profiles.slice(0,TYPE_DEFS.length).map(t=>({active:t.active, maps:t.maps.map(m=>m.slice()), pads:t.pads.map(x=>x.slice())}));
     cfg.profileGesture={...S.gesture};
   }
+  // the three Lizard profiles' bindings, read by exportBackup; lizardMap above then stands for the one in use
+  const lzp=S.profiles[LZ_TYPE];
+  if(p[0]>=30 && lzp && Array.isArray(S.lizardProfileMaps) && S.lizardProfileMaps.length===lzp.count){
+    const copy=m=>m.map(b=>({outType:b.outType,od:b.od.slice(),trig:b.trig,hold:b.hold}));
+    cfg.lizardProfiles={active:lzp.active, maps:S.lizardProfileMaps.map(copy)};
+    cfg.lizardMap=copy(S.lizardProfileMaps[lzp.active]).map(b=>({...b,trig:b.trig>>>0,hold:b.hold>>>0}));
+  }
   return { magic:"openpuck-backup", version:(cfg.profiles?3:cfg.lizardMap?2:1), bonds, config:cfg };
 }
 function downloadBackup(obj){
@@ -72,7 +79,16 @@ export async function exportBackup(){
     let bp=null;
     for(let t=0; t<8 && !bp; t++) bp=await readFrame(0xA7, 2+4*24);
     if(!bp){ log("export: no bond data (firmware too old for 0x09 export — reflash)"); return; }
-    if(profilesCapable()) for(let et=0;et<TYPE_DEFS.length;et++) if(!await profilesLoad(et)){ log("export: could not read the mapping profiles — retry"); return; }
+    S.lizardProfileMaps=null;
+    if(profilesCapable()){
+      for(let et=0;et<=LZ_TYPE;et++) if(!await profilesLoad(et)){ log("export: could not read the mapping profiles — retry"); return; }
+      if(lizardCapable()){
+        const maps=[];
+        try{ for(let i=0;i<S.profiles[LZ_TYPE].count;i++) maps.push(await lzReadProfile(i)); S.lizardProfileMaps=maps; }
+        catch(e){ log("export: could not read the Lizard profiles — retry ("+e.message+")"); return; }
+        finally{ await profilesLoad(LZ_TYPE); }
+      }
+    }
     const backup=buildBackup(S.lastP, bp);
     downloadBackup(backup);
     const n=backup.bonds.filter(b=>b.used).length;
@@ -105,7 +121,10 @@ export async function importBackup(file){
   if(hc.profiles!==undefined && !(Array.isArray(hc.profiles) && hc.profiles.length<=TYPE_DEFS.length && hc.profiles.every(t=>t && isInt(t.active,0,2) &&
        Array.isArray(t.maps) && t.maps.length===3 && t.maps.every(m=>Array.isArray(m) && m.every(byte)) &&
        Array.isArray(t.pads) && t.pads.length===3 && t.pads.every(x=>Array.isArray(x) && x.length===2 && x.every(byte)))) ||
-     (hc.profileGesture!==undefined && !(hc.profileGesture && [hc.profileGesture.enabled,hc.profileGesture.prev,hc.profileGesture.next].every(byte)))){
+     (hc.profileGesture!==undefined && !(hc.profileGesture && [hc.profileGesture.enabled,hc.profileGesture.prev,hc.profileGesture.next].every(byte))) ||
+     (hc.lizardProfiles!==undefined && !(hc.lizardProfiles && isInt(hc.lizardProfiles.active,0,2) && Array.isArray(hc.lizardProfiles.maps) &&
+       hc.lizardProfiles.maps.length===3 && hc.lizardProfiles.maps.every(m=>Array.isArray(m) && m.length<=LZ_MAX &&
+       m.every(b=>b && isInt(b.outType,0,255) && Array.isArray(b.od) && b.od.length<=7 && b.od.every(byte) && isInt(b.trig,0,2**40-1) && isInt(b.hold,0,2**40-1)))))){
     log("import: invalid mapping profiles");return;
   }
   const bondedN=obj.bonds.filter(b=>b.used).length;
@@ -120,7 +139,10 @@ export async function importBackup(file){
   // Switch gyro mapping when the backup carries them), per-type config (9 each), the lizard bindings, 4 bond
   // slots, and the final commit.
   const typeN=Array.isArray(c.types)?Math.min(c.types.length,4):0;
-  const lizardN=(Array.isArray(c.lizardMap) && lizardCapable())?Math.min(c.lizardMap.length,LZ_MAX):0;
+  // with profiles on both sides every Lizard profile is restored, else the one map older backups carry
+  const lzProfiles=!!(c.lizardProfiles && profilesCapable() && lizardCapable());
+  const lizardN=lzProfiles?c.lizardProfiles.maps.reduce((n,m)=>n+Math.min(m.length,LZ_MAX),0)+1
+    :(Array.isArray(c.lizardMap) && lizardCapable())?Math.min(c.lizardMap.length,LZ_MAX):0;
   const ledN=(c.ledMode!==undefined?1:0)+(c.ledPinA!==undefined?1:0)+(c.ledPinB!==undefined?1:0)+(c.ledPolarity!==undefined?1:0);
   const baseN=6 + (Array.isArray(c.chordD)?4:0) + (c.swGyroLegacy!==undefined?1:0) + (c.emulateSteamMachine!==undefined?1:0) + ledN;
   const padStickN=Array.isArray(c.types)?c.types.slice(0,typeN).filter(t=>Array.isArray(t.padStick)).length*2:0;
@@ -210,7 +232,17 @@ export async function importBackup(file){
     }
     // restore the lizard map if the backup includes it (version 2+) and the puck speaks v16+.
     // pre-lizard-map backups simply lack c.lizardMap; skip silently so they still import cleanly.
-    if(lizardN){
+    if(lzProfiles){
+      stage="Restoring Lizard profiles"; tick();
+      const lp=c.lizardProfiles;
+      for(let i=0;i<lp.maps.length;i++){
+        const got=await lzWriteProfile(i, lp.maps[i].slice(0,LZ_MAX));
+        step+=Math.min(lp.maps[i].length,LZ_MAX); tick();
+        if(got.length!==Math.min(lp.maps[i].length,LZ_MAX)) throw new Error("Lizard profile "+(i+1)+" did not save");
+      }
+      await send([0x30, LZ_TYPE, lp.active]); await readFrame(0xB0, 5, 256); step++; tick();
+      log("Lizard profiles restored");
+    } else if(lizardN){
       stage="Restoring button map"; tick();
       const map=c.lizardMap.slice(0,LZ_MAX);
       await send([0x13, map.length&0xff]); // begin edit (set count)

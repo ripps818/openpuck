@@ -24,7 +24,7 @@ export const S = {
   tabInited:false,
   // Mapping profiles (status v30+, panel/profiles.js): per type {active, maps[], pads[]} from the 0xB0 frame, the
   // profile each type's page is editing, the types still to be fetched, and the puck-wide profile-switch gesture.
-  profiles:[null,null,null,null], profileSel:[], profileLoadDue:new Set(), gesture:null,
+  profiles:[null,null,null,null,null], lizardProfileMaps:null, profileSel:[], profileLoadDue:new Set(), gesture:null,
   // RF recovery / journal status
   rfCapable:false, rfLastRefresh:0, rfHopPending:false, rfHandoffActive:false, rfBuilderActive:false,
   rfSurveyRunning:false, rfSurveyPending:false,

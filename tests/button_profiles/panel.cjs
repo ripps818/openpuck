@@ -23,8 +23,31 @@ const fresh=()=>[0,1,2,3].map(()=>({active:0,maps:[0,1,2].map(()=>DEF.slice()),p
 let model=fresh(),gesture=[1,4,5];
 const dump=et=>{const m=model[et],a=[1,et,m.active,3,24];for(let i=0;i<3;i++)a.push(...m.maps[i],...m.pads[i]);return a.concat(gesture);};
 const swap=c=>({1:2,2:1,3:4,4:3})[c]||c;
+// Lizard profiles, as lizard_map.cpp keeps them: three binding lists, one in use, and the profile the lizard
+// ops edit (op 0x34; until then the one in use)
+const lzB=k=>({outType:1,od:[0,4+k,0,0,0,0,0],trig:2**k,hold:0});
+const LZ_DEF=[lzB(0),lzB(1)],clone=m=>m.map(b=>({...b,od:b.od.slice()}));
+let lzMaps=[clone(LZ_DEF),[lzB(5)],[lzB(6),lzB(7),lzB(8)]],lzActive=0,lzEdit=null,lzStage=[];
+const lzTarget=()=>lzEdit===null?lzActive:lzEdit;
+const le=(a,v,n)=>{for(let i=0;i<n;i++)a.push(Math.floor(v/2**(8*i))&0xff);};
+const rle=(a,o,n)=>{let v=0;for(let i=n-1;i>=0;i--)v=v*256+a[o+i];return v;};
+const lzFrame=m=>{const a=[0xAA,m.length];for(const b of m){a.push(b.outType,...b.od);le(a,b.trig,8);le(a,b.hold,8);}return {status:'ok',data:new DataView(new Uint8Array(a).buffer)};};
+const dump4=()=>[1,4,lzActive,3,0].concat(gesture);
+function onLizard(a){
+  const [op,x,y]=a;
+  if(op===0x13)lzStage=Array(x);
+  else if(op===0x18)lzStage[x]={outType:a[2],od:a.slice(3,10),trig:rle(a,10,8),hold:rle(a,18,8)};
+  else if(op===0x19)lzMaps[lzTarget()]=lzStage;
+  else if(op===0x1A)lzMaps[lzTarget()]=clone(LZ_DEF);
+  else if(op===0x34)lzEdit=x;
+  else if(op===0x2F)lzMaps[y]=clone(LZ_DEF);
+  else if(op===0x30)lzActive=y;
+  else if(op===0x32)lzMaps[a[3]]=clone(lzMaps[y]);
+  else if(op===0x33)gesture=a.slice(2,5);
+}
 const ops=[],writes=[];let last=null;
 function onOp(a){
+  if(a[0]===0x34||a[1]===4||(a[0]>=0x13&&a[0]<=0x1A))return onLizard(a);
   const [op,et,x,y,z]=a,m=model[et];
   if(op===0x2D)m.maps[x][y]=z;
   else if(op===0x2E)for(let i=0;i<4;i++)m.maps[x][i]=swap(m.maps[x][i]);
@@ -39,11 +62,12 @@ let p=Array(210).fill(0);p[0]=30;p[193]=8;p[51]=100;
 const s=Array(55).fill(0);s[0]=1;s[46]=57;
 const frame=(mk,a)=>({status:'ok',data:new DataView(new Uint8Array([mk,a.length,...a]).buffer)});
 S.dev={serialNumber:'test',
-  transferOut:async(ep,b)=>{const a=Array.from(b);writes.push(a);last=a;if(a[0]>=0x2C&&a[0]<=0x33){ops.push(a);onOp(a);}return {status:'ok'};},
-  transferIn:async()=>last&&last[0]>=0x2C&&last[0]<=0x33?frame(0xB0,dump(last[1])):last&&last[0]===0x27?frame(0xAE,s):last&&last[0]===0x09?frame(0xA7,[1].concat(Array(97).fill(0))):frame(0xA5,p)};
+  transferOut:async(ep,b)=>{const a=Array.from(b);writes.push(a);last=a;if(a[0]>=0x2C&&a[0]<=0x34){ops.push(a);onOp(a);}else if(a[0]>=0x13&&a[0]<=0x1A)onOp(a);return {status:'ok'};},
+  transferIn:async()=>!last?frame(0xA5,(p[209]=activeBits(),p)):last[0]===0x34||(last[0]>=0x2C&&last[0]<=0x33&&last[1]===4)?frame(0xB0,dump4()):last[0]>=0x2C&&last[0]<=0x33?frame(0xB0,dump(last[1])):
+    [0x17,0x19,0x1A].includes(last[0])?lzFrame(lzMaps[lzTarget()]):last[0]===0x27?frame(0xAE,(s[47]=lzActive,s)):last[0]===0x09?frame(0xA7,[1].concat(Array(97).fill(0))):frame(0xA5,(p[209]=activeBits(),p))};
 const settle=()=>new Promise(r=>setTimeout(r,30));
 const activeBits=()=>model.reduce((v,m,et)=>v|(m.active<<(2*et)),0);
-const apply=async()=>{p[209]=activeBits();applyBlob(new Uint8Array(p));applySw(new Uint8Array(s));await settle();};
+const apply=async()=>{p[209]=activeBits();s[47]=lzActive;applyBlob(new Uint8Array(p));applySw(new Uint8Array(s));await settle();};
 const opsOf=async fn=>{const n=ops.length;await fn();await settle();return ops.slice(n);};
 const change=(sel,v)=>{sel.value=String(v);sel.dispatchEvent(new w.Event('change'));};
 const cards=et=>[...typeEls[et].sec.querySelectorAll('.prof-card')];
@@ -61,8 +85,11 @@ assert.equal(S.profileLoadDue.size,0);
 // v30: the cards appear, the paddle / QAM / swap controls go, and every type is queued for a load
 p[0]=30;model[2].active=1;await apply();
 assert(cards(0).every(shown));assert(legacy().every(e=>!legacyShown(e)));
-assert.deepEqual([...S.profileLoadDue].sort(),[0,1,2,3]);
-assert.deepEqual((await opsOf(profilesDrain)).map(a=>a.slice(0,2)),[[0x2C,0],[0x2C,1],[0x2C,2],[0x2C,3]]);
+assert.deepEqual([...S.profileLoadDue].sort(),[0,1,2,3,4]);
+// the Lizard profiles too, and the puck's lizard editor is pointed at the one on screen (a reloaded page may differ)
+lzEdit=2;
+assert.deepEqual((await opsOf(profilesDrain)).map(a=>a.slice(0,2)),[[0x2C,0],[0x2C,1],[0x2C,2],[0x2C,3],[0x2C,4],[0x34,0]]);
+assert.equal(lzEdit,0);
 assert.equal(S.profileLoadDue.size,0);assert.deepEqual(S.gesture,{enabled:1,prev:4,next:5});
 // a blob with the same active profiles queues nothing; a profile switched on the controller reloads that type
 await apply();assert.equal(S.profileLoadDue.size,0);
@@ -142,6 +169,44 @@ assert.deepEqual(await opsOf(()=>change(rec(0).gesture.next,7)),[[0x33,0,0,4,7]]
  assert(model[0].maps.every(m=>m.join()===DEF.join()));assert.equal(model[0].active,0);}
 async function $reset(){await document.querySelector('#mapReset').onclick();await settle();}
 
+// Lizard profiles: a strip above the bindings editor; the bindings go through the lizard ops
+const {lzV2Load,lzV2Add,lzV2Save,lzV2Reset}=await mod('lizard.js');
+const idle=async()=>{await settle();for(let i=0;i<100&&(S.lizardBusy||S.fieldBusy);i++)await settle();};
+const lzBox=document.querySelector('#lizardCard .prof-lz'),lzTabs=[...lzBox.querySelectorAll('.slot-tab')];
+const lzBtn=t=>[...lzBox.querySelectorAll('button')].find(b=>b.textContent===t);
+const lzDots=()=>lzTabs.map(b=>b.querySelector('.active-dot').style.display!=='none');
+const trigs=()=>S.lizardBindings.map(b=>b.trig);
+assert(shown(lzBox));assert.deepEqual(lzDots(),[true,false,false]);assert(lzTabs[0].classList.contains('active'));
+await lzV2Load();assert.deepEqual(trigs(),[1,2]);
+assert(/Editing profile 1, the one Lizard mode uses/.test(lzBox.textContent));
+// another profile: the puck's editor is pointed at it, then its bindings are read
+{const n=ops.length;lzTabs[1].click();await idle();assert.deepEqual(ops.slice(n),[[0x34,1]]);}
+assert.deepEqual(trigs(),[32]);assert(/Editing profile 2\. Lizard mode uses profile 1\./.test(lzBox.textContent));
+// unsaved edits are not dropped without asking
+lzV2Add();globalThis.confirm=()=>false;
+{const n=ops.length;lzTabs[2].click();await idle();assert.equal(ops.length,n);assert(lzTabs[1].classList.contains('active'));}
+globalThis.confirm=m=>{confirms.push(m);return true;};
+lzTabs[2].click();await idle();assert.deepEqual(trigs(),[64,128,256]);assert.equal(lzEdit,2);
+// saving writes the profile on screen, not the one in use, with masks above 32 bits intact
+S.lizardBindings[0].trig=2**33;await lzV2Save();
+assert.equal(lzMaps[2][0].trig,2**33);assert.equal(lzMaps[0][0].trig,1);
+// put it in use; copy another over it; reset it
+assert(!lzBtn('Use this profile').disabled);
+{const n=ops.length;lzBtn('Use this profile').click();await idle();assert.deepEqual(ops.slice(n),[[0x30,4,2]]);}
+assert.equal(lzActive,2);assert.deepEqual(lzDots(),[false,false,true]);assert(lzBtn('Use this profile').disabled);
+assert.deepEqual([...lzBox.querySelector('select').options].map(o=>+o.value),[0,1]);
+lzBox.querySelector('select').value='0';confirms=[];
+{const n=ops.length;lzBtn('Copy over this profile').click();await idle();assert.deepEqual(ops.slice(n),[[0x32,4,0,2]]);}
+assert.equal(confirms.length,1);assert.deepEqual(trigs(),[1,2]);assert.deepEqual(lzMaps[2],lzMaps[0]);
+lzMaps[2]=[lzB(9)];confirms=[];await lzV2Reset();
+assert(/Lizard profile 3/.test(confirms[0]),confirms[0]);assert.deepEqual(lzMaps[2],LZ_DEF);
+// a switch made on the controller (0xAE frame byte 47) moves the dot; the editor stays on its profile
+lzActive=0;await apply();assert(S.profileLoadDue.has(4));
+assert.deepEqual((await opsOf(profilesDrain)).map(a=>a.slice(0,2)),[[0x2C,4],[0x34,2]]);
+assert.deepEqual(lzDots(),[true,false,false]);assert(lzTabs[2].classList.contains('active'));
+// older firmware: no strip
+p[0]=29;await apply();assert(!shown(lzBox));p[0]=30;await apply();assert(shown(lzBox));
+
 // Backup: the profiles and the switch buttons ride along, and a restore sends only what differs
 model[3].maps[2][0]=4;model[3].pads[2]=[1,2];model[3].active=2;gesture=[1,6,7];
 await apply();await profilesDrain();
@@ -160,6 +225,29 @@ model=fresh();gesture=[1,4,5];
  const fields=writes.slice(nw).filter(x=>x[0]===2).map(x=>x[1]);
  assert(fields.includes(46));assert(!fields.some(f=>mapped.has(f)),fields.join());}
 assert.deepEqual(model[3].maps[2][0],4);assert.equal(model[3].active,2);assert.deepEqual(gesture,[1,6,7]);
+// the export reads every Lizard profile, then points the puck's editor back at the one on screen
+{let text=null;const B=globalThis.Blob,U=globalThis.URL.createObjectURL;
+ globalThis.Blob=class{constructor(parts){text=parts[0];}};globalThis.URL.createObjectURL=()=>'blob:test';
+ w.HTMLAnchorElement.prototype.click=()=>{};
+ const {exportBackup}=await mod('backup.js');
+ lzMaps=[[lzB(0)],[lzB(34)],[lzB(2),lzB(3)]];lzActive=1;
+ try{await exportBackup();}finally{globalThis.Blob=B;globalThis.URL.createObjectURL=U;}
+ assert(text,'nothing exported: '+document.querySelector('#log').textContent.slice(-300));
+ const ex=JSON.parse(text);
+ assert.equal(ex.version,3);assert.equal(ex.config.lizardProfiles.active,1);
+ assert.deepEqual(ex.config.lizardProfiles.maps.map(m=>m.map(b=>b.trig)),[[1],[2**34],[4,8]]);
+ // for a panel without profiles, lizardMap is the profile in use, with 32-bit masks as before
+ assert.equal(ex.config.lizardMap.length,1);
+ assert.equal(lzEdit,2);
+ // restoring writes each profile through the lizard ops, then puts the right one in use
+ const saved=clone(lzMaps.flat());lzMaps=[clone(LZ_DEF),clone(LZ_DEF),clone(LZ_DEF)];lzActive=0;
+ const n=ops.length;await importBackup({text:async()=>text});
+ assert.deepEqual(lzMaps.map(m=>m.map(b=>b.trig)),[[1],[2**34],[4,8]]);assert.equal(lzActive,1);
+ assert.deepEqual(ops.slice(n).filter(x=>x[0]===0x34||x[1]===4).map(x=>x.slice(0,3)),[[0x34,0],[0x34,1],[0x34,2],[0x30,4,1]]);
+ assert(saved.length===4);
+ // a malformed Lizard profile is refused before anything is written
+ const bad=JSON.parse(text);bad.config.lizardProfiles.maps[1][0].od=[0,300];
+ const nw=writes.length;await importBackup({text:async()=>JSON.stringify(bad)});assert.equal(writes.length,nw);}
 // a backup without profiles (older panel) still writes the per-type mapping fields
 {const old=JSON.parse(JSON.stringify(b));delete old.config.profiles;delete old.config.profileGesture;old.version=1;
  const n=writes.length;await importBackup({text:async()=>JSON.stringify(old)});

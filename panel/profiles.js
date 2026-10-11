@@ -4,6 +4,7 @@ import { readFrame, send, setField } from './protocol.js';
 import { BTN_GLYPH, TYPE_DEFS, typeEls } from './types.js';
 import { iconEl } from './icons.js';
 import { glyphSelect, repaintGlyphSelects } from './glyphselect.js';
+import { lzIsDirty, lzV2Load } from './lizard.js';
 
 // ---- Mapping profiles (firmware status v30+: ops 0x2C..0x33, frame 0xB0) ----
 // Each emulated type keeps three profiles; one is active. A profile gives every button (a "source") the button it
@@ -12,6 +13,9 @@ import { glyphSelect, repaintGlyphSelects } from './glyphselect.js';
 // per-type controls of panel/types.js keep driving the single mapping through the older fields.
 export const PROFILES_MIN_VER = 30;
 export const profilesCapable = () => !!(S.dev && S.lastP && S.lastP[0] >= PROFILES_MIN_VER);
+// Lizard mode's profiles are type 4 in the same ops. Their bindings go through the lizard ops (panel/lizard.js),
+// which edit the profile chosen with op 0x34; the 0xB0 frame for it has no sources.
+export const LZ_TYPE = 4;
 
 // The firmware's RemapSource order. own = the target code a source acts as by default (the type's label for it
 // names the button); the paddles, QAM and trackpad clicks have names of their own.
@@ -59,7 +63,15 @@ const dropExtras = sel => { for(const o of [...sel.options]) if(o.dataset.extra)
 // (when present) the gesture [enabled][prev][next]. The counts come from the frame, so a firmware that grows
 // either one still reads.
 function applyFrame(p){
-  if(p.length < 5 || p[0] !== 1 || p[1] >= TYPE_DEFS.length) return false;
+  if(p.length < 5 || p[0] !== 1 || p[1] > LZ_TYPE) return false;
+  if(p[1] === LZ_TYPE){
+    if(!p[3]) return false;
+    S.profiles[LZ_TYPE] = {active: p[2], count: p[3]};
+    if(p.length >= 8) S.gesture = {enabled: p[5], prev: p[6], next: p[7]};
+    if(S.profileSel[LZ_TYPE] === undefined || S.profileSel[LZ_TYPE] >= p[3]) S.profileSel[LZ_TYPE] = p[2];
+    renderLizardProfiles(); renderGesture();
+    return true;
+  }
   const et = p[1], np = p[3], ns = p[4], per = ns + 2;
   if(!np || !ns || p.length < 5 + np * per) return false;
   const maps = [], pads = [];
@@ -83,7 +95,11 @@ export async function profileOp(bytes){
   }catch(e){ log("profile op err: " + e.message); return false; }
   finally{ S.fieldBusy = false; }
 }
-export async function profilesLoad(et){ return profileOp([0x2C, et]); }
+export async function profilesLoad(et){
+  if(et !== LZ_TYPE) return profileOp([0x2C, et]);
+  // the puck keeps the profile its lizard ops edit until it reboots, so a reloaded page says which one it shows
+  return await profileOp([0x2C, et]) && profileOp([0x34, sel0(LZ_TYPE)]);
+}
 
 // The status blob carries each type's active profile (JS p[209], two bits each). The first blob that shows
 // profile support queues every type; after that only a type whose active profile changed on the controller.
@@ -93,6 +109,12 @@ export function profilesNoteBlob(p){
     const have = S.profiles[et];
     if(!have || have.active !== ((p[209] >> (2 * et)) & 3)) S.profileLoadDue.add(et);
   }
+}
+// The Lizard profile in use rides the 0xAE frame (byte 47 of its payload), which is read on every poll too.
+export function profilesNoteSw(s){
+  if(!profilesCapable() || !s || s.length <= 47) return;
+  const have = S.profiles[LZ_TYPE];
+  if(!have || have.active !== s[47]) S.profileLoadDue.add(LZ_TYPE);
 }
 export async function profilesDrain(){
   for(const et of [...S.profileLoadDue]){ S.profileLoadDue.delete(et); await profilesLoad(et); }
@@ -181,9 +203,65 @@ export function buildProfileCards(sec, et, def){
   return rec;
 }
 
+// ---- the Lizard tab: a profile strip above its bindings editor ----
+let lz = null;
+export function buildLizardProfiles(){
+  const card = document.getElementById("lizardCard"), editor = document.getElementById("lzEditor");
+  const box = document.createElement("div"); box.className = "prof-lz hide";
+  const strip = document.createElement("div"); strip.className = "slot-tabs prof-strip"; box.appendChild(strip);
+  lz = {box};
+  lz.tabs = [0, 1, 2].map(i => {
+    const b = document.createElement("button"); b.className = "slot-tab"; b.dataset.profile = i;
+    b.innerHTML = '<span>Profile ' + (i + 1) + '</span><span class="active-dot" style="display:none" title="In use">●</span>';
+    b.onclick = () => lzOpen(i);
+    strip.appendChild(b); return b;
+  });
+  const acts = document.createElement("div"); acts.className = "row prof-acts"; box.appendChild(acts);
+  const btn = (txt, title, fn) => { const b = document.createElement("button"); b.textContent = txt; b.title = title; b.onclick = fn; acts.appendChild(b); return b; };
+  lz.use = btn("Use this profile", "Make this the profile Lizard mode uses", () => profileOp([0x30, LZ_TYPE, sel0(LZ_TYPE)]));
+  lz.copyFrom = document.createElement("select"); lz.copyFrom.title = "The profile to copy over this one"; acts.appendChild(lz.copyFrom);
+  lz.copy = btn("Copy over this profile", "Replace this profile's bindings with a copy of the one chosen on the left", async () => {
+    const from = +lz.copyFrom.value, to = sel0(LZ_TYPE);
+    if(from === to || !confirm("Replace Lizard profile " + (to + 1) + " with a copy of profile " + (from + 1) + "?" + (lzIsDirty() ? "\n\nYour unsaved changes to it are lost." : ""))) return;
+    if(await profileOp([0x32, LZ_TYPE, from, to])) await lzV2Load();
+  });
+  lz.title = document.createElement("p"); lz.title.className = "note"; box.appendChild(lz.title);
+  card.insertBefore(box, editor);
+}
+// show another profile's bindings: point the puck's lizard editor at it, then read them
+async function lzOpen(i){
+  if(i === sel0(LZ_TYPE)) return;
+  if(lzIsDirty() && !confirm("Discard your unsaved changes to Lizard profile " + (sel0(LZ_TYPE) + 1) + "?")) return;
+  const prev = sel0(LZ_TYPE);
+  S.profileSel[LZ_TYPE] = i;
+  if(await profileOp([0x34, i])) await lzV2Load();
+  else { S.profileSel[LZ_TYPE] = prev; renderLizardProfiles(); }
+}
+export function lizardProfileSel(){ return profilesCapable() && S.profiles[LZ_TYPE] ? sel0(LZ_TYPE) : null; }
+function renderLizardProfiles(){
+  const st = S.profiles[LZ_TYPE];
+  if(!lz || !st) return;
+  const sel = sel0(LZ_TYPE);
+  lz.tabs.forEach((b, i) => {
+    b.classList.toggle("hide", i >= st.count);
+    b.classList.toggle("active", i === sel);
+    b.querySelector(".active-dot").style.display = i === st.active ? "" : "none";
+  });
+  lz.use.disabled = sel === st.active;
+  if(!held(lz.copyFrom)){
+    const keep = +lz.copyFrom.value, from = [...Array(st.count).keys()].filter(i => i !== sel);
+    lz.copyFrom.textContent = "";
+    for(const i of from){ const o = document.createElement("option"); o.value = i; o.textContent = "Copy from profile " + (i + 1); lz.copyFrom.appendChild(o); }
+    if(from.includes(keep)) lz.copyFrom.value = keep;
+  }
+  lz.title.textContent = "Editing profile " + (sel + 1) + (sel === st.active ? ", the one Lizard mode uses." : ". Lizard mode uses profile " + (st.active + 1) + ".") +
+    " Switch between them on the controller with the shortcut modifier and the profile switch buttons (set on any controller type's tab).";
+}
+
 // the cards this firmware can use, and the older controls it cannot
 export function syncProfileVisibility(){
   const on = profilesCapable();
+  if(lz) lz.box.classList.toggle("hide", !on);
   recs.forEach(rec => rec && rec.cards.forEach(c => c.classList.toggle("hide", !on)));
   // its own class, not .hide: the QAM row is also hidden while QAM is the shortcut modifier
   for(const el of document.querySelectorAll(".prof-legacy")) el.classList.toggle("prof-off", on);
@@ -218,7 +296,10 @@ export function renderProfiles(et){
   // the trackpad -> stick selects of this type's Trackpads card show the selected profile's
   const pads = typeEls[et];
   if(pads && pads.padStick) pads.padStick.forEach((s, pad) => { if(!held(s)) s.value = st.pads[sel][pad]; });
-  // the switch buttons are puck-wide: every type's card shows them
+  renderGesture();
+}
+// the switch buttons are puck-wide: every type's card shows them
+function renderGesture(){
   if(S.gesture) recs.forEach(r => {
     if(!r) return;
     const g = r.gesture;

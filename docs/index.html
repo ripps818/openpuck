@@ -395,8 +395,8 @@
     </div>
     <div id="mapLizardPane" class="hide">
     <div class="card wide" id="lizardCard">
-      <h2>Lizard (desktop) profile</h2>
-      <p class="note" style="margin-top:0">Keyboard, mouse &amp; media bindings for <strong>Lizard</strong> mode: each binding maps a controller input to a desktop action, checked top to bottom. Steam-mode seamless lizard (Steam closed) keeps the built-in default behavior and is not affected by this map. Pointer speed and glide are in <em>Trackpad mouse</em> below. Edits apply after <strong>Save to device</strong>.</p>
+      <h2>Lizard (desktop) bindings</h2>
+      <p class="note" style="margin-top:0">Keyboard, mouse &amp; media bindings for <strong>Lizard</strong> mode: each binding maps a controller input to a desktop action, checked top to bottom. Steam-mode seamless lizard (Steam closed) keeps the built-in default behavior and is not affected by this map. Pointer speed and glide are in <em>Trackpad mouse</em> below. Edits apply after <strong>Save to device</strong>. With current firmware there are three profiles of bindings, chosen below.</p>
       <div id="lzModeNote" class="lz-note hide">
         <p style="margin:0 0 10px">This puck is in <b id="lzCurMode">—</b>. Its firmware can edit the lizard map only in Lizard mode; update the firmware to edit it from any mode.</p>
         <button id="lzGoMode" class="primary">Switch to Lizard</button>
@@ -735,7 +735,7 @@ const S = {
   tabInited:false,
   // Mapping profiles (status v30+, panel/profiles.js): per type {active, maps[], pads[]} from the 0xB0 frame, the
   // profile each type's page is editing, the types still to be fetched, and the puck-wide profile-switch gesture.
-  profiles:[null,null,null,null], profileSel:[], profileLoadDue:new Set(), gesture:null,
+  profiles:[null,null,null,null,null], lizardProfileMaps:null, profileSel:[], profileLoadDue:new Set(), gesture:null,
   // RF recovery / journal status
   rfCapable:false, rfLastRefresh:0, rfHopPending:false, rfHandoffActive:false, rfBuilderActive:false,
   rfSurveyRunning:false, rfSurveyPending:false,
@@ -1625,6 +1625,350 @@ function glyphSelect(sel){
 
 function repaintGlyphSelects(){ for(const w of document.querySelectorAll(".gsel")) w.repaint(); }
 
+// ---- panel/lizard.js ----
+// ===================== Lizard (desktop) binding map =====================
+// Mirrors firmware lizard_map.h. A binding is {outType, od:[7], trig, hold}. Output types and the
+// per-type payload (od[]) layout must match the constants in lizard_map.h exactly.
+const LZ_MAX = 32;
+const LZO = {NONE:0, KBD:1, MBTN:2, AXIS:3, SCROLL:4, CONSUMER:5};
+const LZ_OUT_LABELS = {0:"(disabled)", 1:"Keyboard key", 2:"Mouse button", 3:"Mouse move", 4:"Scroll wheel", 5:"Media key"};
+const LZ_OUT_GLYPH = {1:"kbd", 2:"mouse", 3:"pointer", 4:"wheel", 5:"speaker"};
+// Controller input bits (triton.h TB_* + virtual left-stick deflection bits). Single-bit triggers only.
+const LZ_BTNS = [
+  [0x1,"A","A"],[0x2,"B","B"],[0x4,"X","X"],[0x8,"Y","Y"],
+  [0x10,"QAM (• • •)","qam"],[0x40,"View","view"],[0x4000,"Menu","menu"],[0x10000,"Steam","steam"],
+  [0x20,"R3 (stick click)","R3"],[0x8000,"L3 (stick click)","L3"],
+  [0x80,"R4 (back upper-right)","R4"],[0x100,"R5 (back lower-right)","R5"],
+  [0x20000,"L4 (back upper-left)","L4"],[0x40000,"L5 (back lower-left)","L5"],
+  [0x200,"RB (bumper)","RB"],[0x80000,"LB (bumper)","LB"],
+  [0x800000,"R2 (trigger pull)","R2"],[0x8000000,"L2 (trigger pull)","L2"],
+  [0x2000,"D-pad Up","up"],[0x400,"D-pad Down","down"],[0x1000,"D-pad Left","left"],[0x800,"D-pad Right","right"],
+  [0x400000,"Right pad click","padClickR"],[0x4000000,"Left pad click","padClickL"],
+  [0x200000,"Right pad touch","padR"],[0x2000000,"Left pad touch","padL"],
+  [Math.pow(2,32),"L-stick → right","lsRight"],[Math.pow(2,33),"L-stick → left","lsLeft"],[Math.pow(2,34),"L-stick → down","lsDown"],[Math.pow(2,35),"L-stick → up","lsUp"],
+  [Math.pow(2,36),"R-stick → right","rsRight"],[Math.pow(2,37),"R-stick → left","rsLeft"],[Math.pow(2,38),"R-stick → down","rsDown"],[Math.pow(2,39),"R-stick → up","rsUp"],
+];
+// Keyboard modifier bits (od[0] for KBD output).
+const LZ_MODS = [[0x01,"Ctrl"],[0x02,"Shift"],[0x04,"Alt"],[0x08,"Win/⌘"]];
+// Curated HID keycodes (od[1] for KBD output). Value 0 = no key (modifier-only).
+const LZ_KEYS = [[0,"— none —"]];
+"ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("").forEach((c,i)=>LZ_KEYS.push([0x04+i,c]));
+"1234567890".split("").forEach((c,i)=>LZ_KEYS.push([0x1e+i,c]));
+[[0x28,"Enter"],[0x29,"Esc"],[0x2a,"Backspace"],[0x2b,"Tab"],[0x2c,"Space"],
+ [0x4f,"Arrow Right"],[0x50,"Arrow Left"],[0x51,"Arrow Down"],[0x52,"Arrow Up"],
+ [0x4a,"Home"],[0x4d,"End"],[0x4b,"Page Up"],[0x4e,"Page Down"],[0x49,"Insert"],[0x4c,"Delete"],
+ [0x2d,"- _"],[0x2e,"= +"],[0x46,"Print Screen"]].forEach(k=>LZ_KEYS.push(k));
+for(let i=0;i<12;i++) LZ_KEYS.push([0x3a+i,"F"+(i+1)]);
+// every key is drawn as a keycap bearing its name (panel/icons.js)
+for(const k of LZ_KEYS) if(k[0]) k.push("key:"+k[1]);
+const LZ_MBTNS = [[1,"Left click","mouseL"],[2,"Right click","mouseR"],[4,"Middle click","mouseM"]];
+const LZ_AXIS_SRC = [[0,"Right trackpad","padR"],[1,"Left stick","stickL"],[2,"Gyro","gyro"]];
+const LZ_GYRO_ACT = [[0,"Always"],[1,"While right pad touched","padR"],[2,"While left stick deflected","stickL"],[3,"While hold-button held"]];
+const LZ_CONSUMER = [[1,"Volume +","volUp"],[2,"Volume −","volDown"]];
+
+// an input as its glyph and short name (the label up to its parenthesis), for the summary line
+function lzInput(mask){
+	const v=Number(mask)||0, m=LZ_BTNS.find(b=>Number(b[0])===v);
+	return m?[iconEl(m[2])," "+m[1].split(" (")[0]]:(v?["0x"+v.toString(16)]:[]);
+}
+// Read one [0xAA][count][count*16] frame, accumulating transferIn packets until complete.
+// Gives up after 3 s (null): an unanswered 0x11 must never block the IN pipe for good.
+async function readLizard(){
+  let acc=new Uint8Array(0);
+  const deadline=Date.now()+3000;
+  for(let guard=0; guard<64; guard++){
+    const d=await readIn(256, deadline-Date.now());
+    if(!d) break;
+    const m=new Uint8Array(acc.length+d.length); m.set(acc); m.set(d,acc.length); acc=m;
+    let i=0; while(i<acc.length && acc[i]!==0xAA) i++;
+    if(i>0) acc=acc.slice(i);
+    if(acc.length<2) continue;
+    const count=acc[1], total=2+count*16;
+    if(acc.length>=total){
+      const out=[];
+      for(let b=0;b<count;b++){
+        const q=2+b*16;
+        out.push({
+          outType:acc[q],
+          od:[...acc.slice(q+1,q+8)],
+          trig:((acc[q+8])|(acc[q+9]<<8)|(acc[q+10]<<16)|(acc[q+11]<<24))>>>0,
+          hold:((acc[q+12])|(acc[q+13]<<8)|(acc[q+14]<<16)|(acc[q+15]<<24))>>>0,
+        });
+      }
+      return out;
+    }
+  }
+  return null;
+}
+// Every lizard op sends 0x11..0x15 and then does a BLOCKING readLizard(). If the firmware doesn't implement
+// the op (any pre-v16 build) it drops the byte and never replies, and the read hangs the shared endpoint. So
+// every entry point bails unless a status blob has proven the puck speaks v16+.
+function lizardCapable(){ return !!(S.lastP && S.lastP[0]>=16); }
+
+// OPENPUCK_LIZARD_MAP_V2_R_STICK
+// Binding-v2 format appeared at protocol 20. Protocol 21 (upstream #224)
+// claimed 0x16 for rumble-test, so the v2 map transport shifts one slot.
+const LZ_MAP_V2_PROTOCOL = 20;
+const LZ_MAP_V2_SHIFTED_OPS_PROTOCOL = 21;
+const LZ_V1_LOW_MASK = 0x0fffffff;
+const lzPow2 = bit => Math.pow(2, bit);
+
+function lzReadLE(d,o,n){
+	let v=0;
+	for(let i=n-1;i>=0;i--) v=v*256+d[o+i];
+	return v;
+}
+function lzWriteLE(out,v,n){
+	v=Number(v)||0;
+	for(let i=0;i<n;i++) out.push(Math.floor(v/Math.pow(2,8*i))&0xff);
+}
+function lzLegacyMaskToV2(v){
+	v=Number(v)>>>0;
+	let out=v&LZ_V1_LOW_MASK;
+	if(v&0x10000000) out+=lzPow2(32);
+	if(v&0x20000000) out+=lzPow2(33);
+	if(v&0x40000000) out+=lzPow2(34);
+	if(v&0x80000000) out+=lzPow2(35);
+	return out;
+}
+function lzV2MaskToLegacy(v){
+	v=Number(v)||0;
+	let out=(v%lzPow2(28))>>>0;
+	if(Math.floor(v/lzPow2(32))&1) out|=0x10000000;
+	if(Math.floor(v/lzPow2(33))&1) out|=0x20000000;
+	if(Math.floor(v/lzPow2(34))&1) out|=0x40000000;
+	if(Math.floor(v/lzPow2(35))&1) out|=0x80000000;
+	return out>>>0;
+}
+function lzPanelV2(){ return !!(S.lastP&&S.lastP[0]>=LZ_MAP_V2_PROTOCOL); }
+function lzV2Ops(){
+	const shifted=!!(S.lastP&&S.lastP[0]>=LZ_MAP_V2_SHIFTED_OPS_PROTOCOL);
+	return shifted
+		? {dump:0x17,set:0x18,save:0x19,reset:0x1A}
+		: {dump:0x16,set:0x17,save:0x18,reset:0x19};
+}
+function lzHasRStickVirtual(v){ return Number(v||0)>=lzPow2(36); }
+
+function lzV2Select(options,value,onchange,noneLabel){
+	const s=document.createElement("select");
+	if(noneLabel!==undefined){
+		const o=document.createElement("option"); o.value="0"; o.textContent=noneLabel; s.appendChild(o);
+	}
+	for(const [v,label,glyph] of options){
+		const o=document.createElement("option"); o.value=String(v); o.textContent=label; if(glyph) o.dataset.glyph=glyph; s.appendChild(o);
+	}
+	s.value=String(Number(value)||0);
+	s.onchange=()=>onchange(Number(s.value));
+	// the input lists show each input's glyph beside its name
+	return options.some(o=>o[2]) ? glyphSelect(s) : s;
+}
+// ---- lizard editor: one block per binding, a readable summary line on top, labelled fields below ----
+let lzDirty=false;
+const lzIsDirty=()=>lzDirty;
+function lzSetDirty(on){ lzDirty=on; const d=document.getElementById("lzDirty"); if(d) d.classList.toggle("hide",!on); }
+const lzName=(list,v)=>{ const m=list.find(x=>Number(x[0])===Number(v)); return m?m[1]:""; };
+const lzGlyph=(list,v)=>{ const m=list.find(x=>Number(x[0])===Number(v)); return m&&m[2]; };
+// a name with its glyph, when the value has one
+const lzNamed=(list,v,fallback)=>{ const n=lzName(list,v), g=lzGlyph(list,v); return n?[...(g?[iconEl(g)," "]:[]),n]:[fallback]; };
+// the summary line as nodes: glyphs where an input or output has one, words beside them
+function lzSummary(b){
+	const od=b.od;
+	if(b.outType===LZO.AXIS){
+		const n=[...lzNamed(LZ_AXIS_SRC,od[0],"source")," → ",iconEl(LZ_OUT_GLYPH[3])," mouse pointer"];
+		if(od[0]===2){ const g=lzGlyph(LZ_GYRO_ACT,od[1]); n.push(", ",...(g?[iconEl(g)," "]:[]),lzName(LZ_GYRO_ACT,od[1]).toLowerCase()); if(od[1]===3&&b.hold) n.push(" (",...lzInput(b.hold),")"); }
+		return n;
+	}
+	if(b.outType===LZO.SCROLL) return [iconEl("padL")," Left trackpad → ",iconEl(LZ_OUT_GLYPH[4])," scroll wheel"];
+	let out;
+	if(b.outType===LZO.KBD){
+		const keys=[...LZ_MODS.filter(([bit])=>od[0]&bit).map(m=>m[1]),...od.slice(1).filter(Boolean).map(k=>lzName(LZ_KEYS,k)||"0x"+k.toString(16))];
+		out=keys.length?keys.flatMap((k,i)=>[...(i?[" + "]:[]),iconEl("key:"+k)]):["(no key)"];
+	}
+	else if(b.outType===LZO.MBTN) out=lzNamed(LZ_MBTNS,od[0],"mouse button");
+	else if(b.outType===LZO.CONSUMER) out=lzNamed(LZ_CONSUMER,od[0],"media key");
+	else return ["Disabled"];
+	const input=[...(b.trig?lzInput(b.trig):[]),...(b.trig&&b.hold?[" while "]:[]),...(b.hold?["holding ",...lzInput(b.hold)]:[])];
+	return [...(input.length?input:["no input chosen"])," → ",...out];
+}
+function lzField(label,el){
+	const f=document.createElement("div"); f.className="lz-f";
+	const s=document.createElement("span"); s.textContent=label; f.append(s,el); return f;
+}
+function lzV2Render(){
+	const host=document.getElementById("lizardList");
+	if(!host) return;
+	host.innerHTML="";
+	const n=S.lizardBindings.length;
+	const cnt=document.getElementById("lzCount"); if(cnt) cnt.textContent=n+" / "+LZ_MAX+" bindings";
+	const add=document.getElementById("lzAdd"); if(add) add.disabled=n>=LZ_MAX;
+	// every edit marks the map unsaved and redraws (summary + which fields apply)
+	const edit=fn=>v=>{ fn(v); lzSetDirty(true); lzV2Render(); };
+	S.lizardBindings.forEach((b,idx)=>{
+		if(!b.od) b.od=[0,0,0,0,0,0,0];
+		while(b.od.length<7) b.od.push(0);
+		const box=document.createElement("div"); box.className="lz-row";
+		const head=document.createElement("div"); head.className="lz-head";
+		const num=document.createElement("span"); num.className="lz-idx"; num.textContent="#"+(idx+1);
+		const sum=document.createElement("span"); sum.className="lz-sum"; sum.append(...lzSummary(b));
+		// a key/click/media binding with no input never fires as intended
+		const digital=b.outType===LZO.KBD||b.outType===LZO.MBTN||b.outType===LZO.CONSUMER;
+		if(digital&&!b.trig&&!b.hold){ sum.classList.add("warn"); sum.prepend("⚠ "); }
+		const del=document.createElement("button"); del.textContent="Remove";
+		del.onclick=()=>{ S.lizardBindings.splice(idx,1); lzSetDirty(true); lzV2Render(); };
+		head.append(num,sum,del); box.appendChild(head);
+
+		const fields=document.createElement("div"); fields.className="lz-fields";
+		const types=Object.keys(LZ_OUT_LABELS).map(Number).map(v=>[v,LZ_OUT_LABELS[v],LZ_OUT_GLYPH[v]]);
+		fields.appendChild(lzField("Action",lzV2Select(types,b.outType,edit(v=>{b.outType=v;}))));
+		// analog outputs are driven by their source; only gyro "while hold-button held" reads the hold buttons
+		const analog=b.outType===LZO.AXIS||b.outType===LZO.SCROLL;
+		const gyroHold=b.outType===LZO.AXIS&&b.od[0]===2&&b.od[1]===3;
+		if(!analog) fields.appendChild(lzField("When pressed",lzV2Select(LZ_BTNS,b.trig,edit(v=>{b.trig=v;}),"— pick input —")));
+		if(!analog||gyroHold) fields.appendChild(lzField(gyroHold?"Hold button":"While holding",lzV2Select(LZ_BTNS,b.hold,edit(v=>{b.hold=v;}),"— nothing —")));
+		if(b.outType===LZO.KBD){
+			const mods=document.createElement("div"); mods.className="lz-mods";
+			for(const [bit,label] of LZ_MODS){
+				const c=document.createElement("input"); c.type="checkbox"; c.checked=!!(b.od[0]&bit);
+				c.onchange=edit(()=>{ if(c.checked)b.od[0]|=bit;else b.od[0]&=~bit; });
+				const l=document.createElement("label"); l.append(c,iconEl("key:"+label)); mods.appendChild(l);
+			}
+			fields.appendChild(lzField("Modifiers",mods));
+			// key 1 always; each further key slot appears once the one before it is set (up to 6)
+			for(let k=1;k<7;k++){
+				if(k>1&&!b.od[k-1]&&!b.od[k]) break;
+				fields.appendChild(lzField(k===1?"Key":"Key "+k,lzV2Select(LZ_KEYS,b.od[k],edit(v=>{b.od[k]=v;}))));
+			}
+		}else if(b.outType===LZO.MBTN){
+			fields.appendChild(lzField("Mouse button",lzV2Select(LZ_MBTNS,b.od[0],edit(v=>{b.od[0]=v;}))));
+		}else if(b.outType===LZO.AXIS){
+			fields.appendChild(lzField("Source",lzV2Select(LZ_AXIS_SRC,b.od[0],edit(v=>{b.od[0]=v;}))));
+			if(b.od[0]===2) fields.appendChild(lzField("Gyro active",lzV2Select(LZ_GYRO_ACT,b.od[1],edit(v=>{b.od[1]=v;}))));
+		}else if(b.outType===LZO.SCROLL){
+			b.od[0]=0;
+			const s=document.createElement("span"); s.style.cssText="color:var(--fg);font-size:13px;padding-top:6px"; s.append(iconEl("padL")," Left trackpad");
+			fields.appendChild(lzField("Source",s));
+		}else if(b.outType===LZO.CONSUMER){
+			fields.appendChild(lzField("Media key",lzV2Select(LZ_CONSUMER,b.od[0],edit(v=>{b.od[0]=v;}))));
+		}
+		box.appendChild(fields); host.appendChild(box);
+	});
+	if(!n) host.innerHTML='<p class="note">No bindings. Add one, or reset to the defaults.</p>';
+}
+
+async function lzV2ReadMap(op){
+	await send([op]);
+	const recSize=lzPanelV2()?24:16;
+	let buf=[];
+	let expected=0;
+	// through the shared reader, with a deadline: a reply cut short used to leave this waiting forever with
+	// lizardBusy set, which stopped the status poll (NO HEARTBEAT) until stray bytes happened to complete it
+	const deadline=Date.now()+3000;
+	for(;;){
+		const d=await readIn(256, deadline-Date.now());
+		if(!d) throw new Error("lizard-map read timed out");
+		for(const x of d) buf.push(x);
+		if(!expected){
+			let start=-1;
+			for(let i=0;i+1<buf.length;i++){
+				if(buf[i]===0xAA && buf[i+1]<=LZ_MAX){ start=i; break; }
+			}
+			if(start<0){ if(buf.length>1024)buf=[]; continue; }
+			if(start) buf=buf.slice(start);
+			expected=2+buf[1]*recSize;
+		}
+		if(buf.length>=expected) break;
+	}
+	const count=buf[1], out=[];
+	for(let i=0;i<count;i++){
+		const q=2+i*recSize, od=[];
+		for(let k=0;k<7;k++) od.push(buf[q+1+k]||0);
+		const trig=recSize===24?lzReadLE(buf,q+8,8):lzLegacyMaskToV2(lzReadLE(buf,q+8,4));
+		const hold=recSize===24?lzReadLE(buf,q+16,8):lzLegacyMaskToV2(lzReadLE(buf,q+12,4));
+		out.push({outType:buf[q]||0,od,trig,hold});
+	}
+	return out;
+}
+async function lzV2Load(){
+	if(S.lizardBusy||!S.dev)return;
+	S.lizardBusy=true;
+	try{
+		// runs from the first status blob, while that poll is still reading its Switch frame: wait for the pipe
+		await waitIdle();
+		const ops=lzV2Ops();
+		S.lizardBindings=await lzV2ReadMap(lzPanelV2()?ops.dump:0x11);
+		lzV2Render(); lzSetDirty(false);
+		const st=document.getElementById("lzStatus");
+		if(st)st.textContent="loaded "+S.lizardBindings.length+" binding(s)"+(lzPanelV2()?" · map v2":" · legacy map");
+	}catch(e){ log("lizard load failed: "+e.message); }
+	finally{S.lizardBusy=false;}
+}
+// One Lizard profile's bindings (status v30), for backups: op 0x34 points the lizard ops at the profile. The
+// caller holds the pipe and points them back at the profile on screen afterwards.
+async function lzReadProfile(profile){
+	await send([0x34,profile]);
+	if(!await readFrame(0xB0,5,256)) throw new Error("no answer choosing Lizard profile "+(profile+1));
+	return lzV2ReadMap(lzV2Ops().dump);
+}
+async function lzWriteProfile(profile,bindings){
+	await send([0x34,profile]);
+	if(!await readFrame(0xB0,5,256)) throw new Error("no answer choosing Lizard profile "+(profile+1));
+	const ops=lzV2Ops(), count=Math.min(LZ_MAX,bindings.length);
+	await send([0x13,count]);
+	for(let i=0;i<count;i++){
+		const b=bindings[i], cmd=[ops.set,i,(b.outType||0)&0xff];
+		for(let k=0;k<7;k++)cmd.push(((b.od&&b.od[k])||0)&0xff);
+		lzWriteLE(cmd,b.trig,8);lzWriteLE(cmd,b.hold,8);
+		await send(cmd);
+	}
+	return lzV2ReadMap(ops.save);
+}
+async function lzV2Save(){
+	if(S.lizardBusy||!S.dev)return;
+	S.lizardBusy=true;
+	try{
+		const v2=lzPanelV2(), ops=lzV2Ops();
+		if(!v2&&S.lizardBindings.some(b=>lzHasRStickVirtual(b.trig)||lzHasRStickVirtual(b.hold)))
+			throw new Error("R-stick directions require firmware protocol v20+");
+		const count=Math.min(LZ_MAX,S.lizardBindings.length);
+		await send([0x13,count]);
+		for(let i=0;i<count;i++){
+			const b=S.lizardBindings[i], cmd=[v2?ops.set:0x12,i,b.outType||0];
+			for(let k=0;k<7;k++)cmd.push((b.od&&b.od[k])||0);
+			if(v2){lzWriteLE(cmd,b.trig,8);lzWriteLE(cmd,b.hold,8);}
+			else{lzWriteLE(cmd,lzV2MaskToLegacy(b.trig),4);lzWriteLE(cmd,lzV2MaskToLegacy(b.hold),4);}
+			await send(cmd);
+		}
+		S.lizardBindings=await lzV2ReadMap(v2?ops.save:0x14);
+		lzV2Render(); lzSetDirty(false);
+		const st=document.getElementById("lzStatus"); if(st)st.textContent="saved "+count+" binding(s)";
+	}catch(e){const st=document.getElementById("lzStatus");if(st)st.textContent="save failed: "+e.message;log("lizard save failed: "+e.message);}
+	finally{S.lizardBusy=false;}
+}
+async function lzV2Reset(){
+	if(S.lizardBusy||!S.dev)return;
+	const prof=lizardProfileSel();
+	if(!confirm("Reset "+(prof===null?"the lizard map":"Lizard profile "+(prof+1))+" to the built-in defaults? This saves to the puck immediately; your bindings are lost.")) return;
+	S.lizardBusy=true;
+	try{
+		// runs from the first status blob, while that poll is still reading its Switch frame: wait for the pipe
+		await waitIdle();
+		const ops=lzV2Ops();
+		S.lizardBindings=await lzV2ReadMap(lzPanelV2()?ops.reset:0x15);
+		lzV2Render(); lzSetDirty(false);
+		const st=document.getElementById("lzStatus");if(st)st.textContent="reset to defaults";
+	}catch(e){log("lizard reset failed: "+e.message);}
+	finally{S.lizardBusy=false;}
+}
+function lzV2Add(){
+	if(S.lizardBindings.length>=LZ_MAX) return;
+	S.lizardBindings.push({outType:1,od:[0,0,0,0,0,0,0],trig:0,hold:0});
+	lzSetDirty(true); lzV2Render();
+}
+function lzV2Reload(){
+	if(lzDirty && !confirm("Discard your unsaved lizard map changes and reload it from the puck?")) return;
+	lzV2Load();
+}
+
 // ---- panel/profiles.js ----
 // ---- Mapping profiles (firmware status v30+: ops 0x2C..0x33, frame 0xB0) ----
 // Each emulated type keeps three profiles; one is active. A profile gives every button (a "source") the button it
@@ -1633,6 +1977,9 @@ function repaintGlyphSelects(){ for(const w of document.querySelectorAll(".gsel"
 // per-type controls of panel/types.js keep driving the single mapping through the older fields.
 const PROFILES_MIN_VER = 30;
 const profilesCapable = () => !!(S.dev && S.lastP && S.lastP[0] >= PROFILES_MIN_VER);
+// Lizard mode's profiles are type 4 in the same ops. Their bindings go through the lizard ops (panel/lizard.js),
+// which edit the profile chosen with op 0x34; the 0xB0 frame for it has no sources.
+const LZ_TYPE = 4;
 
 // The firmware's RemapSource order. own = the target code a source acts as by default (the type's label for it
 // names the button); the paddles, QAM and trackpad clicks have names of their own.
@@ -1680,7 +2027,15 @@ const dropExtras = sel => { for(const o of [...sel.options]) if(o.dataset.extra)
 // (when present) the gesture [enabled][prev][next]. The counts come from the frame, so a firmware that grows
 // either one still reads.
 function applyFrame(p){
-  if(p.length < 5 || p[0] !== 1 || p[1] >= TYPE_DEFS.length) return false;
+  if(p.length < 5 || p[0] !== 1 || p[1] > LZ_TYPE) return false;
+  if(p[1] === LZ_TYPE){
+    if(!p[3]) return false;
+    S.profiles[LZ_TYPE] = {active: p[2], count: p[3]};
+    if(p.length >= 8) S.gesture = {enabled: p[5], prev: p[6], next: p[7]};
+    if(S.profileSel[LZ_TYPE] === undefined || S.profileSel[LZ_TYPE] >= p[3]) S.profileSel[LZ_TYPE] = p[2];
+    renderLizardProfiles(); renderGesture();
+    return true;
+  }
   const et = p[1], np = p[3], ns = p[4], per = ns + 2;
   if(!np || !ns || p.length < 5 + np * per) return false;
   const maps = [], pads = [];
@@ -1704,7 +2059,11 @@ async function profileOp(bytes){
   }catch(e){ log("profile op err: " + e.message); return false; }
   finally{ S.fieldBusy = false; }
 }
-async function profilesLoad(et){ return profileOp([0x2C, et]); }
+async function profilesLoad(et){
+  if(et !== LZ_TYPE) return profileOp([0x2C, et]);
+  // the puck keeps the profile its lizard ops edit until it reboots, so a reloaded page says which one it shows
+  return await profileOp([0x2C, et]) && profileOp([0x34, sel0(LZ_TYPE)]);
+}
 
 // The status blob carries each type's active profile (JS p[209], two bits each). The first blob that shows
 // profile support queues every type; after that only a type whose active profile changed on the controller.
@@ -1714,6 +2073,12 @@ function profilesNoteBlob(p){
     const have = S.profiles[et];
     if(!have || have.active !== ((p[209] >> (2 * et)) & 3)) S.profileLoadDue.add(et);
   }
+}
+// The Lizard profile in use rides the 0xAE frame (byte 47 of its payload), which is read on every poll too.
+function profilesNoteSw(s){
+  if(!profilesCapable() || !s || s.length <= 47) return;
+  const have = S.profiles[LZ_TYPE];
+  if(!have || have.active !== s[47]) S.profileLoadDue.add(LZ_TYPE);
 }
 async function profilesDrain(){
   for(const et of [...S.profileLoadDue]){ S.profileLoadDue.delete(et); await profilesLoad(et); }
@@ -1802,9 +2167,65 @@ function buildProfileCards(sec, et, def){
   return rec;
 }
 
+// ---- the Lizard tab: a profile strip above its bindings editor ----
+let lz = null;
+function buildLizardProfiles(){
+  const card = document.getElementById("lizardCard"), editor = document.getElementById("lzEditor");
+  const box = document.createElement("div"); box.className = "prof-lz hide";
+  const strip = document.createElement("div"); strip.className = "slot-tabs prof-strip"; box.appendChild(strip);
+  lz = {box};
+  lz.tabs = [0, 1, 2].map(i => {
+    const b = document.createElement("button"); b.className = "slot-tab"; b.dataset.profile = i;
+    b.innerHTML = '<span>Profile ' + (i + 1) + '</span><span class="active-dot" style="display:none" title="In use">●</span>';
+    b.onclick = () => lzOpen(i);
+    strip.appendChild(b); return b;
+  });
+  const acts = document.createElement("div"); acts.className = "row prof-acts"; box.appendChild(acts);
+  const btn = (txt, title, fn) => { const b = document.createElement("button"); b.textContent = txt; b.title = title; b.onclick = fn; acts.appendChild(b); return b; };
+  lz.use = btn("Use this profile", "Make this the profile Lizard mode uses", () => profileOp([0x30, LZ_TYPE, sel0(LZ_TYPE)]));
+  lz.copyFrom = document.createElement("select"); lz.copyFrom.title = "The profile to copy over this one"; acts.appendChild(lz.copyFrom);
+  lz.copy = btn("Copy over this profile", "Replace this profile's bindings with a copy of the one chosen on the left", async () => {
+    const from = +lz.copyFrom.value, to = sel0(LZ_TYPE);
+    if(from === to || !confirm("Replace Lizard profile " + (to + 1) + " with a copy of profile " + (from + 1) + "?" + (lzIsDirty() ? "\n\nYour unsaved changes to it are lost." : ""))) return;
+    if(await profileOp([0x32, LZ_TYPE, from, to])) await lzV2Load();
+  });
+  lz.title = document.createElement("p"); lz.title.className = "note"; box.appendChild(lz.title);
+  card.insertBefore(box, editor);
+}
+// show another profile's bindings: point the puck's lizard editor at it, then read them
+async function lzOpen(i){
+  if(i === sel0(LZ_TYPE)) return;
+  if(lzIsDirty() && !confirm("Discard your unsaved changes to Lizard profile " + (sel0(LZ_TYPE) + 1) + "?")) return;
+  const prev = sel0(LZ_TYPE);
+  S.profileSel[LZ_TYPE] = i;
+  if(await profileOp([0x34, i])) await lzV2Load();
+  else { S.profileSel[LZ_TYPE] = prev; renderLizardProfiles(); }
+}
+function lizardProfileSel(){ return profilesCapable() && S.profiles[LZ_TYPE] ? sel0(LZ_TYPE) : null; }
+function renderLizardProfiles(){
+  const st = S.profiles[LZ_TYPE];
+  if(!lz || !st) return;
+  const sel = sel0(LZ_TYPE);
+  lz.tabs.forEach((b, i) => {
+    b.classList.toggle("hide", i >= st.count);
+    b.classList.toggle("active", i === sel);
+    b.querySelector(".active-dot").style.display = i === st.active ? "" : "none";
+  });
+  lz.use.disabled = sel === st.active;
+  if(!held(lz.copyFrom)){
+    const keep = +lz.copyFrom.value, from = [...Array(st.count).keys()].filter(i => i !== sel);
+    lz.copyFrom.textContent = "";
+    for(const i of from){ const o = document.createElement("option"); o.value = i; o.textContent = "Copy from profile " + (i + 1); lz.copyFrom.appendChild(o); }
+    if(from.includes(keep)) lz.copyFrom.value = keep;
+  }
+  lz.title.textContent = "Editing profile " + (sel + 1) + (sel === st.active ? ", the one Lizard mode uses." : ". Lizard mode uses profile " + (st.active + 1) + ".") +
+    " Switch between them on the controller with the shortcut modifier and the profile switch buttons (set on any controller type's tab).";
+}
+
 // the cards this firmware can use, and the older controls it cannot
 function syncProfileVisibility(){
   const on = profilesCapable();
+  if(lz) lz.box.classList.toggle("hide", !on);
   recs.forEach(rec => rec && rec.cards.forEach(c => c.classList.toggle("hide", !on)));
   // its own class, not .hide: the QAM row is also hidden while QAM is the shortcut modifier
   for(const el of document.querySelectorAll(".prof-legacy")) el.classList.toggle("prof-off", on);
@@ -1839,7 +2260,10 @@ function renderProfiles(et){
   // the trackpad -> stick selects of this type's Trackpads card show the selected profile's
   const pads = typeEls[et];
   if(pads && pads.padStick) pads.padStick.forEach((s, pad) => { if(!held(s)) s.value = st.pads[sel][pad]; });
-  // the switch buttons are puck-wide: every type's card shows them
+  renderGesture();
+}
+// the switch buttons are puck-wide: every type's card shows them
+function renderGesture(){
   if(S.gesture) recs.forEach(r => {
     if(!r) return;
     const g = r.gesture;
@@ -3206,6 +3630,7 @@ const CHORD_DPAD_DEF = [9, 8, 7, 2];       // firmware defaults: PS3, DS4 game, 
 function applySw(s){
   S.lastSw=s;
   swStatusApply(s);
+  profilesNoteSw(s);
   $("#shortcutToggles").classList.toggle("hide",!s);
   $("#hdPadBlock").classList.toggle("hide",!s);
   $("#qamSelectRow").classList.toggle("hide",!s);
@@ -3658,328 +4083,6 @@ function applyDeviceProfile(){
   syncNav(); // the sidebar drops the pages this device has no cards for
 }
 
-// ---- panel/lizard.js ----
-// ===================== Lizard (desktop) binding map =====================
-// Mirrors firmware lizard_map.h. A binding is {outType, od:[7], trig, hold}. Output types and the
-// per-type payload (od[]) layout must match the constants in lizard_map.h exactly.
-const LZ_MAX = 32;
-const LZO = {NONE:0, KBD:1, MBTN:2, AXIS:3, SCROLL:4, CONSUMER:5};
-const LZ_OUT_LABELS = {0:"(disabled)", 1:"Keyboard key", 2:"Mouse button", 3:"Mouse move", 4:"Scroll wheel", 5:"Media key"};
-const LZ_OUT_GLYPH = {1:"kbd", 2:"mouse", 3:"pointer", 4:"wheel", 5:"speaker"};
-// Controller input bits (triton.h TB_* + virtual left-stick deflection bits). Single-bit triggers only.
-const LZ_BTNS = [
-  [0x1,"A","A"],[0x2,"B","B"],[0x4,"X","X"],[0x8,"Y","Y"],
-  [0x10,"QAM (• • •)","qam"],[0x40,"View","view"],[0x4000,"Menu","menu"],[0x10000,"Steam","steam"],
-  [0x20,"R3 (stick click)","R3"],[0x8000,"L3 (stick click)","L3"],
-  [0x80,"R4 (back upper-right)","R4"],[0x100,"R5 (back lower-right)","R5"],
-  [0x20000,"L4 (back upper-left)","L4"],[0x40000,"L5 (back lower-left)","L5"],
-  [0x200,"RB (bumper)","RB"],[0x80000,"LB (bumper)","LB"],
-  [0x800000,"R2 (trigger pull)","R2"],[0x8000000,"L2 (trigger pull)","L2"],
-  [0x2000,"D-pad Up","up"],[0x400,"D-pad Down","down"],[0x1000,"D-pad Left","left"],[0x800,"D-pad Right","right"],
-  [0x400000,"Right pad click","padClickR"],[0x4000000,"Left pad click","padClickL"],
-  [0x200000,"Right pad touch","padR"],[0x2000000,"Left pad touch","padL"],
-  [Math.pow(2,32),"L-stick → right","lsRight"],[Math.pow(2,33),"L-stick → left","lsLeft"],[Math.pow(2,34),"L-stick → down","lsDown"],[Math.pow(2,35),"L-stick → up","lsUp"],
-  [Math.pow(2,36),"R-stick → right","rsRight"],[Math.pow(2,37),"R-stick → left","rsLeft"],[Math.pow(2,38),"R-stick → down","rsDown"],[Math.pow(2,39),"R-stick → up","rsUp"],
-];
-// Keyboard modifier bits (od[0] for KBD output).
-const LZ_MODS = [[0x01,"Ctrl"],[0x02,"Shift"],[0x04,"Alt"],[0x08,"Win/⌘"]];
-// Curated HID keycodes (od[1] for KBD output). Value 0 = no key (modifier-only).
-const LZ_KEYS = [[0,"— none —"]];
-"ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("").forEach((c,i)=>LZ_KEYS.push([0x04+i,c]));
-"1234567890".split("").forEach((c,i)=>LZ_KEYS.push([0x1e+i,c]));
-[[0x28,"Enter"],[0x29,"Esc"],[0x2a,"Backspace"],[0x2b,"Tab"],[0x2c,"Space"],
- [0x4f,"Arrow Right"],[0x50,"Arrow Left"],[0x51,"Arrow Down"],[0x52,"Arrow Up"],
- [0x4a,"Home"],[0x4d,"End"],[0x4b,"Page Up"],[0x4e,"Page Down"],[0x49,"Insert"],[0x4c,"Delete"],
- [0x2d,"- _"],[0x2e,"= +"],[0x46,"Print Screen"]].forEach(k=>LZ_KEYS.push(k));
-for(let i=0;i<12;i++) LZ_KEYS.push([0x3a+i,"F"+(i+1)]);
-// every key is drawn as a keycap bearing its name (panel/icons.js)
-for(const k of LZ_KEYS) if(k[0]) k.push("key:"+k[1]);
-const LZ_MBTNS = [[1,"Left click","mouseL"],[2,"Right click","mouseR"],[4,"Middle click","mouseM"]];
-const LZ_AXIS_SRC = [[0,"Right trackpad","padR"],[1,"Left stick","stickL"],[2,"Gyro","gyro"]];
-const LZ_GYRO_ACT = [[0,"Always"],[1,"While right pad touched","padR"],[2,"While left stick deflected","stickL"],[3,"While hold-button held"]];
-const LZ_CONSUMER = [[1,"Volume +","volUp"],[2,"Volume −","volDown"]];
-
-// an input as its glyph and short name (the label up to its parenthesis), for the summary line
-function lzInput(mask){
-	const v=Number(mask)||0, m=LZ_BTNS.find(b=>Number(b[0])===v);
-	return m?[iconEl(m[2])," "+m[1].split(" (")[0]]:(v?["0x"+v.toString(16)]:[]);
-}
-// Read one [0xAA][count][count*16] frame, accumulating transferIn packets until complete.
-// Gives up after 3 s (null): an unanswered 0x11 must never block the IN pipe for good.
-async function readLizard(){
-  let acc=new Uint8Array(0);
-  const deadline=Date.now()+3000;
-  for(let guard=0; guard<64; guard++){
-    const d=await readIn(256, deadline-Date.now());
-    if(!d) break;
-    const m=new Uint8Array(acc.length+d.length); m.set(acc); m.set(d,acc.length); acc=m;
-    let i=0; while(i<acc.length && acc[i]!==0xAA) i++;
-    if(i>0) acc=acc.slice(i);
-    if(acc.length<2) continue;
-    const count=acc[1], total=2+count*16;
-    if(acc.length>=total){
-      const out=[];
-      for(let b=0;b<count;b++){
-        const q=2+b*16;
-        out.push({
-          outType:acc[q],
-          od:[...acc.slice(q+1,q+8)],
-          trig:((acc[q+8])|(acc[q+9]<<8)|(acc[q+10]<<16)|(acc[q+11]<<24))>>>0,
-          hold:((acc[q+12])|(acc[q+13]<<8)|(acc[q+14]<<16)|(acc[q+15]<<24))>>>0,
-        });
-      }
-      return out;
-    }
-  }
-  return null;
-}
-// Every lizard op sends 0x11..0x15 and then does a BLOCKING readLizard(). If the firmware doesn't implement
-// the op (any pre-v16 build) it drops the byte and never replies, and the read hangs the shared endpoint. So
-// every entry point bails unless a status blob has proven the puck speaks v16+.
-function lizardCapable(){ return !!(S.lastP && S.lastP[0]>=16); }
-
-// OPENPUCK_LIZARD_MAP_V2_R_STICK
-// Binding-v2 format appeared at protocol 20. Protocol 21 (upstream #224)
-// claimed 0x16 for rumble-test, so the v2 map transport shifts one slot.
-const LZ_MAP_V2_PROTOCOL = 20;
-const LZ_MAP_V2_SHIFTED_OPS_PROTOCOL = 21;
-const LZ_V1_LOW_MASK = 0x0fffffff;
-const lzPow2 = bit => Math.pow(2, bit);
-
-function lzReadLE(d,o,n){
-	let v=0;
-	for(let i=n-1;i>=0;i--) v=v*256+d[o+i];
-	return v;
-}
-function lzWriteLE(out,v,n){
-	v=Number(v)||0;
-	for(let i=0;i<n;i++) out.push(Math.floor(v/Math.pow(2,8*i))&0xff);
-}
-function lzLegacyMaskToV2(v){
-	v=Number(v)>>>0;
-	let out=v&LZ_V1_LOW_MASK;
-	if(v&0x10000000) out+=lzPow2(32);
-	if(v&0x20000000) out+=lzPow2(33);
-	if(v&0x40000000) out+=lzPow2(34);
-	if(v&0x80000000) out+=lzPow2(35);
-	return out;
-}
-function lzV2MaskToLegacy(v){
-	v=Number(v)||0;
-	let out=(v%lzPow2(28))>>>0;
-	if(Math.floor(v/lzPow2(32))&1) out|=0x10000000;
-	if(Math.floor(v/lzPow2(33))&1) out|=0x20000000;
-	if(Math.floor(v/lzPow2(34))&1) out|=0x40000000;
-	if(Math.floor(v/lzPow2(35))&1) out|=0x80000000;
-	return out>>>0;
-}
-function lzPanelV2(){ return !!(S.lastP&&S.lastP[0]>=LZ_MAP_V2_PROTOCOL); }
-function lzV2Ops(){
-	const shifted=!!(S.lastP&&S.lastP[0]>=LZ_MAP_V2_SHIFTED_OPS_PROTOCOL);
-	return shifted
-		? {dump:0x17,set:0x18,save:0x19,reset:0x1A}
-		: {dump:0x16,set:0x17,save:0x18,reset:0x19};
-}
-function lzHasRStickVirtual(v){ return Number(v||0)>=lzPow2(36); }
-
-function lzV2Select(options,value,onchange,noneLabel){
-	const s=document.createElement("select");
-	if(noneLabel!==undefined){
-		const o=document.createElement("option"); o.value="0"; o.textContent=noneLabel; s.appendChild(o);
-	}
-	for(const [v,label,glyph] of options){
-		const o=document.createElement("option"); o.value=String(v); o.textContent=label; if(glyph) o.dataset.glyph=glyph; s.appendChild(o);
-	}
-	s.value=String(Number(value)||0);
-	s.onchange=()=>onchange(Number(s.value));
-	// the input lists show each input's glyph beside its name
-	return options.some(o=>o[2]) ? glyphSelect(s) : s;
-}
-// ---- lizard editor: one block per binding, a readable summary line on top, labelled fields below ----
-let lzDirty=false;
-function lzSetDirty(on){ lzDirty=on; const d=document.getElementById("lzDirty"); if(d) d.classList.toggle("hide",!on); }
-const lzName=(list,v)=>{ const m=list.find(x=>Number(x[0])===Number(v)); return m?m[1]:""; };
-const lzGlyph=(list,v)=>{ const m=list.find(x=>Number(x[0])===Number(v)); return m&&m[2]; };
-// a name with its glyph, when the value has one
-const lzNamed=(list,v,fallback)=>{ const n=lzName(list,v), g=lzGlyph(list,v); return n?[...(g?[iconEl(g)," "]:[]),n]:[fallback]; };
-// the summary line as nodes: glyphs where an input or output has one, words beside them
-function lzSummary(b){
-	const od=b.od;
-	if(b.outType===LZO.AXIS){
-		const n=[...lzNamed(LZ_AXIS_SRC,od[0],"source")," → ",iconEl(LZ_OUT_GLYPH[3])," mouse pointer"];
-		if(od[0]===2){ const g=lzGlyph(LZ_GYRO_ACT,od[1]); n.push(", ",...(g?[iconEl(g)," "]:[]),lzName(LZ_GYRO_ACT,od[1]).toLowerCase()); if(od[1]===3&&b.hold) n.push(" (",...lzInput(b.hold),")"); }
-		return n;
-	}
-	if(b.outType===LZO.SCROLL) return [iconEl("padL")," Left trackpad → ",iconEl(LZ_OUT_GLYPH[4])," scroll wheel"];
-	let out;
-	if(b.outType===LZO.KBD){
-		const keys=[...LZ_MODS.filter(([bit])=>od[0]&bit).map(m=>m[1]),...od.slice(1).filter(Boolean).map(k=>lzName(LZ_KEYS,k)||"0x"+k.toString(16))];
-		out=keys.length?keys.flatMap((k,i)=>[...(i?[" + "]:[]),iconEl("key:"+k)]):["(no key)"];
-	}
-	else if(b.outType===LZO.MBTN) out=lzNamed(LZ_MBTNS,od[0],"mouse button");
-	else if(b.outType===LZO.CONSUMER) out=lzNamed(LZ_CONSUMER,od[0],"media key");
-	else return ["Disabled"];
-	const input=[...(b.trig?lzInput(b.trig):[]),...(b.trig&&b.hold?[" while "]:[]),...(b.hold?["holding ",...lzInput(b.hold)]:[])];
-	return [...(input.length?input:["no input chosen"])," → ",...out];
-}
-function lzField(label,el){
-	const f=document.createElement("div"); f.className="lz-f";
-	const s=document.createElement("span"); s.textContent=label; f.append(s,el); return f;
-}
-function lzV2Render(){
-	const host=document.getElementById("lizardList");
-	if(!host) return;
-	host.innerHTML="";
-	const n=S.lizardBindings.length;
-	const cnt=document.getElementById("lzCount"); if(cnt) cnt.textContent=n+" / "+LZ_MAX+" bindings";
-	const add=document.getElementById("lzAdd"); if(add) add.disabled=n>=LZ_MAX;
-	// every edit marks the map unsaved and redraws (summary + which fields apply)
-	const edit=fn=>v=>{ fn(v); lzSetDirty(true); lzV2Render(); };
-	S.lizardBindings.forEach((b,idx)=>{
-		if(!b.od) b.od=[0,0,0,0,0,0,0];
-		while(b.od.length<7) b.od.push(0);
-		const box=document.createElement("div"); box.className="lz-row";
-		const head=document.createElement("div"); head.className="lz-head";
-		const num=document.createElement("span"); num.className="lz-idx"; num.textContent="#"+(idx+1);
-		const sum=document.createElement("span"); sum.className="lz-sum"; sum.append(...lzSummary(b));
-		// a key/click/media binding with no input never fires as intended
-		const digital=b.outType===LZO.KBD||b.outType===LZO.MBTN||b.outType===LZO.CONSUMER;
-		if(digital&&!b.trig&&!b.hold){ sum.classList.add("warn"); sum.prepend("⚠ "); }
-		const del=document.createElement("button"); del.textContent="Remove";
-		del.onclick=()=>{ S.lizardBindings.splice(idx,1); lzSetDirty(true); lzV2Render(); };
-		head.append(num,sum,del); box.appendChild(head);
-
-		const fields=document.createElement("div"); fields.className="lz-fields";
-		const types=Object.keys(LZ_OUT_LABELS).map(Number).map(v=>[v,LZ_OUT_LABELS[v],LZ_OUT_GLYPH[v]]);
-		fields.appendChild(lzField("Action",lzV2Select(types,b.outType,edit(v=>{b.outType=v;}))));
-		// analog outputs are driven by their source; only gyro "while hold-button held" reads the hold buttons
-		const analog=b.outType===LZO.AXIS||b.outType===LZO.SCROLL;
-		const gyroHold=b.outType===LZO.AXIS&&b.od[0]===2&&b.od[1]===3;
-		if(!analog) fields.appendChild(lzField("When pressed",lzV2Select(LZ_BTNS,b.trig,edit(v=>{b.trig=v;}),"— pick input —")));
-		if(!analog||gyroHold) fields.appendChild(lzField(gyroHold?"Hold button":"While holding",lzV2Select(LZ_BTNS,b.hold,edit(v=>{b.hold=v;}),"— nothing —")));
-		if(b.outType===LZO.KBD){
-			const mods=document.createElement("div"); mods.className="lz-mods";
-			for(const [bit,label] of LZ_MODS){
-				const c=document.createElement("input"); c.type="checkbox"; c.checked=!!(b.od[0]&bit);
-				c.onchange=edit(()=>{ if(c.checked)b.od[0]|=bit;else b.od[0]&=~bit; });
-				const l=document.createElement("label"); l.append(c,iconEl("key:"+label)); mods.appendChild(l);
-			}
-			fields.appendChild(lzField("Modifiers",mods));
-			// key 1 always; each further key slot appears once the one before it is set (up to 6)
-			for(let k=1;k<7;k++){
-				if(k>1&&!b.od[k-1]&&!b.od[k]) break;
-				fields.appendChild(lzField(k===1?"Key":"Key "+k,lzV2Select(LZ_KEYS,b.od[k],edit(v=>{b.od[k]=v;}))));
-			}
-		}else if(b.outType===LZO.MBTN){
-			fields.appendChild(lzField("Mouse button",lzV2Select(LZ_MBTNS,b.od[0],edit(v=>{b.od[0]=v;}))));
-		}else if(b.outType===LZO.AXIS){
-			fields.appendChild(lzField("Source",lzV2Select(LZ_AXIS_SRC,b.od[0],edit(v=>{b.od[0]=v;}))));
-			if(b.od[0]===2) fields.appendChild(lzField("Gyro active",lzV2Select(LZ_GYRO_ACT,b.od[1],edit(v=>{b.od[1]=v;}))));
-		}else if(b.outType===LZO.SCROLL){
-			b.od[0]=0;
-			const s=document.createElement("span"); s.style.cssText="color:var(--fg);font-size:13px;padding-top:6px"; s.append(iconEl("padL")," Left trackpad");
-			fields.appendChild(lzField("Source",s));
-		}else if(b.outType===LZO.CONSUMER){
-			fields.appendChild(lzField("Media key",lzV2Select(LZ_CONSUMER,b.od[0],edit(v=>{b.od[0]=v;}))));
-		}
-		box.appendChild(fields); host.appendChild(box);
-	});
-	if(!n) host.innerHTML='<p class="note">No bindings. Add one, or reset to the defaults.</p>';
-}
-
-async function lzV2ReadMap(op){
-	await send([op]);
-	const recSize=lzPanelV2()?24:16;
-	let buf=[];
-	let expected=0;
-	// through the shared reader, with a deadline: a reply cut short used to leave this waiting forever with
-	// lizardBusy set, which stopped the status poll (NO HEARTBEAT) until stray bytes happened to complete it
-	const deadline=Date.now()+3000;
-	for(;;){
-		const d=await readIn(256, deadline-Date.now());
-		if(!d) throw new Error("lizard-map read timed out");
-		for(const x of d) buf.push(x);
-		if(!expected){
-			let start=-1;
-			for(let i=0;i+1<buf.length;i++){
-				if(buf[i]===0xAA && buf[i+1]<=LZ_MAX){ start=i; break; }
-			}
-			if(start<0){ if(buf.length>1024)buf=[]; continue; }
-			if(start) buf=buf.slice(start);
-			expected=2+buf[1]*recSize;
-		}
-		if(buf.length>=expected) break;
-	}
-	const count=buf[1], out=[];
-	for(let i=0;i<count;i++){
-		const q=2+i*recSize, od=[];
-		for(let k=0;k<7;k++) od.push(buf[q+1+k]||0);
-		const trig=recSize===24?lzReadLE(buf,q+8,8):lzLegacyMaskToV2(lzReadLE(buf,q+8,4));
-		const hold=recSize===24?lzReadLE(buf,q+16,8):lzLegacyMaskToV2(lzReadLE(buf,q+12,4));
-		out.push({outType:buf[q]||0,od,trig,hold});
-	}
-	return out;
-}
-async function lzV2Load(){
-	if(S.lizardBusy||!S.dev)return;
-	S.lizardBusy=true;
-	try{
-		// runs from the first status blob, while that poll is still reading its Switch frame: wait for the pipe
-		await waitIdle();
-		const ops=lzV2Ops();
-		S.lizardBindings=await lzV2ReadMap(lzPanelV2()?ops.dump:0x11);
-		lzV2Render(); lzSetDirty(false);
-		const st=document.getElementById("lzStatus");
-		if(st)st.textContent="loaded "+S.lizardBindings.length+" binding(s)"+(lzPanelV2()?" · map v2":" · legacy map");
-	}catch(e){ log("lizard load failed: "+e.message); }
-	finally{S.lizardBusy=false;}
-}
-async function lzV2Save(){
-	if(S.lizardBusy||!S.dev)return;
-	S.lizardBusy=true;
-	try{
-		const v2=lzPanelV2(), ops=lzV2Ops();
-		if(!v2&&S.lizardBindings.some(b=>lzHasRStickVirtual(b.trig)||lzHasRStickVirtual(b.hold)))
-			throw new Error("R-stick directions require firmware protocol v20+");
-		const count=Math.min(LZ_MAX,S.lizardBindings.length);
-		await send([0x13,count]);
-		for(let i=0;i<count;i++){
-			const b=S.lizardBindings[i], cmd=[v2?ops.set:0x12,i,b.outType||0];
-			for(let k=0;k<7;k++)cmd.push((b.od&&b.od[k])||0);
-			if(v2){lzWriteLE(cmd,b.trig,8);lzWriteLE(cmd,b.hold,8);}
-			else{lzWriteLE(cmd,lzV2MaskToLegacy(b.trig),4);lzWriteLE(cmd,lzV2MaskToLegacy(b.hold),4);}
-			await send(cmd);
-		}
-		S.lizardBindings=await lzV2ReadMap(v2?ops.save:0x14);
-		lzV2Render(); lzSetDirty(false);
-		const st=document.getElementById("lzStatus"); if(st)st.textContent="saved "+count+" binding(s)";
-	}catch(e){const st=document.getElementById("lzStatus");if(st)st.textContent="save failed: "+e.message;log("lizard save failed: "+e.message);}
-	finally{S.lizardBusy=false;}
-}
-async function lzV2Reset(){
-	if(S.lizardBusy||!S.dev)return;
-	if(!confirm("Reset the lizard map to the built-in defaults? This saves to the puck immediately; your bindings are lost.")) return;
-	S.lizardBusy=true;
-	try{
-		// runs from the first status blob, while that poll is still reading its Switch frame: wait for the pipe
-		await waitIdle();
-		const ops=lzV2Ops();
-		S.lizardBindings=await lzV2ReadMap(lzPanelV2()?ops.reset:0x15);
-		lzV2Render(); lzSetDirty(false);
-		const st=document.getElementById("lzStatus");if(st)st.textContent="reset to defaults";
-	}catch(e){log("lizard reset failed: "+e.message);}
-	finally{S.lizardBusy=false;}
-}
-function lzV2Add(){
-	if(S.lizardBindings.length>=LZ_MAX) return;
-	S.lizardBindings.push({outType:1,od:[0,0,0,0,0,0,0],trig:0,hold:0});
-	lzSetDirty(true); lzV2Render();
-}
-function lzV2Reload(){
-	if(lzDirty && !confirm("Discard your unsaved lizard map changes and reload it from the puck?")) return;
-	lzV2Load();
-}
-
 // ---- panel/protocol.js ----
 let ifNum=0;
 
@@ -4234,6 +4337,13 @@ function buildBackup(p, bp){
     cfg.profiles=S.profiles.slice(0,TYPE_DEFS.length).map(t=>({active:t.active, maps:t.maps.map(m=>m.slice()), pads:t.pads.map(x=>x.slice())}));
     cfg.profileGesture={...S.gesture};
   }
+  // the three Lizard profiles' bindings, read by exportBackup; lizardMap above then stands for the one in use
+  const lzp=S.profiles[LZ_TYPE];
+  if(p[0]>=30 && lzp && Array.isArray(S.lizardProfileMaps) && S.lizardProfileMaps.length===lzp.count){
+    const copy=m=>m.map(b=>({outType:b.outType,od:b.od.slice(),trig:b.trig,hold:b.hold}));
+    cfg.lizardProfiles={active:lzp.active, maps:S.lizardProfileMaps.map(copy)};
+    cfg.lizardMap=copy(S.lizardProfileMaps[lzp.active]).map(b=>({...b,trig:b.trig>>>0,hold:b.hold>>>0}));
+  }
   return { magic:"openpuck-backup", version:(cfg.profiles?3:cfg.lizardMap?2:1), bonds, config:cfg };
 }
 function downloadBackup(obj){
@@ -4253,7 +4363,16 @@ async function exportBackup(){
     let bp=null;
     for(let t=0; t<8 && !bp; t++) bp=await readFrame(0xA7, 2+4*24);
     if(!bp){ log("export: no bond data (firmware too old for 0x09 export — reflash)"); return; }
-    if(profilesCapable()) for(let et=0;et<TYPE_DEFS.length;et++) if(!await profilesLoad(et)){ log("export: could not read the mapping profiles — retry"); return; }
+    S.lizardProfileMaps=null;
+    if(profilesCapable()){
+      for(let et=0;et<=LZ_TYPE;et++) if(!await profilesLoad(et)){ log("export: could not read the mapping profiles — retry"); return; }
+      if(lizardCapable()){
+        const maps=[];
+        try{ for(let i=0;i<S.profiles[LZ_TYPE].count;i++) maps.push(await lzReadProfile(i)); S.lizardProfileMaps=maps; }
+        catch(e){ log("export: could not read the Lizard profiles — retry ("+e.message+")"); return; }
+        finally{ await profilesLoad(LZ_TYPE); }
+      }
+    }
     const backup=buildBackup(S.lastP, bp);
     downloadBackup(backup);
     const n=backup.bonds.filter(b=>b.used).length;
@@ -4286,7 +4405,10 @@ async function importBackup(file){
   if(hc.profiles!==undefined && !(Array.isArray(hc.profiles) && hc.profiles.length<=TYPE_DEFS.length && hc.profiles.every(t=>t && isInt(t.active,0,2) &&
        Array.isArray(t.maps) && t.maps.length===3 && t.maps.every(m=>Array.isArray(m) && m.every(byte)) &&
        Array.isArray(t.pads) && t.pads.length===3 && t.pads.every(x=>Array.isArray(x) && x.length===2 && x.every(byte)))) ||
-     (hc.profileGesture!==undefined && !(hc.profileGesture && [hc.profileGesture.enabled,hc.profileGesture.prev,hc.profileGesture.next].every(byte)))){
+     (hc.profileGesture!==undefined && !(hc.profileGesture && [hc.profileGesture.enabled,hc.profileGesture.prev,hc.profileGesture.next].every(byte))) ||
+     (hc.lizardProfiles!==undefined && !(hc.lizardProfiles && isInt(hc.lizardProfiles.active,0,2) && Array.isArray(hc.lizardProfiles.maps) &&
+       hc.lizardProfiles.maps.length===3 && hc.lizardProfiles.maps.every(m=>Array.isArray(m) && m.length<=LZ_MAX &&
+       m.every(b=>b && isInt(b.outType,0,255) && Array.isArray(b.od) && b.od.length<=7 && b.od.every(byte) && isInt(b.trig,0,2**40-1) && isInt(b.hold,0,2**40-1)))))){
     log("import: invalid mapping profiles");return;
   }
   const bondedN=obj.bonds.filter(b=>b.used).length;
@@ -4301,7 +4423,10 @@ async function importBackup(file){
   // Switch gyro mapping when the backup carries them), per-type config (9 each), the lizard bindings, 4 bond
   // slots, and the final commit.
   const typeN=Array.isArray(c.types)?Math.min(c.types.length,4):0;
-  const lizardN=(Array.isArray(c.lizardMap) && lizardCapable())?Math.min(c.lizardMap.length,LZ_MAX):0;
+  // with profiles on both sides every Lizard profile is restored, else the one map older backups carry
+  const lzProfiles=!!(c.lizardProfiles && profilesCapable() && lizardCapable());
+  const lizardN=lzProfiles?c.lizardProfiles.maps.reduce((n,m)=>n+Math.min(m.length,LZ_MAX),0)+1
+    :(Array.isArray(c.lizardMap) && lizardCapable())?Math.min(c.lizardMap.length,LZ_MAX):0;
   const ledN=(c.ledMode!==undefined?1:0)+(c.ledPinA!==undefined?1:0)+(c.ledPinB!==undefined?1:0)+(c.ledPolarity!==undefined?1:0);
   const baseN=6 + (Array.isArray(c.chordD)?4:0) + (c.swGyroLegacy!==undefined?1:0) + (c.emulateSteamMachine!==undefined?1:0) + ledN;
   const padStickN=Array.isArray(c.types)?c.types.slice(0,typeN).filter(t=>Array.isArray(t.padStick)).length*2:0;
@@ -4391,7 +4516,17 @@ async function importBackup(file){
     }
     // restore the lizard map if the backup includes it (version 2+) and the puck speaks v16+.
     // pre-lizard-map backups simply lack c.lizardMap; skip silently so they still import cleanly.
-    if(lizardN){
+    if(lzProfiles){
+      stage="Restoring Lizard profiles"; tick();
+      const lp=c.lizardProfiles;
+      for(let i=0;i<lp.maps.length;i++){
+        const got=await lzWriteProfile(i, lp.maps[i].slice(0,LZ_MAX));
+        step+=Math.min(lp.maps[i].length,LZ_MAX); tick();
+        if(got.length!==Math.min(lp.maps[i].length,LZ_MAX)) throw new Error("Lizard profile "+(i+1)+" did not save");
+      }
+      await send([0x30, LZ_TYPE, lp.active]); await readFrame(0xB0, 5, 256); step++; tick();
+      log("Lizard profiles restored");
+    } else if(lizardN){
       stage="Restoring button map"; tick();
       const map=c.lizardMap.slice(0,LZ_MAX);
       await send([0x13, map.length&0xff]); // begin edit (set count)
@@ -4503,6 +4638,7 @@ initDiag();
 initIcons();
 if(!DEBUG_UI) for(const el of document.querySelectorAll(".debugonly")) el.style.display="none";
 initTypes();
+buildLizardProfiles();
 initRfHelp();
 initNav();
 initProtocol();
