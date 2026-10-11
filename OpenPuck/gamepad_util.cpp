@@ -305,9 +305,9 @@ void steamPadsToTouch(uint32_t b, uint16_t touchH, int16_t lpx, int16_t lpy,
 	}
 }
 
-uint32_t psButtonsFromSteam(uint32_t raw, RemapStyle style)
+uint32_t psButtonsFromSteam(uint32_t raw)
 {
-	return remapButtons(shortcutHostButtons(raw), style);
+	return remapButtons(shortcutHostButtons(raw), REMAP_SWAP_TARGETS);
 }
 // DualSense / DS4 buttons[1]: L1..R3, Create(Share), Options(Start). The analog trigger values come from
 // the per-slot `g_in[slot]` (pass lt/rt explicitly so a single shoulder byte never leaks across slots).

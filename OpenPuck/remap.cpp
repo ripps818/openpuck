@@ -92,7 +92,7 @@ uint32_t remapButtons(uint32_t b, RemapStyle style, bool *capture)
 		out |= t.tb;
 		cap |= t.capture;
 	};
-	const bool swap = g_abSwap && style != REMAP_NO_SWAP;
+	const bool swap = g_abSwap;
 	for (uint8_t i = 0; i < 4; i++)
 		if (b & FACE[i])
 			press((uint8_t)(i + 1), swap);

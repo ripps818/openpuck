@@ -10,9 +10,9 @@ switchpro modifier 3a61dd9c6403bd97 480
 xboxog single 2ee0ccd150c882ab 1008
 xboxog all 5e54193dd17a5789 42
 xboxog modifier 103c9bef0f834c62 480
-ps3 single b658d1b59d8548e6 1008
+ps3 single 67cbef6e7a0a0675 1008
 ps3 all 733954e8aab7e3d2 42
-ps3 modifier cbe42dc7eba3e246 480
+ps3 modifier 3ac8afa880a8b512 480
 ps5 single 28b5ba1d45748829 1008
 ps5 all 77d79a4f7d1d574a 42
 ps5 modifier c61f2ff1ccbee117 480

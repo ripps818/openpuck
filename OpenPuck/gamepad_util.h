@@ -6,7 +6,6 @@
 #pragma once
 #include <stdint.h>
 #include "triton.h"
-#include "remap.h"
 
 // int16 stick (center 0) -> uint8 (center 0x80), optional axis invert (HID Y is down-positive).
 uint8_t swStick(int16_t v, bool invert);
@@ -77,10 +76,8 @@ void slotSticks(uint8_t slot, int16_t *lx, int16_t *ly, int16_t *rx,
 		int16_t *ry);
 
 // PlayStation-layout button packing (shared by mode_ps5 + mode_hidgyro).
-uint32_t psButtonsFromSteam(
-	uint32_t raw,
-	RemapStyle style =
-		REMAP_SWAP_TARGETS); // apply chord-guard + the button remap
+uint32_t
+psButtonsFromSteam(uint32_t raw); // apply chord-guard + the button remap
 // L1..R3 + Create/Options byte. lt/rt are the per-slot analog trigger values so the digital ZL/ZR trip
 // doesn't leak across slots when several slots are active.
 uint8_t psShouldersByte(uint32_t b, uint8_t lt, uint8_t rt);

@@ -17,7 +17,6 @@ enum RemapStyle : uint8_t {
 	REMAP_SWAP_TARGETS, // paddles and QAM both follow the swap (Switch, PlayStation)
 	REMAP_XBOX360, // paddles are absolute host buttons, QAM follows the swap
 	REMAP_ABSOLUTE, // neither follows the swap (Original Xbox)
-	REMAP_NO_SWAP, // the swap is left to the caller (PS3, whose swap is not a plain A/B + X/Y exchange)
 };
 
 // What pressing one target stands for: the Steam-position buttons, plus Capture.
