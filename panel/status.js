@@ -56,7 +56,7 @@ export function applySw(s){
   for(const el of document.querySelectorAll(".ic-mod")) fillIcon(el,(flags&1)?"qam":"back4");
 }
 export function applyBlob(p){
-  for(const rec of typeEls) for(const sel of rec.padStick) for(const o of sel.options) if(+o.value>=3) o.disabled=p[0]<23;
+  for(const rec of typeEls) for(const sel of rec.padStick) for(const o of sel.options) if(+o.value>=3) o.disabled=p[0]<(+o.value===5?30:23);
   S.lastP=p; // remember for Export (carries every config field the panel shows)
   window._lastBlobTs=Date.now(); // feeds the host-side heartbeat watchdog (hard-wedge detection)
   // Lazy, capability-gated lizard-map load: only after a blob proves the puck speaks v16+ (the op-0x11 dump).

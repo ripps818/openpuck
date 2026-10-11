@@ -215,6 +215,31 @@ export function buildProfileCards(sec, et, def){
   const note = document.createElement("p"); note.className = "note"; note.textContent = "A dot marks the profile in use. Hold the shortcut modifier and press the switch buttons set below on the controller to step through them; it buzzes the profile's number.";
   cA.appendChild(note);
 
+  // the switch buttons: one setting for the whole puck, shown on every type
+  const cC = card("span hide"); rec.cards.push(cC);
+  head(cC, "Switch profiles from the controller");
+  const g = rec.gesture = {};
+  const onoff = document.createElement("button"); onoff.textContent = "on";
+  const rOn = document.createElement("div"); rOn.className = "row"; const lOn = document.createElement("label"); lOn.textContent = "Profile switch";
+  rOn.append(lOn, onoff); cC.appendChild(rOn);
+  // previous and next side by side, in the columns the Trackpads card uses
+  const pair = document.createElement("div"); pair.className = "mapsrc"; cC.appendChild(pair);
+  const mk = text => {
+    const s = document.createElement("select");
+    for(const i of GESTURE_SOURCES){ const o = document.createElement("option"); o.value = i; o.textContent = nameOf(def, i); const gl = glyphOf(def, i); if(gl) o.dataset.glyph = gl; s.appendChild(o); }
+    const g = document.createElement("div"); g.className = "mapsrc-group"; pair.appendChild(g);
+    const r = document.createElement("div"); r.className = "row"; const l = document.createElement("label"); l.textContent = text;
+    r.append(l, glyphSelect(s)); g.appendChild(r); return s;
+  };
+  g.onoff = onoff; g.prev = mk("Previous profile"); g.next = mk("Next profile");
+  const send3 = (en, pv, nx) => profileOp([0x33, et, en, pv, nx]);
+  onoff.onclick = () => send3(S.gesture && S.gesture.enabled ? 0 : 1, +g.prev.value, +g.next.value);
+  g.prev.addEventListener("change", () => send3(S.gesture && S.gesture.enabled ? 1 : 0, +g.prev.value, +g.next.value));
+  g.next.addEventListener("change", () => send3(S.gesture && S.gesture.enabled ? 1 : 0, +g.prev.value, +g.next.value));
+  const n2 = document.createElement("p"); n2.className = "note";
+  n2.textContent = "Hold the shortcut modifier (set in Mode shortcuts) and press one of these buttons; the controller buzzes the new profile's number. The two buttons are hidden from the game while the modifier is held. This works whether or not the mode shortcuts are on, and applies to every controller type.";
+  cC.appendChild(n2);
+
   // every button and what it acts as
   const cB = card("span hide"); rec.cards.push(cB);
   rec.title = head(cB, "Button map");
@@ -232,28 +257,6 @@ export function buildProfileCards(sec, et, def){
     }
     grid.appendChild(g);
   }
-
-  // the switch buttons: one setting for the whole puck, shown on every type
-  const cC = card("hide"); rec.cards.push(cC);
-  head(cC, "Switch profiles from the controller");
-  const g = rec.gesture = {};
-  const onoff = document.createElement("button"); onoff.textContent = "on";
-  const rOn = document.createElement("div"); rOn.className = "row"; const lOn = document.createElement("label"); lOn.textContent = "Profile switch";
-  rOn.append(lOn, onoff); cC.appendChild(rOn);
-  const mk = text => {
-    const s = document.createElement("select");
-    for(const i of GESTURE_SOURCES){ const o = document.createElement("option"); o.value = i; o.textContent = nameOf(def, i); const gl = glyphOf(def, i); if(gl) o.dataset.glyph = gl; s.appendChild(o); }
-    const r = document.createElement("div"); r.className = "row"; const l = document.createElement("label"); l.textContent = text;
-    r.append(l, glyphSelect(s)); cC.appendChild(r); return s;
-  };
-  g.onoff = onoff; g.prev = mk("Previous profile"); g.next = mk("Next profile");
-  const send3 = (en, pv, nx) => profileOp([0x33, et, en, pv, nx]);
-  onoff.onclick = () => send3(S.gesture && S.gesture.enabled ? 0 : 1, +g.prev.value, +g.next.value);
-  g.prev.addEventListener("change", () => send3(S.gesture && S.gesture.enabled ? 1 : 0, +g.prev.value, +g.next.value));
-  g.next.addEventListener("change", () => send3(S.gesture && S.gesture.enabled ? 1 : 0, +g.prev.value, +g.next.value));
-  const n2 = document.createElement("p"); n2.className = "note";
-  n2.textContent = "Hold the shortcut modifier (set in Mode shortcuts) and press one of these buttons; the controller buzzes the new profile's number. The two buttons are hidden from the game while the modifier is held. This works whether or not the mode shortcuts are on, and applies to every controller type.";
-  cC.appendChild(n2);
 
   recs[et] = rec;
   return rec;

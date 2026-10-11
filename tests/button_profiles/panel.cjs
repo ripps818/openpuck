@@ -92,6 +92,9 @@ assert.equal(S.profileLoadDue.size,0);
 // v30: the cards appear, the paddle / QAM / swap controls go, and every type is queued for a load
 p[0]=30;model[2].active=1;await apply();
 assert(cards(0).every(shown));assert(legacy().every(e=>!legacyShown(e)));
+// the profile switch settings sit right below the profile strip, as wide as it, above the button map
+for(let et=0;et<4;et++){assert.deepEqual(cards(et).map(c=>c.querySelector('h2').textContent.split(' · ')[0]),['Mapping profile','Switch profiles from the controller','Button map']);
+  assert(cards(et).slice(0,2).every(c=>c.classList.contains('span')),'type '+et);}
 assert.deepEqual([...S.profileLoadDue].sort(),[0,1,2,3,4]);
 // the Lizard profiles too, and the puck's lizard editor is pointed at the one on screen (a reloaded page may differ)
 lzEdit=2;
@@ -138,9 +141,11 @@ for(let et=0;et<4;et++){
   assert(cols.every(c=>c.closest('.card')===padCard(et)&&!c.closest('.prof-card')));
 }
 const touch=(et,pad)=>[...typeEls[et].padStick[pad].options].map(o=>o.textContent);
-assert.deepEqual(touch(0,0),['Off','Left stick','Right stick']);assert.deepEqual(touch(0,1),['Mouse','Left stick','Right stick']);
+// Disabled is offered where the pad's own use is something (touchpad, mouse); an Off pad already does nothing
+assert.deepEqual(touch(0,0),['Off','Left stick','Right stick']);assert.deepEqual(touch(0,1),['Mouse','Disabled','Left stick','Right stick']);
+assert.deepEqual(touch(2,0),['Touchpad, left half','Disabled','Left stick','Right stick']);assert.deepEqual(touch(3,1),['Touchpad, right half','Disabled','Left stick','Right stick']);
+assert(!touch(1,0).includes('Disabled')&&!touch(1,1).includes('Disabled'));
 assert.deepEqual(touch(1,1),['Off','Left stick','Right stick','D-pad on touch (Switch Pro)','D-pad on click (Switch Pro)']);
-assert.deepEqual([touch(2,0)[0],touch(3,1)[0]],['Touchpad, left half','Touchpad, right half']);
 // a click can only act as what the type's mode does with it: the mouse on Xbox, the touchpad on PlayStation, nothing on Switch
 const padT=et=>[...rec(et).sources[20].options].filter(o=>+o.value>=21).map(o=>o.value+'='+o.textContent+'|'+o.dataset.glyph);
 assert.deepEqual(padT(0),['21=Mouse right click|mouseR','22=Mouse left click|mouseL']);
@@ -157,6 +162,13 @@ assert(padCard(0).contains(document.querySelector('#mouseCard')));
 assert(padCard(1).contains(document.querySelector('#swClickControls'))&&padCard(1).contains(document.querySelector('#hdPadBlock')));
 setTab(LIZARD_TAB);assert(!padCard(0).contains(document.querySelector('#mouseCard')));assert(document.querySelector('#mapLizardPane').contains(document.querySelector('#mouseCard')));
 setTab(0);assert(padCard(0).contains(document.querySelector('#mouseCard')));
+// disabling a pad is a firmware v30 value: older firmware would ignore it, so the option is not selectable there
+{const dis=et=>[...typeEls[et].padStick[0].options].find(o=>o.textContent==='Disabled');
+ p[0]=29;await apply();assert(dis(3).disabled);p[0]=30;await apply();assert(!dis(3).disabled);
+ const sel0=model[3].active;
+ assert.deepEqual(await opsOf(()=>change(typeEls[3].padStick[0],5)),[[0x31,3,sel0,0,5]]);
+ assert.deepEqual(model[3].pads[sel0],[5,0]);assert.equal(typeEls[3].padStick[0].value,'5');
+ assert.deepEqual(await opsOf(()=>change(typeEls[3].padStick[0],0)),[[0x31,3,sel0,0,0]]);}
 // older firmware has no profile ops: the click rows hide with the cards, the touch selects stay
 p[0]=29;await apply();for(let et=0;et<4;et++){assert(padCols(et).every(c=>!shown(c.querySelectorAll('.row')[1])&&shown(c.querySelectorAll('.row')[0])));}
 p[0]=30;await apply();for(let et=0;et<4;et++)assert(padCols(et).every(c=>shown(c.querySelectorAll('.row')[1])));
@@ -240,6 +252,11 @@ assert(![...rec(0).sources[10].options].some(o=>o.dataset.extra));assert.equal(r
 // the profile switch is one setting for the whole puck, shown on every type
 assert.equal(rec(3).gesture.onoff.textContent,'on');assert.equal(rec(3).gesture.prev.value,'4');
 assert.deepEqual([...rec(3).gesture.prev.options].map(o=>o.textContent),['L1','R1','L3','R3','Create','Options']);
+// previous and next sit side by side: two columns of one grid, the on/off row above them
+for(let et=0;et<4;et++){const g=rec(et).gesture,grid=g.prev.closest('.mapsrc');
+  assert(grid&&grid===g.next.closest('.mapsrc'),'type '+et);
+  assert.deepEqual([...grid.children].map(c=>c.className+'|'+c.querySelector('label').textContent),['mapsrc-group|Previous profile','mapsrc-group|Next profile']);
+  assert(g.onoff.closest('.row').compareDocumentPosition(grid)&w.Node.DOCUMENT_POSITION_FOLLOWING);}
 assert.deepEqual(await opsOf(()=>rec(3).gesture.onoff.click()),[[0x33,3,0,4,5]]);
 assert.equal(rec(0).gesture.onoff.textContent,'off');
 assert.deepEqual(await opsOf(()=>change(rec(0).gesture.next,7)),[[0x33,0,0,4,7]]);assert.equal(rec(2).gesture.next.value,'7');
@@ -337,6 +354,15 @@ assert.deepEqual(model[3].maps[2][0],4);assert.equal(model[3].active,2);assert.d
 {const old=JSON.parse(JSON.stringify(b));delete old.config.profiles;delete old.config.profileGesture;old.version=1;
  const n=writes.length;await importBackup({text:async()=>JSON.stringify(old)});
  const sent=writes.slice(n);assert(!sent.some(x=>x[0]>=0x2D&&x[0]<=0x33));assert(sent.some(x=>x[0]===2&&x[1]===40));}
+// a Disabled pad is not a Switch Pro D-pad mode: without the 0xAE frame a backup with D-pad pads is refused, one with Disabled pads is not
+{const keep=S.lastSw;
+ for(const [v,imported] of [[3,false],[5,true]]){
+   S.lastSw=null;const old=JSON.parse(JSON.stringify(b));delete old.config.profiles;delete old.config.profileGesture;old.version=1;
+   for(const k of ["swDpadHaptics","hdPadScale","swQamSelect","shortcutFlags"])delete old.config[k]; // those need the frame on their own
+   old.config.types=old.config.types.map(t=>({...t,padStick:[v,0]}));
+   const n=writes.length;await importBackup({text:async()=>JSON.stringify(old)});
+   assert.equal(writes.length>n,imported,'pad value '+v+': '+document.querySelector('#log').textContent.slice(0,300));}
+ S.lastSw=keep;}
 // a malformed profile list is refused before anything is written
 {const bad=JSON.parse(JSON.stringify(b));bad.config.profiles[0].maps[0][3]=300;
  const n=writes.length;await importBackup({text:async()=>JSON.stringify(bad)});assert.equal(writes.length,n);}

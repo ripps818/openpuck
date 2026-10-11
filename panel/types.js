@@ -40,11 +40,14 @@ export const typeEls = []; // one entry per TYPE_DEFS: {sec, tab, activeDot, bac
 // stick re-centers, and an untouched mapped pad leaves the physical stick in control.
 export const PAD_STICK_FIELD0 = 80;
 // What touching a pad does, per type and pad. 0 is what the pad does with no mapping: the touchpad on the
-// PlayStation types, the mouse on the Xbox right pad, nothing on the rest. The D-pad modes read the pad in Switch
-// Pro mode only.
+// PlayStation types, the mouse on the Xbox right pad, nothing on the rest. 5 ignores the touch; it is offered
+// only where 0 does something, as "Off" already is nothing. The D-pad modes read the pad in Switch Pro mode only.
+export const PAD_DISABLED = 5;
 function padTouchOptions(def, pad){
   const off = def.key==="XBOX" ? (pad ? "Mouse" : "Off") : def.key==="SWITCH" ? "Off" : "Touchpad, "+(pad ? "right" : "left")+" half";
-  const o = [[0,off],[1,"Left stick","stickL"],[2,"Right stick","stickR"]];
+  const o = [[0,off]];
+  if(off !== "Off") o.push([PAD_DISABLED,"Disabled"]);
+  o.push([1,"Left stick","stickL"],[2,"Right stick","stickR"]);
   if(def.key==="SWITCH") o.push([3,"D-pad on touch (Switch Pro)"],[4,"D-pad on click (Switch Pro)"]);
   return o;
 }
@@ -182,7 +185,7 @@ export function initTypes(){
         const col=document.createElement("div"); col.className="mapsrc-group pad-col"; cols.appendChild(col);
         const h=document.createElement("h3"); h.append(iconEl(pad?"padR":"padL")," "+(pad?"Right":"Left")+" trackpad"); col.appendChild(h);
         const sel=document.createElement("select");
-        for(const [v,lbl,glyph] of padTouchOptions(def,pad)){ const o=document.createElement("option"); o.value=v; o.textContent=lbl; o.dataset.glyph=glyph||(v===4?(pad?"padClickR":"padClickL"):(pad?"padR":"padL")); sel.appendChild(o); }
+        for(const [v,lbl,glyph] of padTouchOptions(def,pad)){ const o=document.createElement("option"); o.value=v; o.textContent=lbl; if(v!==PAD_DISABLED) o.dataset.glyph=glyph||(v===4?(pad?"padClickR":"padClickL"):(pad?"padR":"padL")); sel.appendChild(o); }
         row(col,"Touch",glyphSelect(sel));
         sel.addEventListener("change",()=>setPadStick(et,pad,+sel.value,PAD_STICK_FIELD0+et*2+pad));
         rec.padStick.push(sel);
@@ -190,9 +193,9 @@ export function initTypes(){
       }
       { const note=document.createElement("p"); note.className="note";
         note.textContent={
-          XBOX:"In Xbox 360 mode the right trackpad moves a mouse pointer while its Touch is Mouse, and a click acts as set here: by default the right pad is the left mouse button and the left pad the right one. The Original Xbox has no mouse.",
+          XBOX:"In Xbox 360 mode the right trackpad moves a mouse pointer while its Touch is Mouse, and a click acts as set here: by default the right pad is the left mouse button and the left pad the right one. Disabled stops the pointer; the click is separate. The Original Xbox has no mouse.",
           SWITCH:"A click does nothing in the Switch modes unless you map it to a button here. The D-pad modes read the trackpad themselves, so they work whatever Click is set to.",
-        }[def.key] || "A trackpad that drives a stick no longer reports as a touchpad, but its click still presses the touchpad unless you map it to something else here.";
+        }[def.key] || "A trackpad that is disabled or drives a stick no longer reports as a touchpad, but its click still presses the touchpad unless you map Click to something else.";
         gPad.appendChild(note); }
       // 1 = controller's own haptics (ticks while moving + clicks), 2 = clicks only, 0 = off
       const pad=document.createElement("select");

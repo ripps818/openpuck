@@ -105,7 +105,7 @@ export async function importBackup(file){
   // rumbleStyle / rumblePresets / strengthSteps / rumbleSlot / strengthSlots (removed settings) in older
   // backups are ignored
   const swKeys=["swDpadHaptics","hdPadScale","swQamSelect","shortcutFlags"];
-  if((swKeys.some(k=>hc[k]!==undefined) || (Array.isArray(hc.types) && hc.types.some(t=>Array.isArray(t.padStick) && t.padStick.some(v=>v>=3)))) && !S.lastSw){
+  if((swKeys.some(k=>hc[k]!==undefined) || (Array.isArray(hc.types) && hc.types.some(t=>Array.isArray(t.padStick) && t.padStick.some(v=>v===3||v===4)))) && !S.lastSw){
     log("import: Switch Pro trackpad D-pad / HD rumble / shortcut settings require firmware with blob v23+");return;
   }
   const isInt=(v,lo,hi)=>Number.isInteger(v) && v>=lo && v<=hi;

@@ -2183,6 +2183,31 @@ function buildProfileCards(sec, et, def){
   const note = document.createElement("p"); note.className = "note"; note.textContent = "A dot marks the profile in use. Hold the shortcut modifier and press the switch buttons set below on the controller to step through them; it buzzes the profile's number.";
   cA.appendChild(note);
 
+  // the switch buttons: one setting for the whole puck, shown on every type
+  const cC = card("span hide"); rec.cards.push(cC);
+  head(cC, "Switch profiles from the controller");
+  const g = rec.gesture = {};
+  const onoff = document.createElement("button"); onoff.textContent = "on";
+  const rOn = document.createElement("div"); rOn.className = "row"; const lOn = document.createElement("label"); lOn.textContent = "Profile switch";
+  rOn.append(lOn, onoff); cC.appendChild(rOn);
+  // previous and next side by side, in the columns the Trackpads card uses
+  const pair = document.createElement("div"); pair.className = "mapsrc"; cC.appendChild(pair);
+  const mk = text => {
+    const s = document.createElement("select");
+    for(const i of GESTURE_SOURCES){ const o = document.createElement("option"); o.value = i; o.textContent = nameOf(def, i); const gl = glyphOf(def, i); if(gl) o.dataset.glyph = gl; s.appendChild(o); }
+    const g = document.createElement("div"); g.className = "mapsrc-group"; pair.appendChild(g);
+    const r = document.createElement("div"); r.className = "row"; const l = document.createElement("label"); l.textContent = text;
+    r.append(l, glyphSelect(s)); g.appendChild(r); return s;
+  };
+  g.onoff = onoff; g.prev = mk("Previous profile"); g.next = mk("Next profile");
+  const send3 = (en, pv, nx) => profileOp([0x33, et, en, pv, nx]);
+  onoff.onclick = () => send3(S.gesture && S.gesture.enabled ? 0 : 1, +g.prev.value, +g.next.value);
+  g.prev.addEventListener("change", () => send3(S.gesture && S.gesture.enabled ? 1 : 0, +g.prev.value, +g.next.value));
+  g.next.addEventListener("change", () => send3(S.gesture && S.gesture.enabled ? 1 : 0, +g.prev.value, +g.next.value));
+  const n2 = document.createElement("p"); n2.className = "note";
+  n2.textContent = "Hold the shortcut modifier (set in Mode shortcuts) and press one of these buttons; the controller buzzes the new profile's number. The two buttons are hidden from the game while the modifier is held. This works whether or not the mode shortcuts are on, and applies to every controller type.";
+  cC.appendChild(n2);
+
   // every button and what it acts as
   const cB = card("span hide"); rec.cards.push(cB);
   rec.title = head(cB, "Button map");
@@ -2200,28 +2225,6 @@ function buildProfileCards(sec, et, def){
     }
     grid.appendChild(g);
   }
-
-  // the switch buttons: one setting for the whole puck, shown on every type
-  const cC = card("hide"); rec.cards.push(cC);
-  head(cC, "Switch profiles from the controller");
-  const g = rec.gesture = {};
-  const onoff = document.createElement("button"); onoff.textContent = "on";
-  const rOn = document.createElement("div"); rOn.className = "row"; const lOn = document.createElement("label"); lOn.textContent = "Profile switch";
-  rOn.append(lOn, onoff); cC.appendChild(rOn);
-  const mk = text => {
-    const s = document.createElement("select");
-    for(const i of GESTURE_SOURCES){ const o = document.createElement("option"); o.value = i; o.textContent = nameOf(def, i); const gl = glyphOf(def, i); if(gl) o.dataset.glyph = gl; s.appendChild(o); }
-    const r = document.createElement("div"); r.className = "row"; const l = document.createElement("label"); l.textContent = text;
-    r.append(l, glyphSelect(s)); cC.appendChild(r); return s;
-  };
-  g.onoff = onoff; g.prev = mk("Previous profile"); g.next = mk("Next profile");
-  const send3 = (en, pv, nx) => profileOp([0x33, et, en, pv, nx]);
-  onoff.onclick = () => send3(S.gesture && S.gesture.enabled ? 0 : 1, +g.prev.value, +g.next.value);
-  g.prev.addEventListener("change", () => send3(S.gesture && S.gesture.enabled ? 1 : 0, +g.prev.value, +g.next.value));
-  g.next.addEventListener("change", () => send3(S.gesture && S.gesture.enabled ? 1 : 0, +g.prev.value, +g.next.value));
-  const n2 = document.createElement("p"); n2.className = "note";
-  n2.textContent = "Hold the shortcut modifier (set in Mode shortcuts) and press one of these buttons; the controller buzzes the new profile's number. The two buttons are hidden from the game while the modifier is held. This works whether or not the mode shortcuts are on, and applies to every controller type.";
-  cC.appendChild(n2);
 
   recs[et] = rec;
   return rec;
@@ -2401,11 +2404,14 @@ const typeEls = []; // one entry per TYPE_DEFS: {sec, tab, activeDot, back[], qa
 // stick re-centers, and an untouched mapped pad leaves the physical stick in control.
 const PAD_STICK_FIELD0 = 80;
 // What touching a pad does, per type and pad. 0 is what the pad does with no mapping: the touchpad on the
-// PlayStation types, the mouse on the Xbox right pad, nothing on the rest. The D-pad modes read the pad in Switch
-// Pro mode only.
+// PlayStation types, the mouse on the Xbox right pad, nothing on the rest. 5 ignores the touch; it is offered
+// only where 0 does something, as "Off" already is nothing. The D-pad modes read the pad in Switch Pro mode only.
+const PAD_DISABLED = 5;
 function padTouchOptions(def, pad){
   const off = def.key==="XBOX" ? (pad ? "Mouse" : "Off") : def.key==="SWITCH" ? "Off" : "Touchpad, "+(pad ? "right" : "left")+" half";
-  const o = [[0,off],[1,"Left stick","stickL"],[2,"Right stick","stickR"]];
+  const o = [[0,off]];
+  if(off !== "Off") o.push([PAD_DISABLED,"Disabled"]);
+  o.push([1,"Left stick","stickL"],[2,"Right stick","stickR"]);
   if(def.key==="SWITCH") o.push([3,"D-pad on touch (Switch Pro)"],[4,"D-pad on click (Switch Pro)"]);
   return o;
 }
@@ -2543,7 +2549,7 @@ function initTypes(){
         const col=document.createElement("div"); col.className="mapsrc-group pad-col"; cols.appendChild(col);
         const h=document.createElement("h3"); h.append(iconEl(pad?"padR":"padL")," "+(pad?"Right":"Left")+" trackpad"); col.appendChild(h);
         const sel=document.createElement("select");
-        for(const [v,lbl,glyph] of padTouchOptions(def,pad)){ const o=document.createElement("option"); o.value=v; o.textContent=lbl; o.dataset.glyph=glyph||(v===4?(pad?"padClickR":"padClickL"):(pad?"padR":"padL")); sel.appendChild(o); }
+        for(const [v,lbl,glyph] of padTouchOptions(def,pad)){ const o=document.createElement("option"); o.value=v; o.textContent=lbl; if(v!==PAD_DISABLED) o.dataset.glyph=glyph||(v===4?(pad?"padClickR":"padClickL"):(pad?"padR":"padL")); sel.appendChild(o); }
         row(col,"Touch",glyphSelect(sel));
         sel.addEventListener("change",()=>setPadStick(et,pad,+sel.value,PAD_STICK_FIELD0+et*2+pad));
         rec.padStick.push(sel);
@@ -2551,9 +2557,9 @@ function initTypes(){
       }
       { const note=document.createElement("p"); note.className="note";
         note.textContent={
-          XBOX:"In Xbox 360 mode the right trackpad moves a mouse pointer while its Touch is Mouse, and a click acts as set here: by default the right pad is the left mouse button and the left pad the right one. The Original Xbox has no mouse.",
+          XBOX:"In Xbox 360 mode the right trackpad moves a mouse pointer while its Touch is Mouse, and a click acts as set here: by default the right pad is the left mouse button and the left pad the right one. Disabled stops the pointer; the click is separate. The Original Xbox has no mouse.",
           SWITCH:"A click does nothing in the Switch modes unless you map it to a button here. The D-pad modes read the trackpad themselves, so they work whatever Click is set to.",
-        }[def.key] || "A trackpad that drives a stick no longer reports as a touchpad, but its click still presses the touchpad unless you map it to something else here.";
+        }[def.key] || "A trackpad that is disabled or drives a stick no longer reports as a touchpad, but its click still presses the touchpad unless you map Click to something else.";
         gPad.appendChild(note); }
       // 1 = controller's own haptics (ticks while moving + clicks), 2 = clicks only, 0 = off
       const pad=document.createElement("select");
@@ -3758,7 +3764,7 @@ function applySw(s){
   for(const el of document.querySelectorAll(".ic-mod")) fillIcon(el,(flags&1)?"qam":"back4");
 }
 function applyBlob(p){
-  for(const rec of typeEls) for(const sel of rec.padStick) for(const o of sel.options) if(+o.value>=3) o.disabled=p[0]<23;
+  for(const rec of typeEls) for(const sel of rec.padStick) for(const o of sel.options) if(+o.value>=3) o.disabled=p[0]<(+o.value===5?30:23);
   S.lastP=p; // remember for Export (carries every config field the panel shows)
   window._lastBlobTs=Date.now(); // feeds the host-side heartbeat watchdog (hard-wedge detection)
   // Lazy, capability-gated lizard-map load: only after a blob proves the puck speaks v16+ (the op-0x11 dump).
@@ -4503,7 +4509,7 @@ async function importBackup(file){
   // rumbleStyle / rumblePresets / strengthSteps / rumbleSlot / strengthSlots (removed settings) in older
   // backups are ignored
   const swKeys=["swDpadHaptics","hdPadScale","swQamSelect","shortcutFlags"];
-  if((swKeys.some(k=>hc[k]!==undefined) || (Array.isArray(hc.types) && hc.types.some(t=>Array.isArray(t.padStick) && t.padStick.some(v=>v>=3)))) && !S.lastSw){
+  if((swKeys.some(k=>hc[k]!==undefined) || (Array.isArray(hc.types) && hc.types.some(t=>Array.isArray(t.padStick) && t.padStick.some(v=>v===3||v===4)))) && !S.lastSw){
     log("import: Switch Pro trackpad D-pad / HD rumble / shortcut settings require firmware with blob v23+");return;
   }
   const isInt=(v,lo,hi)=>Number.isInteger(v) && v>=lo && v<=hi;
