@@ -4,12 +4,14 @@ root=Path(__file__).resolve().parents[2]
 s=(root/'OpenPuck/config.cpp').read_text()
 a=s.index('void captureFeedbackChord(');b=s.index('\nvoid applyActiveType()',a)
 hh=(root/'OpenPuck/haptics.h').read_text();hside=hh[hh.index('#define HSIDE_LPAD'):hh.index('// PCM haptic stream')]
+ch=(root/'OpenPuck/config.h').read_text();clickgain=ch[ch.index('// the s8 gain_db byte'):ch.index('// Whether a movement-tick')]
 head='''#include <stdint.h>
 #include <cassert>
 #include <initializer_list>
 #include "triton.h"
 #define NSLOT 4
 #define MODE_SW_PRO 4
+uint8_t g_padClickAtten=9;
 uint8_t g_usbMode=MODE_SW_PRO,g_shortcutFlags=63;
 uint32_t g_gestureMask=0;
 uint8_t g_rumbleStyle=8;
@@ -99,7 +101,7 @@ body='''int main(){
  g_padHaptics=1;swDpadClickFeedback(3,0);g_padStick[0]=1;swDpadClickFeedback(3,TB_LPADT|TB_LPADC);assert(pulses==5);
 }'''
 with tempfile.TemporaryDirectory() as td:
- p=Path(td)/'test.cpp';p.write_text(head+hside+s[a:b]+u[ua:ub]+m[ha:hb]+body)
+ p=Path(td)/'test.cpp';p.write_text(head+hside+clickgain+s[a:b]+u[ua:ub]+m[ha:hb]+body)
  subprocess.run(['g++','-std=c++11','-Wall','-Wextra','-Werror','-fsanitize=address,undefined','-I'+str(root/'OpenPuck'),str(p),'-o',td+'/test'],check=True)
  subprocess.run([td+'/test'],check=True,env={'ASAN_OPTIONS':'detect_leaks=0'})
 print('Shortcut flags, Switch Pro capture, trackpad D-pad and click feedback tests passed')

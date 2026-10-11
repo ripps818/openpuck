@@ -67,6 +67,8 @@ uint16_t g_audioHapticGain = 0;
 uint8_t g_audioHapticStyle = AUDIO_STYLE_WAVE;
 uint16_t g_audioSpeaker = 0;
 uint8_t g_hapticLimitKnee = HAPTIC_LIMIT_KNEE_DEFAULT;
+uint8_t g_padClickAtten = PAD_CLICK_ATTEN_DEFAULT;
+uint8_t g_padTick = PAD_TICK_DEFAULT;
 uint8_t g_typeLimitKnee[ET_COUNT] = { HAPTIC_LIMIT_KNEE_DEFAULT,
 				      HAPTIC_LIMIT_KNEE_DEFAULT,
 				      HAPTIC_LIMIT_KNEE_DEFAULT,
@@ -165,6 +167,8 @@ void applyActiveType()
 		g_rumbleStyle = RUMBLE_STYLE_NORMAL;
 		g_hapticLimitKnee = HAPTIC_LIMIT_KNEE_DEFAULT;
 		g_audioHapticStyle = g_typeHaptic[HAP_STYLE][ET_DS5];
+		g_padClickAtten = PAD_CLICK_ATTEN_DEFAULT;
+		g_padTick = PAD_TICK_DEFAULT;
 		g_ledBright = 0;
 		g_padStick[0] = g_padStick[1] = PS_OFF;
 		remapDefaultMap(&g_btnMap);
@@ -184,6 +188,8 @@ void applyActiveType()
 	g_rumbleScale = g_typeRumbleScale[g_etype];
 	g_hapticLimitKnee = g_typeHaptic[HAP_KNEE][g_etype];
 	g_audioHapticStyle = g_typeHaptic[HAP_STYLE][ET_DS5];
+	g_padClickAtten = g_typeHaptic[HAP_CLICK][g_etype];
+	g_padTick = g_typeHaptic[HAP_TICK][g_etype];
 	g_ledBright = t.ledBright;
 	g_padStick[0] = g_padStickCfg[g_etype][0];
 	g_padStick[1] = g_padStickCfg[g_etype][1];

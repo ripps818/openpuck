@@ -377,26 +377,38 @@ assert.deepEqual(model[3].maps[2][0],4);assert.equal(model[3].active,2);assert.d
  assert.equal(typeEls[1].limiter.value,'80');assert.equal(typeEls[3].limiter.value,'80');assert(hidden(typeEls[1].hdStyle));assert.equal(typeEls[3].audioStyle.value,'2');
  assert.deepEqual(await fieldsOf(()=>change(typeEls[1].limiter,'90')),[[115,90]]);
  assert.deepEqual(await fieldsOf(()=>change(typeEls[3].audioStyle,'1')),[[88,1]]);
- p[0]=30;[60,70,80,90].forEach((v,i)=>p[214+i]=v);[0,1,2,3].forEach((v,i)=>p[218+i]=v);await apply();
+ p[0]=30;[60,70,80,90].forEach((v,i)=>p[214+i]=v);[0,1,2,3].forEach((v,i)=>p[218+i]=v);
+ [9,1,30,12].forEach((v,i)=>p[222+i]=v);[0,3,0,4].forEach((v,i)=>p[226+i]=v);[1,2,0,1].forEach((v,i)=>p[73+i*9+6]=v); // click, tick, Trackpad haptics On/Clicks only/Off/On
+ for(let et=0;et<4;et++)assert(typeEls[et].padHap.classList.contains('hide')); // hidden on v29
+ await apply();
  assert.equal(typeEls[1].limiter.value,'70');assert.equal(typeEls[3].limiter.value,'90');
  assert(!hidden(typeEls[1].hdStyle));assert.equal(typeEls[1].hdStyle.value,'1');assert.equal(typeEls[3].audioStyle.value,'3');
  assert.deepEqual(await fieldsOf(()=>change(typeEls[1].limiter,'50')),[[121,50]]);
  assert.deepEqual(await fieldsOf(()=>change(typeEls[3].limiter,'100')),[[123,100]]);
  assert.deepEqual(await fieldsOf(()=>change(typeEls[1].hdStyle,'2')),[[125,2]]);
  assert.deepEqual(await fieldsOf(()=>change(typeEls[3].audioStyle,'0')),[[127,0]]);
- // Reset to defaults writes each type's own pair, not the shared fields
+ // Click strength (slider position = 31 - dB) and Movement ticks: shown from v30, enabled by the Trackpad haptics choice
+ for(let et=0;et<4;et++)assert(!typeEls[et].padHap.classList.contains('hide'));
+ const clk=typeEls.map(t=>t.padClick),tck=typeEls.map(t=>t.padTick);
+ assert.deepEqual(clk.map(i=>i.value),['22','30','1','19']);assert.deepEqual(tck.map(i=>i.value),['0','3','0','4']);
+ assert.deepEqual(typeEls.map(t=>t.padClickV.textContent),['-9 dB (default)','-1 dB','-30 dB','-12 dB']);
+ assert.deepEqual(typeEls.map(t=>t.padTickV.textContent),['Controller default','Medium','Controller default','High']);
+ assert.deepEqual(clk.map(i=>i.disabled),[false,false,true,false]);assert.deepEqual(tck.map(i=>i.disabled),[false,true,true,false]);
+ assert.deepEqual(await fieldsOf(()=>change(clk[0],'20')),[[128,11]]);
+ assert.deepEqual(await fieldsOf(()=>change(tck[3],'2')),[[135,2]]);
+ // Reset to defaults writes each type's own settings, not the shared fields
  // (the Switch starts on tones at 100% grip strength, the others on the wave at 200%)
  for(const [et,lim,sty,style,scale] of [[1,121,125,1,50],[3,123,127,3,100]]){
   setTab(et);const f=await fieldsOf(()=>$reset());
-  assert.deepEqual([f.find(x=>x[0]===lim),f.find(x=>x[0]===sty),f.find(x=>x[0]===108+et)],[[lim,70],[sty,style],[108+et,scale]]);assert(!f.some(x=>x[0]===115||x[0]===88));}
+  assert.deepEqual([f.find(x=>x[0]===lim),f.find(x=>x[0]===sty),f.find(x=>x[0]===108+et),f.find(x=>x[0]===128+et),f.find(x=>x[0]===132+et)],[[lim,70],[sty,style],[108+et,scale],[128+et,9],[132+et,0]]);assert(!f.some(x=>x[0]===115||x[0]===88));}
  const dflt=sel=>[...sel.options].filter(o=>o.textContent.includes('(default)')).map(o=>o.value);
  assert.deepEqual(dflt(typeEls[1].hdStyle),['1']);assert.deepEqual(dflt(typeEls[1].rumbleScl),['100']);assert.deepEqual(dflt(typeEls[3].rumbleScl),['200']);
  // the backup carries the whole grid and replays it by field
- [9,10,11,12].forEach((v,i)=>p[222+i]=v);[0,1,2,3].forEach((v,i)=>p[226+i]=v);await apply();
+ await apply();
  {const b=buildBackup(p,[1].concat(Array(97).fill(0)));
-  assert.deepEqual(b.config.types.map(t=>[t.limiter,t.hapticStyle,t.padClick,t.padTick]),[[60,0,9,0],[70,1,10,1],[80,2,11,2],[90,3,12,3]]);
+  assert.deepEqual(b.config.types.map(t=>[t.limiter,t.hapticStyle,t.padClick,t.padTick]),[[60,0,9,0],[70,1,1,3],[80,2,30,0],[90,3,12,4]]);
   const f=await fieldsOf(()=>importBackup({text:async()=>JSON.stringify(b)}));
-  for(const [field,v] of [[120,60],[121,70],[125,1],[127,3],[128,9],[131,12],[132,0],[135,3]])assert(f.some(x=>x[0]===field&&x[1]===v),'field '+field);
+  for(const [field,v] of [[120,60],[121,70],[125,1],[127,3],[128,9],[129,1],[130,30],[131,12],[133,3],[135,4]])assert(f.some(x=>x[0]===field&&x[1]===v),'field '+field);
   b.config.types[1].padClick=31;const n=writes.length;await importBackup({text:async()=>JSON.stringify(b)});assert.equal(writes.length,n);}
  p.length=230;await apply();}
 console.log('Mapping profile panel: visibility, loading, labels, edits, copy/reset, trackpads, gesture, reset to defaults and backup tests passed');cleanup();

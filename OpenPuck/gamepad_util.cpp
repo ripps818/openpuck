@@ -28,9 +28,9 @@ void padClickEdge(uint8_t slot, uint32_t clicks)
 	if (!rising || !g_padHaptics || haptic82Blocked(slot))
 		return;
 	// buzz the pad(s) actually clicked
-	const uint8_t click[3] = {
-		hsidePads(clicks & TB_LPADC, clicks & TB_RPADC), 0x01, 0xF7
-	};
+	const uint8_t click[3] = { hsidePads(clicks & TB_LPADC,
+					     clicks & TB_RPADC),
+				   0x01, padClickGain() };
 	// ahead of any queued PCM stream frames, which would delay the click by their length
 	relayEnqueueFront(0x82, click, sizeof click, true, slot);
 }

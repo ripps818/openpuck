@@ -6,6 +6,10 @@ Switch Pro trackpad mapping includes D-pad on touch and D-pad while clicked, inc
 
 The Switch Pro back-button profiles from the upstream PR were removed from this fork. Every emulated type now has mapping profiles of its own (below).
 
+### Trackpad haptic strength
+
+Each mode's tab has two sliders under **Trackpads**. **Click strength** sets the clicks the puck sends itself (Clicks only mode, the PlayStation modes, the Switch D-pad click feedback and the test haptic): -9 dB by default, which is what they always played at, up to -1 dB. **Movement ticks** are played by the controller, so the puck can only ask it for a level (Off, Low, Medium or High, as in Steam's own trackpad settings). Controller default, the lowest position, writes nothing, so nothing changes until you move it, and going back to it takes effect when the controller reconnects. The tick levels are untested on the Steam Controller 2; they use the controller's mouse-mode haptic setting (controller setting 41, values assumed to be 0 to 3) and only apply with Trackpad haptics On. Steam mode relays Steam's own settings, so these sliders don't apply there. Both are part of the per-type haptic settings in [PROTOCOL.md](PROTOCOL.md).
+
 ## Rumble
 
 Rumble follows the mode: Switch Pro mode plays HD rumble, every other emulated mode plays normal rumble, and Steam mode relays Steam's own haptics. Each mode's tab in Button mapping has its rumble on/off switch and grip rumble strength; HD trackpad strength is on the Switch tab, and Haptics style and Grip limiter on the Switch and DS5 tabs, each kept per controller type (below). A config from before per-mode strength gives every mode the previous global strength.

@@ -8,6 +8,7 @@ web = (root/'OpenPuck/webusb_config.cpp').read_text()
 # the shipped table, setter and load loop, and the WebUSB field and blob code, spliced into one harness
 consts = cfg_h[cfg_h.index('enum { HAP_KNEE'):cfg_h.index('extern uint8_t g_typeHaptic')]
 table = cfg_c[cfg_c.index('uint8_t g_typeHaptic[HAP_COUNT]'):cfg_c.index('bool typeHapticSet(')]
+helpers = cfg_h[cfg_h.index('// the s8 gain_db byte'):cfg_h.index('// 1 = the active DualSense profile maps Create')]
 setter = cfg_c[cfg_c.index('bool typeHapticSet('):]
 setter = setter[:setter.index('\n}\n') + 3]
 load = cfg_c[cfg_c.index('\t// per-type haptic settings; one missing'):cfg_c.index('\tif (c.swDpadHaptics <= 1)')]
@@ -26,13 +27,13 @@ src = '''#include <cassert>
 #define AUDIO_STYLE_TONE 1
 #define AUDIO_STYLE_SPLIT 2
 #define AUDIO_STYLE_WAVE 3
-uint8_t g_hapticLimitKnee = 70, g_audioHapticStyle = 3;
+uint8_t g_hapticLimitKnee = 70, g_audioHapticStyle = 3, g_padClickAtten = 9, g_padTick = 0;
 uint16_t g_typeRumbleScale[ET_COUNT] = {};
 int applied = 0, saved = 0;
 bool g_blobRequest = false;
 void applyActiveType() { ++applied; }
 void saveCfg() { ++saved; }
-''' + consts + table + setter + '''
+''' + consts + table + helpers + setter + '''
 struct Cfg { uint8_t typeHaptic[HAP_COUNT][ET_COUNT]; };
 static void load(const Cfg &c)
 {
@@ -98,6 +99,18 @@ int main()
 	uint8_t xboxKnee = g_typeHaptic[HAP_KNEE][ET_XBOX];
 	assert(field(120 + 4 * HAP_KNEE + ET_XBOX, 90) && g_typeHaptic[HAP_KNEE][ET_XBOX] == xboxKnee); // that type has no limiter
 	assert(!field(119, 1) && !field(120 + 4 * HAP_COUNT, 1));
+
+	// the click pulse's gain byte: the strength every type has always had is 0xF7, and no valid strength is gain byte 0
+	// (the legacy haptic stop)
+	g_padClickAtten = PAD_CLICK_ATTEN_DEFAULT; assert(padClickGain() == 0xF7);
+	for (int a = PAD_CLICK_ATTEN_MIN; a <= PAD_CLICK_ATTEN_MAX; a++) { g_padClickAtten = (uint8_t)a; assert(padClickGain() != 0 && (int8_t)padClickGain() == -a); }
+	// a movement-tick level is written once per connect episode, again when it changes, and never for 0 (leave the controller's)
+	uint8_t landed = 0xFF;
+	assert(!padTickDue(0, &landed) && landed == 0xFF);
+	assert(padTickDue(2, &landed) && landed == 2 && !padTickDue(2, &landed));
+	assert(padTickDue(3, &landed) && landed == 3);
+	assert(!padTickDue(0, &landed) && landed == 3);
+	landed = 0xFF; assert(padTickDue(3, &landed));
 
 	// the status blob carries the grid from byte 216, setting-major
 	uint8_t p[232]; memset(p, 0xEE, sizeof p);

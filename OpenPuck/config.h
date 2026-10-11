@@ -258,6 +258,22 @@ extern uint8_t g_typeHaptic[HAP_COUNT][ET_COUNT];
 extern uint8_t g_hapticLimitKnee;
 // Store a value if it is in range and the type has the setting, and refresh the live mirrors.
 bool typeHapticSet(uint8_t setting, uint8_t et, uint8_t value);
+// Live copies of the active type's click strength and tick level (the defaults in puck modes)
+extern uint8_t g_padClickAtten, g_padTick;
+// the s8 gain_db byte of a 0x82 click pulse at the active type's strength
+static inline uint8_t padClickGain(void)
+{
+	return (uint8_t)(0u - g_padClickAtten);
+}
+// Whether a movement-tick level still has to be written to a controller: a level was asked for and it doesn't
+// hold it yet. landed is the last level written this connect episode (0xFF = none); a write is recorded here.
+static inline bool padTickDue(uint8_t level, uint8_t *landed)
+{
+	if (!level || *landed == level)
+		return false;
+	*landed = level;
+	return true;
+}
 // 1 = the active DualSense profile maps Create to the touchpad click. A view of that profile (btnmap.cpp), kept
 // for cfg.bin, the status blob and older panels; the map itself does the work.
 extern uint8_t g_createAsTouch;

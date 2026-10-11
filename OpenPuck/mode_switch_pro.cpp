@@ -1004,7 +1004,8 @@ static void swDpadClickFeedback(uint8_t bond, uint32_t buttons)
 		     (g_padStick[1] == PS_DPAD_TOUCH ||
 		      g_padStick[1] == PS_DPAD_CLICK);
 	if (left || right) {
-		const uint8_t pulse[3] = { hsidePads(left, right), 2, 0xF7 };
+		const uint8_t pulse[3] = { hsidePads(left, right), 2,
+					   padClickGain() };
 		// ahead of any queued HD-rumble frames, which would delay the click by their length
 		relayEnqueueFront(0x82, pulse, sizeof pulse, true, bond);
 	}
