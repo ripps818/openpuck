@@ -11,6 +11,7 @@ head='''#include <stdint.h>
 #define NSLOT 4
 #define MODE_SW_PRO 4
 uint8_t g_usbMode=MODE_SW_PRO,g_shortcutFlags=63;
+uint32_t g_gestureMask=0;
 uint8_t g_rumbleStyle=8;
 uint16_t g_hdPadScale=100,g_rumbleScale=200;
 int confirmations=0;uint8_t confirmationSlot=0;

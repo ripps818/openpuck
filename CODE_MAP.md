@@ -467,7 +467,11 @@ after `loadCfg()`: no valid file -> every profile of a type starts as a copy of 
 view of the active profile (`g_type[]`, `g_padStickCfg[]`, so cfg.bin, the blob and older panels / backups
 still work); the legacy WebUSB fields and the serial console edit the profile through `btnmapLegacySet` /
 `btnmapSetPadStick`. Writes: `btnmapTouch(holdMs)` marks it, `btnmapTask(now)` (loop) writes once the hold has
-passed, `saveCfg()` flushes at once.
+passed, `saveCfg()` flushes at once. The profile switch lives here too: `btnmapGesture(slot, buttons, now,
+suspended)` (called from rf_link's per-report chord block) debounces modifier + the configured previous / next
+button (`g_gesture`, puck-wide, stored in the file's trailer), steps the running type's active profile, calls
+`applyActiveType()` and returns the number to buzz (`hapticShortcutFeedback(.., force=true)`). Its two buttons are
+`g_gestureMask`, which `shortcutHostButtons` hides from the host while the modifier is held.
 
 ---
 

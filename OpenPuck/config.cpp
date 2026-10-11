@@ -114,6 +114,7 @@ void applyActiveType()
 		g_ledBright = 0;
 		g_padStick[0] = g_padStick[1] = PS_OFF;
 		remapDefaultMap(&g_btnMap);
+		btnmapUpdateGestureMask();
 		return;
 	}
 	const TypeCfg &t = g_type[g_etype];
@@ -134,6 +135,7 @@ void applyActiveType()
 	if (!btnmapActiveMap(g_etype, &g_btnMap))
 		remapLegacyMap(&g_btnMap, g_back, g_qamMap, g_abSwap,
 			       g_etype != ET_XBOX);
+	btnmapUpdateGestureMask();
 }
 // poll rate defaults to POLL_US_DEFAULT (250 Hz), matching the real Valve puck (see config.h). The
 // delivered report rate equals the poll rate (fresh IMU in every reply). Live-adjustable via console

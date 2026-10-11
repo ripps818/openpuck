@@ -545,7 +545,7 @@ Messages:
     (default: the original 14-channel pool 18, 20, 22, 34, 42, 46, 52, 56, 68, 70, 72, 74, 76, 80). Replies
     with an `0xAD` frame, which carries the mask in force. Firmware that predates it answers `0xAD` version 1;
     send it only once an `0xAD` version 2 frame has been seen.
-  - `0x2C`–`0x32` (status-blob version ≥ 30): button-mapping profiles. Each emulated type (`0` Xbox, `1`
+  - `0x2C`–`0x33` (status-blob version ≥ 30): button-mapping profiles. Each emulated type (`0` Xbox, `1`
     Switch, `2` DS4, `3` DS5, the same order as the per-type block of the status blob) keeps three profiles,
     numbered `0`-`2`, and one of them is active. A profile is a map of one **target code** per **source** plus
     the two trackpad -> stick settings. Every op below is answered with that type's `0xB0` frame, so an
@@ -560,6 +560,14 @@ Messages:
     - `0x31 <type> <profile> <pad> <value>`: trackpad -> stick for `pad` 0 (left) / 1 (right); the values are
       those of fields 80-87.
     - `0x32 <type> <from> <to>`: copy a profile over another.
+    - `0x33 <type> <enabled> <prev> <next>`: the profile-switch gesture. With the shortcut modifier held (all
+      four back buttons, or Quick Access, as set in the Mode shortcuts card), the `prev` / `next` source steps
+      the running type's active profile, wrapping, and the controller buzzes the new profile's number (1-3)
+      even when shortcut feedback is off. The two buttons are hidden from the host while the modifier is held.
+      It is a puck-wide setting (`type` only addresses the reply), works whether or not the Mode shortcuts are
+      on, and does nothing in Steam, Lizard, DirectInput or SInput mode. `enabled` is 0 or 1 (default 1);
+      `prev` / `next` must differ and be LB (`4`), RB (`5`), L3 (`6`), R3 (`7`), Select-side (`8`) or Start-side
+      (`9`), which no shortcut uses (default LB / RB). A refused value changes nothing.
 
     Sources (index in the map, in order): `0` A, `1` B, `2` X, `3` Y, `4` LB, `5` RB, `6` L3, `7` R3,
     `8` Select-side button (Xbox Back, Switch Minus, PlayStation Create), `9` Start-side button, `10` Steam,
@@ -601,8 +609,9 @@ Messages:
     the startup channel is the one the next boot uses (a saved channel that is no longer enabled is skipped).
   - `0xB0 <len> <payload>` (status-blob version ≥ 30): one type's mapping profiles, answering ops
     `0x2C`-`0x32`: `[1][type][active][profiles][sources]`, then for each profile its `sources` target codes
-    and the two trackpad -> stick bytes (`profiles × (sources + 2)` bytes). Read the counts from the frame
-    rather than assuming three profiles and 24 sources. A later version may append further sections after
+    and the two trackpad -> stick bytes (`profiles × (sources + 2)` bytes), then the gesture
+    `[enabled][prev][next]`. Read the counts from the frame rather than assuming three profiles and 24
+    sources. A later version may append further sections after
     those bytes (button combinations, macros); skip what the length covers beyond what you know.
   - `0xAE 55 <payload>`: Switch Pro / HD rumble / shortcut settings: `[ver=1][37 zero bytes]`
     `[swDpadHaptics][storageState][hdPadScale/2][4 zero bytes][swQamSelect][shortcutFlags][8 zero bytes]`.

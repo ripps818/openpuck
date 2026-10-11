@@ -81,6 +81,9 @@ struct RemapTarget {
 };
 RemapTarget remapTarget(uint8_t code, bool swap);
 
+// The TB_* bit a source reads from (0 for a source out of range).
+uint32_t remapSourceTb(uint8_t source);
+
 // b with every source replaced by its target in g_btnMap. Every other bit passes through. capture (optional) is
 // set when a target is Switch Capture.
 uint32_t remapButtons(uint32_t b, bool *capture = nullptr);

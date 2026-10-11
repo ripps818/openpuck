@@ -41,6 +41,7 @@ PuckInput g_in[NSLOT];
 uint8_t g_abSwap, g_back[4], g_qamMap, g_shortcutFlags, g_swQamSelect = 18, g_padStick[2];
 uint8_t g_trigInner = 0, g_trigOuter = 100, g_createAsTouch, g_swGyroLegacy;
 bool g_touchpadDisabled;
+uint32_t g_gestureMask;
 volatile uint8_t g_battery[NSLOT], g_batteryState[NSLOT];
 int8_t g_usbToBond[NSLOT] = { 0, 1, 2, 3 };
 
@@ -195,6 +196,20 @@ static void line(const char *b, int swap, int code, uint8_t flags, uint32_t raw,
 // the map itself: identity by default, any source to any target, and the codes reserved for later
 static void selfTest()
 {
+	// the profile-switch buttons are hidden from the host while the modifier is held, shortcuts on or off
+	g_gestureMask = TB_LB | TB_RB;
+	g_shortcutFlags = SHORTCUT_ENABLED;
+	assert(shortcutHostButtons(CHORD_BACK4 | TB_LB | TB_X) == 0);
+	assert(shortcutHostButtons(CHORD_BACK4 | TB_LB | TB_L3) == TB_L3);
+	assert(shortcutHostButtons(TB_LB | TB_RB | TB_X) == (TB_LB | TB_RB | TB_X)); // no modifier
+	g_shortcutFlags = 0;
+	assert(shortcutHostButtons(CHORD_BACK4 | TB_LB | TB_RB | TB_A) == (CHORD_BACK4 | TB_A));
+	assert(shortcutHostButtons(TB_LB | TB_A) == (TB_LB | TB_A));
+	g_shortcutFlags = SHORTCUT_ENABLED | SHORTCUT_QAM;
+	assert(shortcutHostButtons(TB_QAM | TB_RB | TB_B | TB_L3) == TB_L3);
+	g_gestureMask = 0;
+	g_shortcutFlags = 0;
+	assert(shortcutHostButtons(CHORD_BACK4 | TB_LB) == (CHORD_BACK4 | TB_LB));
 	ButtonMap m;
 	remapDefaultMap(&m);
 	g_btnMap = m;

@@ -808,10 +808,10 @@ bool hapticShortcutFeedbackActive(uint8_t slot)
 	return slot < NSLOT && g_shortcutFeedback[slot].count;
 }
 
-void hapticShortcutFeedback(uint8_t slot, uint8_t pulses)
+void hapticShortcutFeedback(uint8_t slot, uint8_t pulses, bool force)
 {
-	if (!(g_shortcutFlags & SHORTCUT_FEEDBACK) || slot >= NSLOT ||
-	    !pulses || pulses > 3 || !hapticLinkUp(slot) ||
+	if ((!force && !(g_shortcutFlags & SHORTCUT_FEEDBACK)) ||
+	    slot >= NSLOT || !pulses || pulses > 3 || !hapticLinkUp(slot) ||
 	    haptic82Blocked(slot) || !g_hapticRelay || USBDevice.suspended())
 		return;
 	hapticCancelPendingOn(slot);

@@ -45,13 +45,28 @@ bool btnmapSetEntry(uint8_t et, uint8_t profile, uint8_t source,
 bool btnmapApplyNintendo(uint8_t et, uint8_t profile);
 bool btnmapResetProfile(uint8_t et, uint8_t profile);
 bool btnmapCopyProfile(uint8_t et, uint8_t from, uint8_t to);
-bool btnmapSelect(uint8_t et, uint8_t profile);
+bool btnmapSelect(uint8_t et, uint8_t profile, uint32_t holdMs = 0);
 bool btnmapSetProfilePadStick(uint8_t et, uint8_t profile, uint8_t pad,
 			      uint8_t v);
 
+// The profile switch: with the modifier held, the previous / next button steps the running type's active profile
+// and the gesture answers with the new profile number (1-3) for the caller to buzz. Puck-wide, not per profile,
+// and independent of the Mode shortcuts switch. prev / next are RemapSource values and must differ.
+struct ProfileGesture {
+	uint8_t enabled, prev, next;
+};
+extern ProfileGesture g_gesture;
+bool btnmapSetGesture(uint8_t enabled, uint8_t prev, uint8_t next);
+// Call with every fresh report of a slot. Returns the profile number when it switched on this call, else 0.
+uint8_t btnmapGesture(uint8_t slot, uint32_t buttons, uint32_t now,
+		      bool suspended);
+// Refresh g_gestureMask (triton.h); applyActiveType() calls it, as the running type decides whether it applies.
+void btnmapUpdateGestureMask();
+
 // A type's profiles as the payload of the 0xB0 frame: [1][type][active][profiles][sources], then per profile
-// the targets and the two pad settings. Returns its length (BM_DUMP_LEN), 0 for a bad type.
-#define BM_DUMP_LEN (5 + BM_PROFILES * (RS_COUNT + 2))
+// the targets and the two pad settings, then the gesture [enabled][prev][next]. Returns its length
+// (BM_DUMP_LEN), 0 for a bad type.
+#define BM_DUMP_LEN (5 + BM_PROFILES * (RS_COUNT + 2) + 3)
 size_t btnmapDump(uint8_t et, uint8_t *out);
 
 // Mark the file out of date. It is written holdMs after the last change, so a burst of edits is one write.

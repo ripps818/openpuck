@@ -90,6 +90,11 @@ static const uint32_t SOURCE_TB[RS_COUNT] = {
 	TB_R4,	 TB_L5,	  TB_R5,    TB_QAM, TB_LPADC, TB_RPADC, TB_L2,	TB_R2
 };
 
+uint32_t remapSourceTb(uint8_t source)
+{
+	return source < RS_COUNT ? SOURCE_TB[source] : 0;
+}
+
 void remapDefaultMap(ButtonMap *m)
 {
 	// a source acts as itself: its code is the one codeToTb() turns back into its own flag

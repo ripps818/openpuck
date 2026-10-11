@@ -24,6 +24,9 @@ const TypeCfg g_typeDefault[ET_COUNT] = {
 	{ { 5, 6, 7, 8 }, 0, 0, 1, 0, 1 },
 };
 uint8_t g_padStickCfg[ET_COUNT][2];
+uint8_t g_etype = ET_NONE, g_shortcutFlags = SHORTCUT_ENABLED;
+int applied = 0;
+void applyActiveType() { ++applied; btnmapUpdateGestureMask(); }
 
 static const std::vector<uint8_t> &file() { return files["/btnmap.bin"]; }
 // the older settings as a fresh install has them
@@ -141,7 +144,7 @@ int main()
 	for (int bad = 0; bad < 6; bad++) {
 		std::vector<uint8_t> d = good;
 		if (bad == 0) d[0] ^= 1; // magic
-		if (bad == 1) d[1] = 2; // version
+		if (bad == 1) d[1] = 3; // version
 		if (bad == 2) d[4] = RS_COUNT + 1; // source count
 		if (bad == 3) d.pop_back();
 		if (bad == 4) d[BM_HDR_FOR_TEST] = BM_PROFILES; // active profile out of range
@@ -204,6 +207,115 @@ int main()
 	btnmapLoad();
 	assert(!memcmp(snapshot, g_profile, sizeof snapshot) && g_profileActive[ET_DS4] == activeDs4);
 
+	// the profile switch: the modifier plus the previous / next button, 40 ms, once per hold
+	defaults();
+	forget();
+	files.clear();
+	btnmapLoad();
+	assert(g_gesture.enabled == 1 && g_gesture.prev == RS_LB && g_gesture.next == RS_RB);
+	assert(g_gestureMask == 0); // no emulated type running: the buttons stay the game's
+	g_etype = ET_DS5;
+	btnmapUpdateGestureMask();
+	assert(g_gestureMask == (TB_LB | TB_RB));
+	g_shortcutFlags = 0; // the mode shortcuts are off; the gesture does not depend on them
+	const uint32_t MOD = CHORD_BACK4;
+	int before_applied = applied;
+	assert(btnmapGesture(0, MOD | TB_RB, 1000, false) == 0); // timing starts
+	assert(btnmapGesture(0, MOD | TB_RB, 1039, false) == 0);
+	assert(btnmapGesture(0, MOD | TB_RB, 1040, false) == 2 && g_profileActive[ET_DS5] == 1);
+	assert(applied == before_applied + 1 && g_type[ET_DS5].abSwap == 0);
+	assert(btnmapGesture(0, MOD | TB_RB, 1100, false) == 0 && btnmapGesture(0, MOD | TB_RB, 5000, false) == 0);
+	assert(btnmapGesture(0, MOD, 5010, false) == 0); // released: re-arms
+	assert(btnmapGesture(0, MOD | TB_RB, 5020, false) == 0 && btnmapGesture(0, MOD | TB_RB, 5060, false) == 3);
+	assert(btnmapGesture(0, MOD, 5070, false) == 0);
+	assert(btnmapGesture(0, MOD | TB_RB, 5080, false) == 0 && btnmapGesture(0, MOD | TB_RB, 5120, false) == 1); // wraps
+	assert(g_profileActive[ET_DS5] == 0);
+	assert(btnmapGesture(0, MOD, 5130, false) == 0);
+	assert(btnmapGesture(0, MOD | TB_LB, 5140, false) == 0 && btnmapGesture(0, MOD | TB_LB, 5180, false) == 3); // previous wraps
+	assert(g_profileActive[ET_DS5] == 2 && g_profileActive[ET_XBOX] == 0);
+	assert(btnmapGesture(0, MOD, 5190, false) == 0);
+	// it does nothing without the modifier, with both buttons, while suspended, switched off, or off a profile type
+	assert(btnmapGesture(0, TB_RB, 6000, false) == 0 && btnmapGesture(0, TB_RB, 6100, false) == 0);
+	assert(btnmapGesture(0, MOD | TB_LB | TB_RB, 6200, false) == 0 && btnmapGesture(0, MOD | TB_LB | TB_RB, 6300, false) == 0);
+	assert(btnmapGesture(0, MOD, 6310, false) == 0);
+	assert(btnmapGesture(0, MOD | TB_RB, 6320, true) == 0 && btnmapGesture(0, MOD | TB_RB, 6400, true) == 0);
+	assert(btnmapGesture(0, MOD, 6410, false) == 0);
+	assert(btnmapGesture(NSLOT, MOD | TB_RB, 6500, false) == 0 && btnmapGesture(NSLOT, MOD | TB_RB, 6600, false) == 0);
+	g_etype = ET_NONE;
+	assert(btnmapGesture(0, MOD | TB_RB, 7000, false) == 0 && btnmapGesture(0, MOD | TB_RB, 7100, false) == 0);
+	g_etype = ET_DS5;
+	assert(btnmapGesture(0, MOD, 7110, false) == 0);
+	// each slot times itself
+	assert(btnmapGesture(1, MOD | TB_RB, 8000, false) == 0 && btnmapGesture(2, MOD | TB_LB, 8010, false) == 0);
+	assert(btnmapGesture(1, MOD | TB_RB, 8040, false) == 1); // profile 3 -> 1
+	assert(btnmapGesture(2, MOD | TB_LB, 8050, false) == 3); // and back to 3 from slot 2
+	assert(btnmapGesture(1, MOD, 8060, false) == 0 && btnmapGesture(2, MOD, 8060, false) == 0);
+	// the Quick Access modifier works the same way
+	g_shortcutFlags = SHORTCUT_QAM;
+	assert(btnmapGesture(0, TB_QAM | TB_RB, 9000, false) == 0 && btnmapGesture(0, TB_QAM | TB_RB, 9040, false) == 1);
+	assert(btnmapGesture(0, MOD | TB_RB, 9050, false) == 0 && btnmapGesture(0, MOD | TB_RB, 9100, false) == 0); // back four is not it
+	assert(btnmapGesture(0, 0, 9110, false) == 0);
+	// the choice of buttons: only ones no shortcut uses, and two different ones
+	assert(btnmapSetGesture(1, RS_L3, RS_R3) && g_gestureMask == (TB_L3 | TB_R3));
+	assert(btnmapSetGesture(1, RS_START, RS_SELECT) && btnmapSetGesture(0, RS_LB, RS_RB) && g_gestureMask == 0);
+	assert(!btnmapSetGesture(1, RS_A, RS_RB) && !btnmapSetGesture(1, RS_LB, RS_DUP) && !btnmapSetGesture(1, RS_LB, RS_STEAM));
+	assert(!btnmapSetGesture(1, RS_LB, RS_LB) && !btnmapSetGesture(2, RS_LB, RS_RB) && !btnmapSetGesture(1, RS_L2, RS_R2));
+	assert(!btnmapSetGesture(1, RS_L4, RS_RB) && !btnmapSetGesture(1, RS_LB, RS_QAM));
+	assert(g_gesture.enabled == 0 && g_gesture.prev == RS_LB && g_gesture.next == RS_RB); // refused: unchanged
+	assert(btnmapGesture(0, TB_QAM | TB_RB, 9200, false) == 0 && btnmapGesture(0, TB_QAM | TB_RB, 9300, false) == 0); // off
+	assert(btnmapSetGesture(1, RS_L3, RS_R3));
+	g_shortcutFlags = SHORTCUT_ENABLED;
+	assert(btnmapGesture(0, MOD | TB_R3, 9400, false) == 0 && btnmapGesture(0, MOD | TB_R3, 9440, false) == 2);
+	assert(btnmapGesture(0, MOD, 9450, false) == 0);
+	// a change made on the controller waits for the next one before it is written
+	btnmapFlush();
+	const std::vector<uint8_t> atRest = file();
+	assert(btnmapGesture(0, MOD | TB_L3, 10000, false) == 0 && btnmapGesture(0, MOD | TB_L3, 10040, false) == 1);
+	btnmapTask(10040);
+	btnmapTask(13039);
+	assert(file() == atRest);
+	assert(btnmapGesture(0, MOD, 13040, false) == 0);
+	assert(btnmapGesture(0, MOD | TB_L3, 13100, false) == 0 && btnmapGesture(0, MOD | TB_L3, 13140, false) == 3);
+	btnmapTask(13140); // another change restarts the wait
+	btnmapTask(16139);
+	assert(file() == atRest);
+	btnmapTask(16140);
+	assert(file() != atRest);
+	// the choice and the active profile survive a reboot; a version 1 file has no gesture; a bad gesture keeps the profiles
+	const uint8_t activeNow = g_profileActive[ET_DS5];
+	forget();
+	g_gesture = { 0, RS_START, RS_SELECT };
+	btnmapLoad();
+	assert(g_gesture.enabled == 1 && g_gesture.prev == RS_L3 && g_gesture.next == RS_R3 && g_profileActive[ET_DS5] == activeNow);
+	{
+		std::vector<uint8_t> v1 = file();
+		v1.resize(v1.size() - 3);
+		v1[1] = 1;
+		files["/btnmap.bin"] = v1;
+		forget();
+		g_gesture = { 0, RS_START, RS_SELECT };
+		btnmapLoad();
+		assert(g_gesture.enabled == 1 && g_gesture.prev == RS_LB && g_gesture.next == RS_RB && g_profileActive[ET_DS5] == activeNow);
+		assert(file() == v1); // read as it is; the next change writes version 2
+		assert(btnmapSetGesture(1, RS_LB, RS_RB));
+		btnmapFlush();
+		std::vector<uint8_t> v2 = file();
+		assert(v2.size() == v1.size() + 3 && v2[1] == 2);
+		v2[v2.size() - 2] = RS_A; // a gesture button no shortcut may lose
+		files["/btnmap.bin"] = v2;
+		forget();
+		btnmapLoad();
+		assert(g_gesture.prev == RS_LB && g_gesture.next == RS_RB && g_profileActive[ET_DS5] == activeNow);
+	}
+	// the dump carries the gesture after the profiles
+	{
+		uint8_t frame[BM_DUMP_LEN];
+		assert(btnmapDump(ET_DS5, frame) == BM_DUMP_LEN);
+		assert(frame[BM_DUMP_LEN - 3] == 1 && frame[BM_DUMP_LEN - 2] == RS_LB && frame[BM_DUMP_LEN - 1] == RS_RB);
+	}
+	g_etype = ET_NONE;
+	g_shortcutFlags = SHORTCUT_ENABLED;
+
 	// without a mounted filesystem the profiles still come up, and nothing is written
 	g_storageState = 0;
 	files.clear();
@@ -214,7 +326,7 @@ int main()
 	btnmapLegacySet(ET_DS4, 0, 1);
 	assert(g_profile[ET_DS4][0].map.target[RS_L4] == 1);
 }
-'''.replace('BM_LEN_FOR_TEST', '(5 + ET_COUNT * (1 + BM_PROFILES * (RS_COUNT + 2)))').replace('BM_HDR_FOR_TEST', '5')
+'''.replace('BM_LEN_FOR_TEST', '(5 + ET_COUNT * (1 + BM_PROFILES * (RS_COUNT + 2)) + 3)').replace('BM_HDR_FOR_TEST', '5')
 head = '''#include <stdint.h>
 #include <stddef.h>
 #include <string.h>
