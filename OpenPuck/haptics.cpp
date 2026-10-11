@@ -1009,7 +1009,7 @@ void rfConnQueueHapticRelay()
 {
 	if (relayPending())
 		return; // host relays first; injectables wait for an idle cycle
-	static const uint8_t HAP_ON[3] = { 0x01, 0x01, 0xF7 };
+	const uint8_t HAP_ON[3] = { 0x01, 0x01, padClickGain() };
 	static const uint8_t HAP_OFF[3] = { 0x01, 0x01, 0x00 };
 	if (g_testHaptic) {
 		if (relayEnqueue(0x82, HAP_ON, 3, true, 0xFF))
@@ -1358,6 +1358,8 @@ void hapticTask()
 		static unsigned long lastKeep[NSLOT] = { 0 };
 		static bool landedAuto[NSLOT] = { false };
 		static bool landedImu[NSLOT] = { false };
+		// last tick level written to each controller (0xFF = none yet this connect episode)
+		static uint8_t landedTick[NSLOT] = { 0xFF, 0xFF, 0xFF, 0xFF };
 		static const uint8_t DATA_LIZARD_OFF[3] = { SETTING_LIZARD_MODE,
 							    0x00, 0x00 };
 		static const uint8_t DATA_LIZARD_ON[3] = { SETTING_LIZARD_MODE,
@@ -1378,6 +1380,7 @@ void hapticTask()
 					// autonomous, but one carrying our previous session's id9 does not
 					landedAuto[s] = false;
 					landedImu[s] = false;
+					landedTick[s] = 0xFF;
 					lastKeep[s] = 0;
 					continue;
 				}
@@ -1397,8 +1400,24 @@ void hapticTask()
 							sizeof DATA_LIZARD_ON,
 							false, (uint8_t)s);
 					}
+					// 0 = leave the controller's level; it can't be restored once written, only
+					// by the controller reconnecting
+					if (padTickDue(g_padTick,
+						       &landedTick[s])) {
+						const uint8_t tick[3] = {
+							SETTING_HAPTIC_INTENSITY_MOUSE_MODE,
+							(uint8_t)(g_padTick -
+								  1),
+							0x00
+						};
+						relayEnqueue(
+							IBEX_CMD_SET_SETTINGS_VALUES,
+							tick, sizeof tick,
+							false, (uint8_t)s);
+					}
 				} else {
 					landedAuto[s] = false;
+					landedTick[s] = 0xFF;
 					if (lastKeep[s] &&
 					    (uint32_t)(millis() - lastKeep[s]) <
 						    LIZKEEP_MS)

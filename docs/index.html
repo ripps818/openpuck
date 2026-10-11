@@ -1635,6 +1635,10 @@ const TYPE_DEFS = [
 function etypeForMode(m){ switch(m){case 1:case 10:return 0; case 2:case 4:return 1; case 6:case 8:case 9:return 2; case 5:case 7:return 3; default:return -1;} }
 // the firmware's back[] order; each label is the paddle glyph (full name on hover) plus its short name
 const BACK_KEYS = ["L4","R4","L5","R5"];
+// Trackpad haptic strength (protocol v30): click strength is dB below full (firmware default 9); the movement tick
+// level is 0 = leave the controller's own, 1..4 = Off/Low/Medium/High.
+const PAD_CLICK_DEFAULT = 9;
+const PAD_TICK_LABELS = ["Controller default","Off","Low","Medium","High"];
 const typeEls = []; // one entry per TYPE_DEFS: {sec, tab, activeDot, back[], qam, abSwap, pad, led, ledV, rumble, padStick[]}
 // Trackpad -> joystick mapping (firmware PS_OFF/PS_LEFT/PS_RIGHT). Field id = PAD_STICK_FIELD0 + et*2 + pad
 // (pad 0 = left trackpad, 1 = right). While mapped and touched the pad drives that stick; on release the
@@ -1688,7 +1692,7 @@ function currentType(){ return curTab; }
 function typeResetFields(et){
   const key=TYPE_DEFS[et].key, sw=key==="SWITCH", ds5=key==="DS5", b=40+et*9;
   const f=[[b,5,0],[b+1,6,0],[b+2,7,0],[b+3,8,0],[b+4,sw?18:0,0],[b+5,sw?1:0,0],[b+6,sw?0:1,0],[b+7,0,0],[b+8,1,0],
-    [PAD_STICK_FIELD0+et*2,0,20],[PAD_STICK_FIELD0+et*2+1,0,20],[108+et,100,25]];
+    [PAD_STICK_FIELD0+et*2,0,20],[PAD_STICK_FIELD0+et*2+1,0,20],[108+et,100,25],[117+et,PAD_CLICK_DEFAULT,30],[121+et,0,30]];
   if(sw||ds5) f.push([115,70,27]);
   if(ds5) f.push([31,1,0],[88,3,22],[30,0,0],[114,0,26],[116,0,29]);
   if(sw){
@@ -1769,6 +1773,23 @@ function initTypes(){
       for(const [v,lbl] of [[1,"On"],[2,"Clicks only"],[0,"Off"]]){ const o=document.createElement("option"); o.value=v; o.textContent=lbl; pad.appendChild(o); }
       row(gPad,"Trackpad haptics",pad);
       pad.addEventListener("change",()=>setField(40+et*9+6, +pad.value));
+      // Click strength (protocol v30): dB below full. The slider runs weak -> strong, so its position is 31 - dB.
+      // Movement ticks are the controller's own; the slider picks the level it plays them at, 0 = leave it alone.
+      { const gHap=document.createElement("div"); gHap.className="hide";
+        const click=document.createElement("input"); click.type="range"; click.min=1; click.max=30; click.step=1;
+        const clickV=document.createElement("span"); clickV.className="val";
+        const fmtClick=pos=>{ const db=31-pos; return "-"+db+" dB"+(db===PAD_CLICK_DEFAULT?" (default)":""); };
+        click.addEventListener("input",()=>{ clickV.textContent=fmtClick(+click.value); });
+        click.addEventListener("change",()=>setField(117+et, 31-(+click.value)));
+        const tick=document.createElement("input"); tick.type="range"; tick.min=0; tick.max=4; tick.step=1;
+        const tickV=document.createElement("span"); tickV.className="val";
+        tick.addEventListener("input",()=>{ tickV.textContent=PAD_TICK_LABELS[+tick.value]; });
+        tick.addEventListener("change",()=>setField(121+et, +tick.value));
+        const note=document.createElement("p"); note.className="note";
+        note.textContent="Click strength applies to the clicks the puck sends itself: Clicks only, the PlayStation modes and the Switch D-pad click feedback. Movement ticks are played by the controller; this asks it for a level and only applies with Trackpad haptics On. Controller default leaves it alone, and going back to it takes effect when the controller reconnects. The tick levels are untested on the Steam Controller 2.";
+        gHap.append(row(gPad,"Click strength",click,clickV),row(gPad,"Movement ticks",tick,tickV),note);
+        gPad.appendChild(gHap);
+        Object.assign(rec,{padHap:gHap,padClick:click,padClickV:clickV,padClickFmt:fmtClick,padTick:tick,padTickV:tickV}); }
       // rumble on/off, grip strength, grip limiter
       const gRum=group("Rumble");
       const rumble=toggle(gRum,"Rumble","on");
@@ -3212,6 +3233,15 @@ function applyBlob(p){
       if(!held(rec.qam)) rec.qam.value=qam;
       rec.abSwap.textContent=ab?"on":"off"; rec.abSwap.classList.toggle("active",!!ab);
       if(document.activeElement!==rec.pad) rec.pad.value=pad;
+      // v30: per-type click strength / movement-tick level. Click needs Trackpad haptics on or clicks-only, ticks need On.
+      { const hap=(p[0]>=30 && p.length>=222);
+        rec.padHap.classList.toggle("hide", !hap);
+        if(hap){
+          const click=p[214+et], tick=p[218+et];
+          if(!held(rec.padClick)){ rec.padClick.value=31-click; rec.padClickV.textContent=rec.padClickFmt(31-click); }
+          if(!held(rec.padTick)){ rec.padTick.value=tick; rec.padTickV.textContent=PAD_TICK_LABELS[tick]||tick; }
+          rec.padClick.disabled=(pad===0); rec.padTick.disabled=(pad!==1);
+        } }
       rec.rumble.textContent=rum?"on":"off"; rec.rumble.classList.toggle("active",!!rum);
       if(rec.audioHaptics){
         const audOn = (p.length>196)?(p[196]!==0):true;
@@ -3940,6 +3970,7 @@ function buildBackup(p, bp){
     // pad->stick mapping only exists from protocol v20; omit on older pucks so a restore can't replay defaults
     if(p[0]>=21 && p.length>192) t.padStick=[p[185+et*2],p[186+et*2]];
     if(p[0]>=25 && p.length>213) t.rumbleScale=p[210+et]*2;
+    if(p[0]>=30 && p.length>=222){ t.padClick=p[214+et]; t.padTick=p[218+et]; }
     types.push(t); }
   const cfg={ mode:p[1], mDiv:p[2], mFric:p[3], persistMode:p[22], chord:[p[23],p[24],p[25]], types };
   // D-pad chords only exist from protocol v18, the Switch gyro mapping from v19; omit the keys entirely on
@@ -4005,6 +4036,7 @@ async function importBackup(file){
   const isInt=(v,lo,hi)=>Number.isInteger(v) && v>=lo && v<=hi;
   if(hc.rumbleScale!==undefined && (!isInt(hc.rumbleScale,10,500) || !S.lastP || S.lastP[0]<21)){ log("import: invalid or unsupported rumble strength");return; }
   if(Array.isArray(hc.types) && hc.types.some(t=>t && t.rumbleScale!==undefined && (!isInt(t.rumbleScale,10,500) || t.rumbleScale%2))){ log("import: invalid per-type rumble strength");return; }
+  if(Array.isArray(hc.types) && hc.types.some(t=>t && ((t.padClick!==undefined && !isInt(t.padClick,1,30)) || (t.padTick!==undefined && !isInt(t.padTick,0,4))))){ log("import: invalid trackpad click / tick strength");return; }
   if((hc.swDpadHaptics!==undefined && !isInt(hc.swDpadHaptics,0,1)) ||
      (hc.hdPadScale!==undefined && (!isInt(hc.hdPadScale,0,500) || hc.hdPadScale%2)) ||
      (hc.swQamSelect!==undefined && !isInt(hc.swQamSelect,0,20)) ||
@@ -4027,7 +4059,8 @@ async function importBackup(file){
   const ledN=(c.ledMode!==undefined?1:0)+(c.ledPinA!==undefined?1:0)+(c.ledPinB!==undefined?1:0)+(c.ledPolarity!==undefined?1:0);
   const baseN=6 + (Array.isArray(c.chordD)?4:0) + (c.swGyroLegacy!==undefined?1:0) + (c.emulateSteamMachine!==undefined?1:0) + ledN;
   const padStickN=Array.isArray(c.types)?c.types.slice(0,typeN).filter(t=>Array.isArray(t.padStick)).length*2:0;
-  const total=baseN + typeN*9 + padStickN + lizardN + 4 + 1 + (c.swDpadHaptics!==undefined?1:0) + (c.rumbleScale!==undefined?1:0) + (c.hdPadScale!==undefined?1:0) + (c.swQamSelect!==undefined?1:0) + (c.shortcutFlags!==undefined?1:0);
+  const padHapN=(S.lastP && S.lastP[0]>=30 && Array.isArray(c.types))?c.types.slice(0,typeN).reduce((n,t)=>n+(t&&t.padClick!==undefined?1:0)+(t&&t.padTick!==undefined?1:0),0):0;
+  const total=baseN + typeN*9 + padStickN + padHapN + lizardN + 4 + 1 + (c.swDpadHaptics!==undefined?1:0) + (c.rumbleScale!==undefined?1:0) + (c.hdPadScale!==undefined?1:0) + (c.swQamSelect!==undefined?1:0) + (c.shortcutFlags!==undefined?1:0);
   let step=0, stage="";
   const tick=()=>modalStage(stage, Math.min(99,Math.floor(step*100/total)));
   try{
@@ -4074,7 +4107,8 @@ async function importBackup(file){
         await sf(40+et*9+6, t.pad===2?2:(t.pad?1:0)); await sf(40+et*9+7, t.led);
         await sf(40+et*9+8, t.rumble!==undefined?t.rumble:1);
         if(Array.isArray(t.padStick)){ await sf(PAD_STICK_FIELD0+et*2, t.padStick[0]); await sf(PAD_STICK_FIELD0+et*2+1, t.padStick[1]); }
-        if(typeRumble && t.rumbleScale!==undefined) await sf(108+et, t.rumbleScale/2); }
+        if(typeRumble && t.rumbleScale!==undefined) await sf(108+et, t.rumbleScale/2);
+        if(S.lastP && S.lastP[0]>=30){ if(t.padClick!==undefined) await sf(117+et, t.padClick); if(t.padTick!==undefined) await sf(121+et, t.padTick); } }
       log("settings replayed ("+(baseN+typeN*9)+" fields)");
     } else { log("settings replayed ("+baseN+" fields — no per-type config in this backup)"); }
     if(c.swDpadHaptics!==undefined) await sf(230,c.swDpadHaptics);

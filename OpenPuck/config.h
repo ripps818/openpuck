@@ -211,6 +211,35 @@ void captureFeedbackChord(uint8_t slot, uint32_t buttons);
 #define PAD_HAPTICS_CLICK 2
 // PAD_HAPTICS_* for the active type (ON in puck modes)
 extern uint8_t g_padHaptics;
+
+// Trackpad haptic strength, per emulated type (like g_padStickCfg, outside TypeCfg so the on-flash layout only
+// grows in its tail). Click: the 0x82 pulse the puck sends itself (clicks-only mode, the PlayStation modes, the
+// Switch D-pad click feedback), as dB below full scale; 9 is the strength it always had. The strongest is 1:
+// the legacy haptic stop is a 0x82 with gain byte 0, so 0 dB is kept out of reach rather than risk a click that
+// reads as a stop. Tick: the movement ticks are the controller's own, so this can only pick the level the
+// controller plays them at: 0 leaves whatever the controller has, 1..4 write Off/Low/Medium/High.
+#define PAD_CLICK_ATTEN_MIN 1
+#define PAD_CLICK_ATTEN_DEFAULT 9
+#define PAD_CLICK_ATTEN_MAX 30
+#define PAD_TICK_DEFAULT 0
+#define PAD_TICK_MAX 4
+extern uint8_t g_padClickCfg[ET_COUNT], g_padTickCfg[ET_COUNT];
+// Live mirrors of the active type's values (defaults in puck modes)
+extern uint8_t g_padClickAtten, g_padTick;
+// the s8 gain_db byte of a 0x82 click pulse at the active type's strength
+static inline uint8_t padClickGain(void)
+{
+	return (uint8_t)(0u - g_padClickAtten);
+}
+// Whether a movement-tick level still has to be written to a controller: a level was asked for and it doesn't
+// hold it yet. landed is the last level written this connect episode (0xFF = none); a write is recorded here.
+static inline bool padTickDue(uint8_t level, uint8_t *landed)
+{
+	if (!level || *landed == level)
+		return false;
+	*landed = level;
+	return true;
+}
 // 1 = host rumble relay on (default), 0 = silenced for the active emulated type
 extern uint8_t g_rumble;
 // 1 = audio-driven haptics on (default), 0 = silenced for DualSense UAC1 audio

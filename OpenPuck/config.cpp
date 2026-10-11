@@ -50,6 +50,16 @@ uint8_t g_etype = ET_NONE;
 uint8_t g_padStickCfg[ET_COUNT][2] = {};
 uint8_t g_padStick[2] = { PS_OFF, PS_OFF };
 
+// Trackpad haptic strength: every type starts at the same click strength and leaves the controller's tick level
+// alone.
+uint8_t g_padClickCfg[ET_COUNT] = { PAD_CLICK_ATTEN_DEFAULT,
+				    PAD_CLICK_ATTEN_DEFAULT,
+				    PAD_CLICK_ATTEN_DEFAULT,
+				    PAD_CLICK_ATTEN_DEFAULT };
+uint8_t g_padTickCfg[ET_COUNT] = {};
+uint8_t g_padClickAtten = PAD_CLICK_ATTEN_DEFAULT;
+uint8_t g_padTick = PAD_TICK_DEFAULT;
+
 // Live mirrors of the active type (puck modes use the harmless defaults below).
 uint8_t g_abSwap = 0;
 uint8_t g_back[4] = { 5, 6, 7, 8 };
@@ -108,6 +118,8 @@ void applyActiveType()
 		g_rumbleStyle = RUMBLE_STYLE_NORMAL;
 		g_ledBright = 0;
 		g_padStick[0] = g_padStick[1] = PS_OFF;
+		g_padClickAtten = PAD_CLICK_ATTEN_DEFAULT;
+		g_padTick = PAD_TICK_DEFAULT;
 		return;
 	}
 	const TypeCfg &t = g_type[g_etype];
@@ -124,6 +136,8 @@ void applyActiveType()
 	g_ledBright = t.ledBright;
 	g_padStick[0] = g_padStickCfg[g_etype][0];
 	g_padStick[1] = g_padStickCfg[g_etype][1];
+	g_padClickAtten = g_padClickCfg[g_etype];
+	g_padTick = g_padTickCfg[g_etype];
 }
 // poll rate defaults to POLL_US_DEFAULT (250 Hz), matching the real Valve puck (see config.h). The
 // delivered report rate equals the poll rate (fresh IMU in every reply). Live-adjustable via console
@@ -177,6 +191,8 @@ struct Cfg {
 	// fill of an older file sets bit 39, past the last candidate, so it loads
 	// as the default set.
 	uint8_t rfChannelMask[5];
+	// per-type trackpad click strength (dB below full) and movement-tick level; 0xFF (older file) -> default
+	uint8_t padClickAtten[ET_COUNT], padTick[ET_COUNT];
 }; // rsvd0 = ex-padSmooth, now the one-shot debug-CDC arm
 
 // Shortest cfg.bin we still accept: the layout as of CFG_MAGIC 0xCF, i.e. everything before the appended tail.
@@ -255,6 +271,8 @@ void saveCfg()
 		c.typeRumbleScale2[i] = (uint8_t)(g_typeRumbleScale[i] / 2);
 		c.padStick[i][0] = g_padStickCfg[i][0];
 		c.padStick[i][1] = g_padStickCfg[i][1];
+		c.padClickAtten[i] = g_padClickCfg[i];
+		c.padTick[i] = g_padTickCfg[i];
 	}
 	storageWriteFile(CFG_FILE, "/cfg.tmp", (const uint8_t *)&c, sizeof c);
 }
@@ -419,6 +437,14 @@ void loadCfg()
 		rfMask |= (uint64_t)c.rfChannelMask[i] << (8 * i);
 	g_rfChannelMask = rfChannelMaskValid(rfMask) ? rfMask :
 						       RF_CHANNEL_MASK_DEFAULT;
+	// trackpad haptic strength: 0xFF (older file) or anything out of range keeps the compiled default
+	for (uint8_t et = 0; et < ET_COUNT; et++) {
+		if (c.padClickAtten[et] >= PAD_CLICK_ATTEN_MIN &&
+		    c.padClickAtten[et] <= PAD_CLICK_ATTEN_MAX)
+			g_padClickCfg[et] = c.padClickAtten[et];
+		if (c.padTick[et] <= PAD_TICK_MAX)
+			g_padTickCfg[et] = c.padTick[et];
+	}
 	if (c.swDpadHaptics <= 1)
 		g_swDpadHaptics = c.swDpadHaptics;
 	if (c.hdPadScale2 <= 250)

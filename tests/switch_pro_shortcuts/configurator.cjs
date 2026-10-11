@@ -92,6 +92,23 @@ assert.deepEqual(await resetOf(1),[...base(1),[82,0],[83,0],[109,100],[115,70],[
 assert.deepEqual(await resetOf(2),[...base(2),[84,0],[85,0],[110,100]]);
 assert.deepEqual(await resetOf(3),[...base(3),[86,0],[87,0],[111,100],[115,70],[31,1],[88,3],[30,0],[114,0]]);
 {const p29=p.slice();p29[0]=29;p=p29;applyBlob(new Uint8Array(p29));const d=await resetOf(3);assert.deepEqual(d[d.length-1],[116,0]);p=p27;applyBlob(new Uint8Array(p27));}
+// v30: per-type trackpad click strength (dB below full; blob p[216..219] = JS p[214..217], fields 117..120) and
+// movement-tick level (JS p[218..221], fields 121..124), hidden before v30 and enabled by the Trackpad haptics choice.
+const hapRow=name=>secs.map(sec=>[...sec.querySelectorAll('.row')].find(r=>r.querySelector('label') && r.querySelector('label').textContent===name));
+const clickRows=hapRow('Click strength'),tickRows=hapRow('Movement ticks');
+assert.equal(clickRows.length,4);for(const r of [...clickRows,...tickRows])assert(r.parentElement.classList.contains('hide'));
+const p30=p27.concat(Array(10).fill(0));p30[0]=30;[9,1,30,12].forEach((v,i)=>p30[214+i]=v);[0,3,0,4].forEach((v,i)=>p30[218+i]=v);[1,2,0,1].forEach((v,i)=>p30[73+i*9+6]=v);
+p=p30;applyBlob(new Uint8Array(p30));
+for(const r of [...clickRows,...tickRows])assert(!r.parentElement.classList.contains('hide'));
+const clk=clickRows.map(r=>r.querySelector('input')),tck=tickRows.map(r=>r.querySelector('input'));
+assert.deepEqual(clk.map(i=>i.value),['22','30','1','19']);assert.deepEqual(tck.map(i=>i.value),['0','3','0','4']);
+assert.deepEqual([clickRows[0],clickRows[1]].map(r=>r.querySelector('.val').textContent),['-9 dB (default)','-1 dB']);
+assert.deepEqual(tickRows.map(r=>r.querySelector('.val').textContent),['Controller default','Medium','Controller default','High']);
+assert.deepEqual(clk.map(i=>i.disabled),[false,false,true,false]);assert.deepEqual(tck.map(i=>i.disabled),[false,true,true,false]);
+clk[0].value='20';assert.deepEqual(await change(clk[0]),[2,117,11]);
+tck[3].value='2';assert.deepEqual(await change(tck[3]),[2,124,2]);
+assert.deepEqual((await resetOf(0)).slice(-3),[[108,100],[117,9],[121,0]]);
+p=p27;applyBlob(new Uint8Array(p27));
 // without the 0xAE frame the Switch-only controls are not shown, so they are not written either
 applySw(null);assert(!(await resetOf(1)).some(x=>x[0]===230||x[0]===231||x[0]===239));await apply();
 // declining the confirmation writes nothing

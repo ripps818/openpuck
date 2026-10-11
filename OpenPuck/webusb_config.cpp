@@ -118,7 +118,10 @@ static bool boardCommand(uint8_t op)
 //                 p[53] / p[195] report the active type's strength and the automatic rumble style]
 //                [v26: p[208] controller speaker volume pct/2 (field 114); v27: p[209] grip soft-limit knee %
 //                 (field 115); p[210..211] zero]
-#define WB_PAYLEN 214
+//                [v30: p[216..219] per-type trackpad click strength, dB below full (fields 117..120);
+//                 p[220..223] per-type movement-tick level, 0 = controller's own, 1..4 = Off/Low/Medium/High
+//                 (fields 121..124)]
+#define WB_PAYLEN 222
 // The blob send is drop-on-full (never blocks loop), so the vendor TX FIFO MUST be able to hold a whole blob
 // -- otherwise tud_vendor_write_available() never reaches the frame size and EVERY frame is dropped (blank
 // panel / stale mappings). The Makefile sets -DCFG_TUD_VENDOR_TX_BUFSIZE=256; guard it here so a build without
@@ -148,7 +151,8 @@ static void webusbSendBlob()
 
 	// clang-format off
 	// protocol version
-	// (29 = +Create-as-touchpad-click toggle (field 116, blob p[210]); +selectable RF channel set: op 0x2B
+	// (30 = +per-type trackpad click strength / movement-tick level (fields 117..124, blob p[216..223]);
+	// 29 = +Create-as-touchpad-click toggle (field 116, blob p[210]); +selectable RF channel set: op 0x2B
 	// [mask: 5 bytes LE], 0xAD frame v2 (every even channel 4..80, rows paged by field 97's value, enabled +
 	// default masks appended; the panel keys off the 0xAD version, not this one);
 	// 28 = lizard-map ops 0x11..0x1A edit the SAVED map in every mode (a separate copy outside MODE_LIZARD,
@@ -175,7 +179,7 @@ static void webusbSendBlob()
 	// cfg; 8 = +per-slot link status; 7 = +raw accel; 
 	// 6 = +swPro120/gyroScale)
 	// clang-format on
-	p[2] = 29;
+	p[2] = 30;
 	p[3] = g_usbMode;
 	p[4] = (uint8_t)g_mDiv;
 	p[5] = (uint8_t)g_mFric;
@@ -379,8 +383,11 @@ static void webusbSendBlob()
 	p[208] = (uint8_t)(g_audioSpeaker / 2);
 	p[209] = g_hapticLimitKnee;
 	p[210] = g_createAsTouch;
-	for (uint8_t et = 0; et < ET_COUNT; et++)
+	for (uint8_t et = 0; et < ET_COUNT; et++) {
 		p[212 + et] = (uint8_t)(g_typeRumbleScale[et] / 2);
+		p[216 + et] = g_padClickCfg[et];
+		p[220 + et] = g_padTickCfg[et];
+	}
 	// CRITICAL: usb_web.write() SPINS (`while (remain && _connected) yield();`) until the IN FIFO drains or the
 	// panel disconnects. If the panel holds the WebUSB interface open but stops reading its IN endpoint -- a
 	// backgrounded tab, or the host briefly not servicing transferIn under load -- the FIFO never empties and
@@ -1549,6 +1556,28 @@ void webusbPoll()
 				// Create button acts as the DualSense touchpad click. Protocol v29.
 				case 116:
 					g_createAsTouch = v ? 1 : 0;
+					break;
+
+				// Per-type trackpad click strength (117 + et, dB below full) and movement-tick level
+				// (121 + et). Out-of-range values are ignored. Protocol v30.
+				case 117:
+				case 118:
+				case 119:
+				case 120:
+					if (v >= PAD_CLICK_ATTEN_MIN &&
+					    v <= PAD_CLICK_ATTEN_MAX) {
+						g_padClickCfg[f - 117] = v;
+						applyActiveType();
+					}
+					break;
+				case 121:
+				case 122:
+				case 123:
+				case 124:
+					if (v <= PAD_TICK_MAX) {
+						g_padTickCfg[f - 121] = v;
+						applyActiveType();
+					}
 					break;
 
 				// Trigger deadzone / full-press point, percent (protocol v24). The pair stays ordered:

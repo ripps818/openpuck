@@ -1,6 +1,6 @@
 import { S } from './state.js';
 import { $, fmtDur, held, log, setSlider } from './util.js';
-import { LIZARD_TAB, RUMBLE_SCALES, TYPE_DEFS, currentType, etypeForMode, setTab, swStatusApply, typeEls } from './types.js';
+import { LIZARD_TAB, PAD_TICK_LABELS, RUMBLE_SCALES, TYPE_DEFS, currentType, etypeForMode, setTab, swStatusApply, typeEls } from './types.js';
 import { refreshRfStatus } from './rf.js';
 import { renderCtlrChips, renderSlotTabs } from './slots.js';
 import { renderHangLog, trailAdd } from './diag.js';
@@ -304,6 +304,15 @@ export function applyBlob(p){
       if(!held(rec.qam)) rec.qam.value=qam;
       rec.abSwap.textContent=ab?"on":"off"; rec.abSwap.classList.toggle("active",!!ab);
       if(document.activeElement!==rec.pad) rec.pad.value=pad;
+      // v30: per-type click strength / movement-tick level. Click needs Trackpad haptics on or clicks-only, ticks need On.
+      { const hap=(p[0]>=30 && p.length>=222);
+        rec.padHap.classList.toggle("hide", !hap);
+        if(hap){
+          const click=p[214+et], tick=p[218+et];
+          if(!held(rec.padClick)){ rec.padClick.value=31-click; rec.padClickV.textContent=rec.padClickFmt(31-click); }
+          if(!held(rec.padTick)){ rec.padTick.value=tick; rec.padTickV.textContent=PAD_TICK_LABELS[tick]||tick; }
+          rec.padClick.disabled=(pad===0); rec.padTick.disabled=(pad!==1);
+        } }
       rec.rumble.textContent=rum?"on":"off"; rec.rumble.classList.toggle("active",!!rum);
       if(rec.audioHaptics){
         const audOn = (p.length>196)?(p[196]!==0):true;

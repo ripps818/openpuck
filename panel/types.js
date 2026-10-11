@@ -28,6 +28,10 @@ export const TYPE_DEFS = [
 export function etypeForMode(m){ switch(m){case 1:case 10:return 0; case 2:case 4:return 1; case 6:case 8:case 9:return 2; case 5:case 7:return 3; default:return -1;} }
 // the firmware's back[] order; each label is the paddle glyph (full name on hover) plus its short name
 const BACK_KEYS = ["L4","R4","L5","R5"];
+// Trackpad haptic strength (protocol v30): click strength is dB below full (firmware default 9); the movement tick
+// level is 0 = leave the controller's own, 1..4 = Off/Low/Medium/High.
+const PAD_CLICK_DEFAULT = 9;
+export const PAD_TICK_LABELS = ["Controller default","Off","Low","Medium","High"];
 export const typeEls = []; // one entry per TYPE_DEFS: {sec, tab, activeDot, back[], qam, abSwap, pad, led, ledV, rumble, padStick[]}
 // Trackpad -> joystick mapping (firmware PS_OFF/PS_LEFT/PS_RIGHT). Field id = PAD_STICK_FIELD0 + et*2 + pad
 // (pad 0 = left trackpad, 1 = right). While mapped and touched the pad drives that stick; on release the
@@ -81,7 +85,7 @@ export function currentType(){ return curTab; }
 function typeResetFields(et){
   const key=TYPE_DEFS[et].key, sw=key==="SWITCH", ds5=key==="DS5", b=40+et*9;
   const f=[[b,5,0],[b+1,6,0],[b+2,7,0],[b+3,8,0],[b+4,sw?18:0,0],[b+5,sw?1:0,0],[b+6,sw?0:1,0],[b+7,0,0],[b+8,1,0],
-    [PAD_STICK_FIELD0+et*2,0,20],[PAD_STICK_FIELD0+et*2+1,0,20],[108+et,100,25]];
+    [PAD_STICK_FIELD0+et*2,0,20],[PAD_STICK_FIELD0+et*2+1,0,20],[108+et,100,25],[117+et,PAD_CLICK_DEFAULT,30],[121+et,0,30]];
   if(sw||ds5) f.push([115,70,27]);
   if(ds5) f.push([31,1,0],[88,3,22],[30,0,0],[114,0,26],[116,0,29]);
   if(sw){
@@ -162,6 +166,23 @@ export function initTypes(){
       for(const [v,lbl] of [[1,"On"],[2,"Clicks only"],[0,"Off"]]){ const o=document.createElement("option"); o.value=v; o.textContent=lbl; pad.appendChild(o); }
       row(gPad,"Trackpad haptics",pad);
       pad.addEventListener("change",()=>setField(40+et*9+6, +pad.value));
+      // Click strength (protocol v30): dB below full. The slider runs weak -> strong, so its position is 31 - dB.
+      // Movement ticks are the controller's own; the slider picks the level it plays them at, 0 = leave it alone.
+      { const gHap=document.createElement("div"); gHap.className="hide";
+        const click=document.createElement("input"); click.type="range"; click.min=1; click.max=30; click.step=1;
+        const clickV=document.createElement("span"); clickV.className="val";
+        const fmtClick=pos=>{ const db=31-pos; return "-"+db+" dB"+(db===PAD_CLICK_DEFAULT?" (default)":""); };
+        click.addEventListener("input",()=>{ clickV.textContent=fmtClick(+click.value); });
+        click.addEventListener("change",()=>setField(117+et, 31-(+click.value)));
+        const tick=document.createElement("input"); tick.type="range"; tick.min=0; tick.max=4; tick.step=1;
+        const tickV=document.createElement("span"); tickV.className="val";
+        tick.addEventListener("input",()=>{ tickV.textContent=PAD_TICK_LABELS[+tick.value]; });
+        tick.addEventListener("change",()=>setField(121+et, +tick.value));
+        const note=document.createElement("p"); note.className="note";
+        note.textContent="Click strength applies to the clicks the puck sends itself: Clicks only, the PlayStation modes and the Switch D-pad click feedback. Movement ticks are played by the controller; this asks it for a level and only applies with Trackpad haptics On. Controller default leaves it alone, and going back to it takes effect when the controller reconnects. The tick levels are untested on the Steam Controller 2.";
+        gHap.append(row(gPad,"Click strength",click,clickV),row(gPad,"Movement ticks",tick,tickV),note);
+        gPad.appendChild(gHap);
+        Object.assign(rec,{padHap:gHap,padClick:click,padClickV:clickV,padClickFmt:fmtClick,padTick:tick,padTickV:tickV}); }
       // rumble on/off, grip strength, grip limiter
       const gRum=group("Rumble");
       const rumble=toggle(gRum,"Rumble","on");

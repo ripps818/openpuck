@@ -22,6 +22,7 @@ export function buildBackup(p, bp){
     // pad->stick mapping only exists from protocol v20; omit on older pucks so a restore can't replay defaults
     if(p[0]>=21 && p.length>192) t.padStick=[p[185+et*2],p[186+et*2]];
     if(p[0]>=25 && p.length>213) t.rumbleScale=p[210+et]*2;
+    if(p[0]>=30 && p.length>=222){ t.padClick=p[214+et]; t.padTick=p[218+et]; }
     types.push(t); }
   const cfg={ mode:p[1], mDiv:p[2], mFric:p[3], persistMode:p[22], chord:[p[23],p[24],p[25]], types };
   // D-pad chords only exist from protocol v18, the Switch gyro mapping from v19; omit the keys entirely on
@@ -87,6 +88,7 @@ export async function importBackup(file){
   const isInt=(v,lo,hi)=>Number.isInteger(v) && v>=lo && v<=hi;
   if(hc.rumbleScale!==undefined && (!isInt(hc.rumbleScale,10,500) || !S.lastP || S.lastP[0]<21)){ log("import: invalid or unsupported rumble strength");return; }
   if(Array.isArray(hc.types) && hc.types.some(t=>t && t.rumbleScale!==undefined && (!isInt(t.rumbleScale,10,500) || t.rumbleScale%2))){ log("import: invalid per-type rumble strength");return; }
+  if(Array.isArray(hc.types) && hc.types.some(t=>t && ((t.padClick!==undefined && !isInt(t.padClick,1,30)) || (t.padTick!==undefined && !isInt(t.padTick,0,4))))){ log("import: invalid trackpad click / tick strength");return; }
   if((hc.swDpadHaptics!==undefined && !isInt(hc.swDpadHaptics,0,1)) ||
      (hc.hdPadScale!==undefined && (!isInt(hc.hdPadScale,0,500) || hc.hdPadScale%2)) ||
      (hc.swQamSelect!==undefined && !isInt(hc.swQamSelect,0,20)) ||
@@ -109,7 +111,8 @@ export async function importBackup(file){
   const ledN=(c.ledMode!==undefined?1:0)+(c.ledPinA!==undefined?1:0)+(c.ledPinB!==undefined?1:0)+(c.ledPolarity!==undefined?1:0);
   const baseN=6 + (Array.isArray(c.chordD)?4:0) + (c.swGyroLegacy!==undefined?1:0) + (c.emulateSteamMachine!==undefined?1:0) + ledN;
   const padStickN=Array.isArray(c.types)?c.types.slice(0,typeN).filter(t=>Array.isArray(t.padStick)).length*2:0;
-  const total=baseN + typeN*9 + padStickN + lizardN + 4 + 1 + (c.swDpadHaptics!==undefined?1:0) + (c.rumbleScale!==undefined?1:0) + (c.hdPadScale!==undefined?1:0) + (c.swQamSelect!==undefined?1:0) + (c.shortcutFlags!==undefined?1:0);
+  const padHapN=(S.lastP && S.lastP[0]>=30 && Array.isArray(c.types))?c.types.slice(0,typeN).reduce((n,t)=>n+(t&&t.padClick!==undefined?1:0)+(t&&t.padTick!==undefined?1:0),0):0;
+  const total=baseN + typeN*9 + padStickN + padHapN + lizardN + 4 + 1 + (c.swDpadHaptics!==undefined?1:0) + (c.rumbleScale!==undefined?1:0) + (c.hdPadScale!==undefined?1:0) + (c.swQamSelect!==undefined?1:0) + (c.shortcutFlags!==undefined?1:0);
   let step=0, stage="";
   const tick=()=>modalStage(stage, Math.min(99,Math.floor(step*100/total)));
   try{
@@ -156,7 +159,8 @@ export async function importBackup(file){
         await sf(40+et*9+6, t.pad===2?2:(t.pad?1:0)); await sf(40+et*9+7, t.led);
         await sf(40+et*9+8, t.rumble!==undefined?t.rumble:1);
         if(Array.isArray(t.padStick)){ await sf(PAD_STICK_FIELD0+et*2, t.padStick[0]); await sf(PAD_STICK_FIELD0+et*2+1, t.padStick[1]); }
-        if(typeRumble && t.rumbleScale!==undefined) await sf(108+et, t.rumbleScale/2); }
+        if(typeRumble && t.rumbleScale!==undefined) await sf(108+et, t.rumbleScale/2);
+        if(S.lastP && S.lastP[0]>=30){ if(t.padClick!==undefined) await sf(117+et, t.padClick); if(t.padTick!==undefined) await sf(121+et, t.padTick); } }
       log("settings replayed ("+(baseN+typeN*9)+" fields)");
     } else { log("settings replayed ("+baseN+" fields — no per-type config in this backup)"); }
     if(c.swDpadHaptics!==undefined) await sf(230,c.swDpadHaptics);

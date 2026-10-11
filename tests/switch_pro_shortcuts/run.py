@@ -33,6 +33,8 @@ ua=u.index('uint32_t padDpadButtons(');ub=u.index('\nvoid slotSticks(',ua)
 m=(root/'OpenPuck/mode_switch_pro.cpp').read_text()
 ha=m.index('static void swDpadClickFeedback(');hb=m.index('\nvoid SwitchProController::task()',ha)
 head += '''uint8_t g_swDpadHaptics=1,g_padHaptics=1,g_swQamSelect=18;
+uint8_t g_padClickAtten=9; // the default strength, so the click keeps its historic 0xF7 gain byte
+static inline uint8_t padClickGain(){return (uint8_t)(0u-g_padClickAtten);}
 bool blocked=false;
 int pulses=0;
 uint8_t emittedSide=0, emittedBond=0;

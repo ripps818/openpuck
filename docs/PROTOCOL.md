@@ -499,6 +499,16 @@ Messages:
     below the deadzone reads 0, travel at or past the full-press point reads 255, linear between; 0/100 is
     raw. An edit that would put the deadzone at or above the full-press point is refused. Status blob
     `p[206]`/`p[207]` (payload bytes 204/205).
+    Trackpad haptic strength (blob version >= 30), per emulated type 0-3 (Xbox, Switch, DS4, DS5): `117`-`120`
+    click strength as dB below full scale, 1..30 (default 9, the fixed value before v30); other values are
+    ignored. It is the gain byte of the `0x82` click the puck sends itself (Clicks only mode, the PlayStation
+    builders' pad click, the Switch D-pad click feedback, and the panel's test haptic). It stops at 1 because
+    the legacy haptic stop is a `0x82` with gain byte 0. `121`-`124` movement-tick level: 0 leaves the
+    controller's own level (nothing is written), 1..4 write controller setting 41
+    (`HAPTIC_INTENSITY_MOUSE_MODE` in SDL's `ControllerSettings`) as 0..3 once per connect and on change, while
+    Trackpad haptics is On. Valve's UI names the four levels Off, Low, Medium and High; that they are the values
+    0..3 is an assumption, unverified on the SC2. Status blob `p[216..219]` click and `p[220..223]` tick
+    (payload bytes 214..217 and 218..221); saved in the `cfg.bin` tail.
   - `0x03 <mode>`: switch mode and reboot
   - `0x07`: re-init haptics (clear a stuck buzz)
   - `0x08`: send controller power-off
