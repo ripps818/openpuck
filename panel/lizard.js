@@ -42,6 +42,7 @@ for(let i=0;i<12;i++) LZ_KEYS.push([0x3a+i,"F"+(i+1)]);
 for(const k of LZ_KEYS) if(k[0]) k.push("key:"+k[1]);
 const LZ_MBTNS = [[1,"Left click","mouseL"],[2,"Right click","mouseR"],[4,"Middle click","mouseM"]];
 const LZ_AXIS_SRC = [[0,"Right trackpad","padR"],[1,"Left stick","stickL"],[3,"Right stick","stickR"],[2,"Gyro","gyro"]];
+const LZ_SCROLL_SRC = [[0,"Left trackpad","padL"],[1,"Left stick","stickL"],[3,"Right stick","stickR"]];
 const LZ_GYRO_ACT = [[0,"Always"],[1,"While right pad touched","padR"],[2,"While left stick deflected","stickL"],[3,"While hold-button held"]];
 const LZ_CONSUMER = [[1,"Volume +","volUp"],[2,"Volume −","volDown"]];
 
@@ -157,7 +158,7 @@ function lzSummary(b){
 		if(od[0]===2){ const g=lzGlyph(LZ_GYRO_ACT,od[1]); n.push(", ",...(g?[iconEl(g)," "]:[]),lzName(LZ_GYRO_ACT,od[1]).toLowerCase()); if(od[1]===3&&b.hold) n.push(" (",...lzInput(b.hold),")"); }
 		return n;
 	}
-	if(b.outType===LZO.SCROLL) return [iconEl("padL")," Left trackpad → ",iconEl(LZ_OUT_GLYPH[4])," scroll wheel"];
+	if(b.outType===LZO.SCROLL) return [...lzNamed(LZ_SCROLL_SRC,od[0],"source")," → ",iconEl(LZ_OUT_GLYPH[4])," scroll wheel"];
 	let out;
 	if(b.outType===LZO.KBD){
 		const keys=[...LZ_MODS.filter(([bit])=>od[0]&bit).map(m=>m[1]),...od.slice(1).filter(Boolean).map(k=>lzName(LZ_KEYS,k)||"0x"+k.toString(16))];
@@ -223,9 +224,9 @@ export function lzV2Render(){
 			fields.appendChild(lzField("Source",lzV2Select(LZ_AXIS_SRC,b.od[0],edit(v=>{b.od[0]=v;}))));
 			if(b.od[0]===2) fields.appendChild(lzField("Gyro active",lzV2Select(LZ_GYRO_ACT,b.od[1],edit(v=>{b.od[1]=v;}))));
 		}else if(b.outType===LZO.SCROLL){
-			b.od[0]=0;
-			const s=document.createElement("span"); s.style.cssText="color:var(--fg);font-size:13px;padding-top:6px"; s.append(iconEl("padL")," Left trackpad");
-			fields.appendChild(lzField("Source",s));
+			// a binding switched over from another action carries that action's payload: no source it knows
+			if(!LZ_SCROLL_SRC.some(x=>x[0]===b.od[0])) b.od[0]=0;
+			fields.appendChild(lzField("Source",lzV2Select(LZ_SCROLL_SRC,b.od[0],edit(v=>{b.od[0]=v;}))));
 		}else if(b.outType===LZO.CONSUMER){
 			fields.appendChild(lzField("Media key",lzV2Select(LZ_CONSUMER,b.od[0],edit(v=>{b.od[0]=v;}))));
 		}

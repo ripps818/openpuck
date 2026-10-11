@@ -20,7 +20,8 @@
 // Mouse axis: outData[0]=source (LZ_MSRC_*), outData[1]=gyro activation (LZ_GYRO_*). The right pad and the two sticks
 // are driven; the gyro is not yet.
 #define LZ_OUT_MOUSE_AXIS 3u
-// Scroll wheel from an analog source: outData[0]=source (LZ_MSRC_*).
+// Scroll wheel from an analog source: outData[0]=source (LZ_MSRC_*). The left trackpad and the two
+// sticks are driven.
 #define LZ_OUT_SCROLL 4u
 // Consumer control (edge-triggered, MODE_LIZARD only): outData[0]=report bitmask (bit0=vol+, bit1=vol-).
 #define LZ_OUT_CONSUMER 5u

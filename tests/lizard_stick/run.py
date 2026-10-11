@@ -1,4 +1,4 @@
-"""Lizard mode, left stick bound to mouse move: the pointer follows the stick's deflection. Compiles the real
+"""Lizard mode, a stick bound to mouse move or the scroll wheel: it follows the stick's deflection. Compiles the real
 mode_lizard.cpp against a stand-in for the USB HID layer and records the mouse reports it sends."""
 from pathlib import Path
 import subprocess, tempfile
@@ -42,16 +42,22 @@ static void bind(uint8_t src)
 	g_lizardMap.count = 1;
 	g_lizardMap.bindings[0] = LizardBinding{ LZ_OUT_MOUSE_AXIS, { src, 0, 0, 0, 0, 0, 0 }, 0, 0 };
 }
-// run n reports with the stick held, and return the pointer's total travel
+static long wheel;
+// run n reports with the stick held, and return the pointer's total travel (and the wheel's, in `wheel`)
 static void run(int n, int lx, int ly, long *tx, long *ty)
 {
 	g_in[0].lx = lx;
 	g_in[0].ly = ly;
 	dev.mouse.clear();
-	*tx = *ty = 0;
+	*tx = *ty = wheel = 0;
 	for (int i = 0; i < n; i++)
 		rfLizard(&dev, &dev, 0x40, 0x41);
-	for (auto &m : dev.mouse) { *tx += m.x; *ty += m.y; }
+	for (auto &m : dev.mouse) { *tx += m.x; *ty += m.y; wheel += m.wheel; }
+}
+static void bindScroll(uint8_t src)
+{
+	g_lizardMap.count = 1;
+	g_lizardMap.bindings[0] = LizardBinding{ LZ_OUT_SCROLL, { src, 0, 0, 0, 0, 0, 0 }, 0, 0 };
 }
 
 int main()
@@ -106,6 +112,43 @@ int main()
 	run(100, 32767, 0, &x, &y);
 	assert(x > 800); // both sticks add up
 	g_in[0].rx = 0;
+	// a stick bound to the scroll wheel: up scrolls up, at about 0.12 notch a report at full deflection
+	bindScroll(LZ_MSRC_RSTICK);
+	g_in[0].ry = 32767;
+	run(1000, 0, 0, &x, &y);
+	assert(wheel > 100 && wheel <= 120 && x == 0 && y == 0); // the pointer stays put
+	g_in[0].ry = -32767;
+	run(1000, 0, 0, &x, &y);
+	assert(wheel < -100 && wheel >= -120);
+	g_in[0].ry = 4000;
+	run(1000, 0, 0, &x, &y);
+	assert(wheel == 0 && dev.mouse.empty()); // the deadzone
+	g_in[0].ry = 18000;
+	run(1000, 0, 0, &x, &y);
+	assert(wheel > 10 && wheel < 60); // slower than full, and the carry still gets it there
+	g_in[0].ry = 0;
+	// the left stick is its own source, and scroll and move can use different sticks at once
+	bindScroll(LZ_MSRC_LSTICK);
+	run(1000, 0, 32767, &x, &y);
+	assert(wheel > 100 && x == 0 && y == 0);
+	g_lizardMap.count = 2;
+	g_lizardMap.bindings[1] = LizardBinding{ LZ_OUT_MOUSE_AXIS, { LZ_MSRC_RSTICK, 0, 0, 0, 0, 0, 0 }, 0, 0 };
+	g_in[0].rx = 32767;
+	run(100, 0, 32767, &x, &y);
+	assert(wheel > 10 && x > 400);
+	g_in[0].rx = 0;
+	// a stick that is not the bound one does nothing, and releasing resets the carry
+	bindScroll(LZ_MSRC_RSTICK);
+	run(100, 32767, 32767, &x, &y);
+	assert(wheel == 0 && x == 0 && y == 0);
+	g_in[0].ry = 6000;
+	run(1, 0, 0, &x, &y);
+	bindScroll(LZ_MSRC_LSTICK);
+	g_in[0].ry = 0;
+	run(1, 0, 0, &x, &y);
+	rfLizardRelease(&dev, &dev, 0x40, 0x41);
+	run(300, 0, 0, &x, &y);
+	assert(wheel == 0);
 	// without a stick binding the stick does not move the cursor, and a right-pad binding is not the stick
 	bind(LZ_MSRC_RPAD);
 	run(100, 32767, 32767, &x, &y);
@@ -131,4 +174,4 @@ with tempfile.TemporaryDirectory() as td:
     subprocess.run(['g++', '-std=c++11', '-Wall', '-Wextra', '-Werror', '-Wno-unused', '-fsanitize=address,undefined',
                     '-I' + td, '-I' + str(r / 'OpenPuck'), str(p), '-o', td + '/test'], check=True)
     subprocess.run([td + '/test'], check=True, env={'ASAN_OPTIONS': 'detect_leaks=0'})
-print('Lizard stick: left stick bound to mouse move drives the pointer')
+print('Lizard stick: the sticks drive the pointer and the scroll wheel')
