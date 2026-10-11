@@ -234,20 +234,30 @@ extern uint16_t g_audioHapticGain;
 extern uint8_t g_audioHapticStyle;
 // DualSense speaker channels played on the grip actuators: volume percent, 0 = off (default), 100 = full, up to 200
 extern uint16_t g_audioSpeaker;
-// Grip PCM soft-limit knee (DualSense wave/speaker, Switch HD grips), percent of full scale: 50..100, 70 default.
-// Peaks above it are rounded off toward full scale; 100 leaves only the hard clip at full scale. Each emulated type
-// keeps its own (g_typeLimitKnee); g_hapticLimitKnee is the active type's live copy (applyActiveType).
+// Per-type haptic settings, kept as one table: g_typeHaptic[setting][type]. Not every type has every setting
+// (typeHapticSet refuses the rest), and each has its own range. On the wire setting k of type et is WebUSB field
+// 120 + 4 * k + et and status blob byte p[216 + 4 * k + et]; the config file keeps the same grid in its tail.
+//  HAP_KNEE:  grip PCM soft-limit knee (DualSense wave/speaker, Switch HD grips), percent of full scale, 50..100
+//             (70 default). Peaks above it are rounded off toward full scale; 100 leaves only the hard clip.
+//             Switch and DualSense. g_hapticLimitKnee is the active type's live copy (applyActiveType).
+//  HAP_STYLE: AUDIO_STYLE_*: how the DualSense plays its audio haptics and how the Switch plays HD rumble on the
+//             grips. Switch and DualSense. g_audioHapticStyle is the DualSense entry's live copy.
+//  HAP_CLICK: strength of the pulse the puck sends for a trackpad click, as dB below full scale, 1..30 (9 is the
+//             strength it always had). 0 dB is kept out of reach: the legacy haptic stop is a 0x82 with gain byte 0.
+//  HAP_TICK:  level of the controller's own trackpad movement ticks: 0 leaves the controller's, 1..4 write
+//             Off/Low/Medium/High.
+// The last two apply to every type.
+enum { HAP_KNEE, HAP_STYLE, HAP_CLICK, HAP_TICK, HAP_COUNT };
 #define HAPTIC_LIMIT_KNEE_DEFAULT 70u
+#define PAD_CLICK_ATTEN_MIN 1
+#define PAD_CLICK_ATTEN_DEFAULT 9
+#define PAD_CLICK_ATTEN_MAX 30
+#define PAD_TICK_DEFAULT 0
+#define PAD_TICK_MAX 4
+extern uint8_t g_typeHaptic[HAP_COUNT][ET_COUNT];
 extern uint8_t g_hapticLimitKnee;
-extern uint8_t g_typeLimitKnee[ET_COUNT];
-// Haptic style per emulated type (AUDIO_STYLE_*): how the DualSense (ET_DS5) plays its audio haptics and how the
-// Switch (ET_SWITCH) plays HD rumble on the grips. The other types ignore it. g_audioHapticStyle is the DS5 entry.
-extern uint8_t g_typeHapticStyle[ET_COUNT];
-// the types that have a grip limiter and a haptic style
-static inline bool hapticTypeHasStyle(uint8_t et)
-{
-	return et == ET_SWITCH || et == ET_DS5;
-}
+// Store a value if it is in range and the type has the setting, and refresh the live mirrors.
+bool typeHapticSet(uint8_t setting, uint8_t et, uint8_t value);
 // 1 = the active DualSense profile maps Create to the touchpad click. A view of that profile (btnmap.cpp), kept
 // for cfg.bin, the status blob and older panels; the map itself does the work.
 extern uint8_t g_createAsTouch;

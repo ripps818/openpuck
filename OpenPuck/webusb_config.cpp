@@ -121,10 +121,11 @@ static bool boardCommand(uint8_t op)
 //                 p[53] / p[195] report the active type's strength and the automatic rumble style]
 //                [v26: p[208] controller speaker volume pct/2 (field 114); v27: p[209] grip soft-limit knee %
 //                 (field 115); v29: p[210] Create as touchpad click (field 116); v30: p[211] active mapping
-//                 profile per type, 2 bits each; v30: p[216..219] grip limiter knee per type (fields 120..123),
-//                 p[220..223] haptic style per type (fields 124..127); p[205] / p[209] stay the DualSense's style
-//                 and the active type's knee for older panels]
-#define WB_PAYLEN 222
+//                 profile per type, 2 bits each; v30: p[216 + 4 * setting + type] per-type haptic settings
+//                 (HAP_* in config.h: grip limiter knee, haptic style, trackpad click strength, movement-tick
+//                 level), WebUSB field 120 + 4 * setting + type; p[205] / p[209] stay the DualSense's style and
+//                 the active type's knee for older panels]
+#define WB_PAYLEN 230
 // The blob send is drop-on-full (never blocks loop), so the vendor TX FIFO MUST be able to hold a whole blob
 // -- otherwise tud_vendor_write_available() never reaches the frame size and EVERY frame is dropped (blank
 // panel / stale mappings). The Makefile sets -DCFG_TUD_VENDOR_TX_BUFSIZE=256; guard it here so a build without
@@ -158,6 +159,8 @@ static void webusbSendBlob()
 	// protocol version
 	// (30 = +mapping profiles: ops 0x2C..0x34 and the 0xB0 frame (see docs/PROTOCOL.md), Lizard profiles included;
 	// the older paddle / QAM / swap fields and lizard ops keep working and now edit the active profile;
+	// +per-type haptic settings: grip limiter, haptic style, trackpad click strength, movement-tick level (fields
+	// 120..135, blob p[216..231]);
 	// 29 = +Create-as-touchpad-click toggle (field 116, blob p[210]); +selectable RF channel set: op 0x2B
 	// [mask: 5 bytes LE], 0xAD frame v2 (every even channel 4..80, rows paged by field 97's value, enabled +
 	// default masks appended; the panel keys off the 0xAD version, not this one);
@@ -394,8 +397,8 @@ static void webusbSendBlob()
 			   g_profileActive[2] << 4 | g_profileActive[3] << 6);
 	for (uint8_t et = 0; et < ET_COUNT; et++) {
 		p[212 + et] = (uint8_t)(g_typeRumbleScale[et] / 2);
-		p[216 + et] = g_typeLimitKnee[et];
-		p[220 + et] = g_typeHapticStyle[et];
+		for (uint8_t k = 0; k < HAP_COUNT; k++)
+			p[216 + 4 * k + et] = g_typeHaptic[k][et];
 	}
 	// CRITICAL: usb_web.write() SPINS (`while (remain && _connected) yield();`) until the IN FIFO drains or the
 	// panel disconnects. If the panel holds the WebUSB interface open but stops reading its IN endpoint -- a
@@ -1439,6 +1442,17 @@ void webusbPoll()
 					n -= need;
 					continue;
 				}
+				// per-type haptic settings (protocol v30): field 120 + 4 * setting + type, see config.h
+				if (f >= 120 && f < 120 + 4 * HAP_COUNT) {
+					typeHapticSet((uint8_t)((f - 120) / 4),
+						      (uint8_t)((f - 120) % 4),
+						      v);
+					saveCfg();
+					g_blobRequest = true;
+					memmove(buf, buf + need, n - need);
+					n -= need;
+					continue;
+				}
 				// fields 190..229 were the Switch Pro profiles (removed): ignored, but still answered
 				// so an older panel waiting on the status reply doesn't stall
 				if (f >= 190 && f < 230) {
@@ -1651,11 +1665,10 @@ void webusbPoll()
 				// the per-type cfg range (40..75) and the pad->stick fields (80..87). Since the style
 				// became per type this edits the DualSense's (see 124..127).
 				case 88:
-					g_typeHapticStyle[ET_DS5] =
-						v > AUDIO_STYLE_WAVE ?
-							AUDIO_STYLE_WAVE :
-							v;
-					applyActiveType();
+					typeHapticSet(HAP_STYLE, ET_DS5,
+						      v > AUDIO_STYLE_WAVE ?
+							      AUDIO_STYLE_WAVE :
+							      v);
 					break;
 
 				// DualSense controller speaker volume, percent/2 (0 = off, up to 200%). Protocol v26.
@@ -1666,40 +1679,9 @@ void webusbPoll()
 				// Grip PCM soft-limit knee, percent of full scale (50..100, 100 = off). Protocol v27. It was
 				// one setting for both types; an older panel still writes it that way, so it sets both.
 				case 115:
-					if (v >= 50 && v <= 100) {
-						g_typeLimitKnee[ET_SWITCH] =
-							g_typeLimitKnee[ET_DS5] =
-								v;
-						applyActiveType();
-					}
+					typeHapticSet(HAP_KNEE, ET_SWITCH, v);
+					typeHapticSet(HAP_KNEE, ET_DS5, v);
 					break;
-
-				// Per-type grip limiter knee (120 + et) and haptic style (124 + et, AUDIO_STYLE_*), only
-				// for the types that have them: Switch and DualSense. Protocol v30.
-				case 120:
-				case 121:
-				case 122:
-				case 123: {
-					uint8_t et = (uint8_t)(f - 120);
-					if (hapticTypeHasStyle(et) && v >= 50 &&
-					    v <= 100) {
-						g_typeLimitKnee[et] = v;
-						applyActiveType();
-					}
-					break;
-				}
-				case 124:
-				case 125:
-				case 126:
-				case 127: {
-					uint8_t et = (uint8_t)(f - 124);
-					if (hapticTypeHasStyle(et) &&
-					    v <= AUDIO_STYLE_WAVE) {
-						g_typeHapticStyle[et] = v;
-						applyActiveType();
-					}
-					break;
-				}
 
 				// Create button acts as the DualSense touchpad click (protocol v29): now the Create entry of
 				// the active DualSense profile.

@@ -57,8 +57,10 @@ function onOp(a){
   else if(op===0x32){m.maps[y]=m.maps[x].slice();m.pads[y]=m.pads[x].slice();}
   else if(op===0x33)gesture=[x,y,z];
 }
-// status v30 blob (JS indices): p[209] = each type's active profile, two bits per type
-let p=Array(210).fill(0);p[0]=30;p[193]=8;p[51]=100;
+// status v30 blob (JS indices): p[209] = each type's active profile, two bits per type; p[214..229] = the per-type haptic grid
+let p=Array(230).fill(0);p[0]=30;p[193]=8;p[51]=100;
+for(let et=0;et<4;et++)p[210+et]=100; // per-type grip strength, percent/2
+for(let k=0;k<4;k++)for(let et=0;et<4;et++)p[214+4*k+et]=[70,3,9,0][k]; // the grid holds valid values, as a puck's does
 // shortcut flags: bit0 Quick Access is the modifier, 3 feedback, 4 Quick Access + Select, 5 shortcuts on
 const s=Array(55).fill(0);s[0]=1;s[46]=24;
 const frame=(mk,a)=>({status:'ok',data:new DataView(new Uint8Array([mk,a.length,...a]).buffer)});
@@ -367,15 +369,15 @@ assert.deepEqual(model[3].maps[2][0],4);assert.equal(model[3].active,2);assert.d
 {const bad=JSON.parse(JSON.stringify(b));bad.config.profiles[0].maps[0][3]=300;
  const n=writes.length;await importBackup({text:async()=>JSON.stringify(bad)});assert.equal(writes.length,n);}
 
-// Grip limiter and haptic style, per type from v30: JS p[214+et] and p[218+et], fields 120+et and 124+et. A blob too
-// short for them (an earlier v30 build) keeps the shared field 115 and the DualSense-only field 88.
+// Per-type haptic settings, a grid from v30: JS p[214 + 4 * setting + et] and field 120 + 4 * setting + et (setting
+// 0 limiter, 1 style). The release before it (v29) has one limiter, field 115, and the style on the DualSense only, field 88.
 {const fieldsOf=async fn=>{const n=writes.length;await fn();await settle();return writes.slice(n).filter(x=>x[0]===2).map(x=>x.slice(1));};
  const hidden=el=>el.closest('.row').parentElement.classList.contains('hide');
- p[207]=80;p[203]=2;await apply();
+ p[0]=29;p[207]=80;p[203]=2;await apply();
  assert.equal(typeEls[1].limiter.value,'80');assert.equal(typeEls[3].limiter.value,'80');assert(hidden(typeEls[1].hdStyle));assert.equal(typeEls[3].audioStyle.value,'2');
  assert.deepEqual(await fieldsOf(()=>change(typeEls[1].limiter,'90')),[[115,90]]);
  assert.deepEqual(await fieldsOf(()=>change(typeEls[3].audioStyle,'1')),[[88,1]]);
- p.length=222;p.fill(0,210);[60,70,80,90].forEach((v,i)=>p[214+i]=v);[0,1,2,3].forEach((v,i)=>p[218+i]=v);await apply();
+ p[0]=30;[60,70,80,90].forEach((v,i)=>p[214+i]=v);[0,1,2,3].forEach((v,i)=>p[218+i]=v);await apply();
  assert.equal(typeEls[1].limiter.value,'70');assert.equal(typeEls[3].limiter.value,'90');
  assert(!hidden(typeEls[1].hdStyle));assert.equal(typeEls[1].hdStyle.value,'1');assert.equal(typeEls[3].audioStyle.value,'3');
  assert.deepEqual(await fieldsOf(()=>change(typeEls[1].limiter,'50')),[[121,50]]);
@@ -389,6 +391,13 @@ assert.deepEqual(model[3].maps[2][0],4);assert.equal(model[3].active,2);assert.d
   assert.deepEqual([f.find(x=>x[0]===lim),f.find(x=>x[0]===sty),f.find(x=>x[0]===108+et)],[[lim,70],[sty,style],[108+et,scale]]);assert(!f.some(x=>x[0]===115||x[0]===88));}
  const dflt=sel=>[...sel.options].filter(o=>o.textContent.includes('(default)')).map(o=>o.value);
  assert.deepEqual(dflt(typeEls[1].hdStyle),['1']);assert.deepEqual(dflt(typeEls[1].rumbleScl),['100']);assert.deepEqual(dflt(typeEls[3].rumbleScl),['200']);
- p.length=210;await apply();}
+ // the backup carries the whole grid and replays it by field
+ [9,10,11,12].forEach((v,i)=>p[222+i]=v);[0,1,2,3].forEach((v,i)=>p[226+i]=v);await apply();
+ {const b=buildBackup(p,[1].concat(Array(97).fill(0)));
+  assert.deepEqual(b.config.types.map(t=>[t.limiter,t.hapticStyle,t.padClick,t.padTick]),[[60,0,9,0],[70,1,10,1],[80,2,11,2],[90,3,12,3]]);
+  const f=await fieldsOf(()=>importBackup({text:async()=>JSON.stringify(b)}));
+  for(const [field,v] of [[120,60],[121,70],[125,1],[127,3],[128,9],[131,12],[132,0],[135,3]])assert(f.some(x=>x[0]===field&&x[1]===v),'field '+field);
+  b.config.types[1].padClick=31;const n=writes.length;await importBackup({text:async()=>JSON.stringify(b)});assert.equal(writes.length,n);}
+ p.length=230;await apply();}
 console.log('Mapping profile panel: visibility, loading, labels, edits, copy/reset, trackpads, gesture, reset to defaults and backup tests passed');cleanup();
 })().catch(e=>{cleanup();console.error(e);process.exitCode=1;});

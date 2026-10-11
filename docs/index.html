@@ -2468,10 +2468,10 @@ function typeResetFields(et){
     [PAD_STICK_FIELD0+et*2,0,20],[PAD_STICK_FIELD0+et*2+1,0,20],[108+et,typeDefaults(TYPE_DEFS[et]).rumble/2,25]];
   // firmware before protocol 30 has one limiter for both types, and the style only on the DualSense
   const perType=S.lastP && S.lastP[0]>=30;
-  if(sw||ds5) f.push(perType ? [120+et,70,30] : [115,70,27]);
+  if(sw||ds5) f.push(perType ? [hapField(HAP.KNEE,et),70,30] : [115,70,27]);
   const style=typeDefaults(TYPE_DEFS[et]).style;
-  if(sw) f.push([124+et,style,30]);
-  if(ds5) f.push([31,1,0],perType ? [124+et,style,30] : [88,style,22],[30,0,0],[114,0,26],[116,0,29]);
+  if(sw) f.push([hapField(HAP.STYLE,et),style,30]);
+  if(ds5) f.push([31,1,0],perType ? [hapField(HAP.STYLE,et),style,30] : [88,style,22],[30,0,0],[114,0,26],[116,0,29]);
   if(sw){
     f.push([38,0,19]);
     // the 0xAE frame is absent on firmware that predates these controls
@@ -2504,9 +2504,15 @@ async function resetTypeDefaults(et){
   }finally{ mapResetBusy=false; $("#mapReset").disabled=false; }
 }
 // Strength is sent as percent/2 (field 22), so every value here must be even.
-// Protocol 30 keeps the grip limiter and haptic style per controller type (fields 120.. and 124..); older firmware
-// has one limiter (field 115) and the style on the DualSense only (field 88).
-const perTypeHaptics=()=>!!(S.lastP && S.lastP[0]>=30 && S.lastP.length>221);
+// Protocol 30 keeps four settings per controller type in one grid (firmware HAP_* in config.h): WebUSB field
+// 120 + 4 * setting + type, status blob byte 216 + 4 * setting + type (index 214 + ... here, the header being cut).
+// The release before it (29) has one limiter for all types (field 115) and the style on the DualSense only (field 88).
+const HAP={KNEE:0,STYLE:1,CLICK:2,TICK:3};
+// per setting, in HAP order: the backup key and its range
+const HAP_KEYS=[["limiter",50,100],["hapticStyle",0,3],["padClick",1,30],["padTick",0,4]];
+const hapField=(k,et)=>120+4*k+et;
+const hapValue=(p,k,et)=>p[214+4*k+et];
+const perTypeHaptics=()=>!!(S.lastP && S.lastP[0]>=30);
 const HAPTIC_STYLES=[[3,"Wave"],[1,"Tone"],[2,"Split"],[0,"Rumble"]];
 const RUMBLE_SCALES=Array.from({length:246},(_,i)=>10+i*2);
 const HD_PAD_SCALES=Array.from({length:251},(_,i)=>i*2);
@@ -2592,7 +2598,7 @@ function initTypes(){
       if(def.key==="SWITCH"){
         const sty=document.createElement("select");
         for(const [v,lbl] of HAPTIC_STYLES){ const o=document.createElement("option"); o.value=v; o.textContent=v===typeDefaults(def).style?lbl+" (default)":lbl; sty.appendChild(o); }
-        sty.addEventListener("change",()=>setField(124+et,+sty.value));
+        sty.addEventListener("change",()=>setField(hapField(HAP.STYLE,et),+sty.value));
         const note=document.createElement("p"); note.className="note";
         note.textContent="How the grips play HD rumble. Wave streams both bands as a waveform. Tone plays each side's stronger band as a smooth tone. Split plays the low band as rumble and the high band as a tone. Rumble plays the stronger band as plain motor rumble. The trackpads always play the high band as tones.";
         const wrap=document.createElement("div"); wrap.className="hide"; wrap.append(row(gRum,"Haptics style",sty),note); gRum.appendChild(wrap);
@@ -2602,7 +2608,7 @@ function initTypes(){
       if(def.key==="DS5"||def.key==="SWITCH"){
         const sel=document.createElement("select");
         for(const v of [50,60,70,80,90,100]){ const o=document.createElement("option"); o.value=v; o.textContent=v===100?"Off (hard clip)":v+"%"+(v===70?" (default)":""); sel.appendChild(o); }
-        sel.addEventListener("change",()=>setField(perTypeHaptics()?120+et:115,+sel.value));
+        sel.addEventListener("change",()=>setField(perTypeHaptics()?hapField(HAP.KNEE,et):115,+sel.value));
         const note=document.createElement("p"); note.className="note";
         note.textContent="Grip vibration above this level is rounded off toward full strength instead of clipping, which plays as a pop. Lower is smoother on the strongest hits, higher keeps more of their punch. It shapes the waveform streamed to the grips (the Wave style, and the DualSense speaker). Each controller type has its own.";
         const wrap=document.createElement("div"); wrap.className="hide"; wrap.append(row(gRum,"Grip limiter",sel),note); gRum.appendChild(wrap);
@@ -2627,7 +2633,7 @@ function initTypes(){
         const sty=document.createElement("select");
         for(const [v,lbl] of [[3,"Wave"],[1,"Tone"],[2,"Split"],[0,"Rumble"]]){ const o=document.createElement("option"); o.value=v; o.textContent=lbl; sty.appendChild(o); }
         row(gAud,"Haptics style",sty);
-        sty.addEventListener("change",()=>setField(perTypeHaptics()?124+et:88, +sty.value));
+        sty.addEventListener("change",()=>setField(perTypeHaptics()?hapField(HAP.STYLE,et):88, +sty.value));
         rec.audioStyle=sty;
         // Create button presses the touchpad click instead (protocol v29)
         const ct=toggle(gBtn,"","off");
@@ -4049,9 +4055,9 @@ function applyBlob(p){
         rec.createTouch.textContent=on?"on":"off";
         rec.createTouch.classList.toggle("active",on);
       }
-      const perType=p[0]>=30 && p.length>221;
+      const perType=p[0]>=30;
       if(rec.audioStyle){
-        const v = perType ? p[218+et] : (p.length>203 && p[203]<=3)?p[203]:1;
+        const v = perType ? hapValue(p,HAP.STYLE,et) : (p.length>203 && p[203]<=3)?p[203]:1;
         if(document.activeElement!==rec.audioStyle) rec.audioStyle.value=v;
       }
       if(rec.speaker){
@@ -4062,11 +4068,11 @@ function applyBlob(p){
       if(rec.limiter){
         const cap=p[0]>=27 && p.length>207;
         rec.limiterWrap.classList.toggle("hide",!cap);
-        if(cap && document.activeElement!==rec.limiter) rec.limiter.value=perType?p[214+et]:p[207];
+        if(cap && document.activeElement!==rec.limiter) rec.limiter.value=perType?hapValue(p,HAP.KNEE,et):p[207];
       }
       if(rec.hdStyle){
         rec.hdStyleWrap.classList.toggle("hide",!perType);
-        if(perType && document.activeElement!==rec.hdStyle) rec.hdStyle.value=p[218+et];
+        if(perType && document.activeElement!==rec.hdStyle) rec.hdStyle.value=hapValue(p,HAP.STYLE,et);
       }
       if(rec.audioGain && p.length>195){
         const gain = p[195]*2;
@@ -4453,6 +4459,7 @@ function buildBackup(p, bp){
     // pad->stick mapping only exists from protocol v20; omit on older pucks so a restore can't replay defaults
     if(p[0]>=21 && p.length>192) t.padStick=[p[185+et*2],p[186+et*2]];
     if(p[0]>=25 && p.length>213) t.rumbleScale=p[210+et]*2;
+    if(p[0]>=30) HAP_KEYS.forEach(([key],k)=>{ t[key]=hapValue(p,k,et); });
     types.push(t); }
   const cfg={ mode:p[1], mDiv:p[2], mFric:p[3], persistMode:p[22], chord:[p[23],p[24],p[25]], types };
   // D-pad chords only exist from protocol v18, the Switch gyro mapping from v19; omit the keys entirely on
@@ -4541,6 +4548,7 @@ async function importBackup(file){
   const isInt=(v,lo,hi)=>Number.isInteger(v) && v>=lo && v<=hi;
   if(hc.rumbleScale!==undefined && (!isInt(hc.rumbleScale,10,500) || !S.lastP || S.lastP[0]<21)){ log("import: invalid or unsupported rumble strength");return; }
   if(Array.isArray(hc.types) && hc.types.some(t=>t && t.rumbleScale!==undefined && (!isInt(t.rumbleScale,10,500) || t.rumbleScale%2))){ log("import: invalid per-type rumble strength");return; }
+  if(Array.isArray(hc.types) && hc.types.some(t=>t && HAP_KEYS.some(([key,lo,hi])=>t[key]!==undefined && !isInt(t[key],lo,hi)))){ log("import: invalid per-type haptic setting");return; }
   if((hc.swDpadHaptics!==undefined && !isInt(hc.swDpadHaptics,0,1)) ||
      (hc.hdPadScale!==undefined && (!isInt(hc.hdPadScale,0,500) || hc.hdPadScale%2)) ||
      (hc.swQamSelect!==undefined && !isInt(hc.swQamSelect,0,20)) ||
@@ -4579,7 +4587,8 @@ async function importBackup(file){
   // mapping profiles go through their own ops when both the backup and this puck have them; the per-type
   // mapping fields would only reach the active profile, so they are skipped then
   const profN=(Array.isArray(c.profiles) && profilesCapable())?c.profiles.length:0;
-  const total=baseN + typeN*9 + padStickN + profN*4 + (profN && c.profileGesture?1:0) + lizardN + 4 + 1 + (c.swDpadHaptics!==undefined?1:0) + (c.rumbleScale!==undefined?1:0) + (c.hdPadScale!==undefined?1:0) + (c.swQamSelect!==undefined?1:0) + (c.shortcutFlags!==undefined?1:0);
+  const hapN=(S.lastP && S.lastP[0]>=30 && Array.isArray(c.types))?c.types.slice(0,typeN).reduce((n,t)=>n+HAP_KEYS.filter(([key])=>t && t[key]!==undefined).length,0):0;
+  const total=baseN + typeN*9 + padStickN + hapN + profN*4 + (profN && c.profileGesture?1:0) + lizardN + 4 + 1 + (c.swDpadHaptics!==undefined?1:0) + (c.rumbleScale!==undefined?1:0) + (c.hdPadScale!==undefined?1:0) + (c.swQamSelect!==undefined?1:0) + (c.shortcutFlags!==undefined?1:0);
   let step=0, stage="";
   const tick=()=>modalStage(stage, Math.min(99,Math.floor(step*100/total)));
   try{
@@ -4629,7 +4638,8 @@ async function importBackup(file){
         await sf(40+et*9+6, t.pad===2?2:(t.pad?1:0)); await sf(40+et*9+7, t.led);
         await sf(40+et*9+8, t.rumble!==undefined?t.rumble:1);
         if(!mapped && Array.isArray(t.padStick)){ await sf(PAD_STICK_FIELD0+et*2, t.padStick[0]); await sf(PAD_STICK_FIELD0+et*2+1, t.padStick[1]); }
-        if(typeRumble && t.rumbleScale!==undefined) await sf(108+et, t.rumbleScale/2); }
+        if(typeRumble && t.rumbleScale!==undefined) await sf(108+et, t.rumbleScale/2);
+        if(S.lastP && S.lastP[0]>=30) for(let k=0; k<HAP_KEYS.length; k++){ const v=t[HAP_KEYS[k][0]]; if(v!==undefined) await sf(hapField(k,et), v); } }
       log("settings replayed ("+(baseN+typeN*9)+" fields)");
     } else { log("settings replayed ("+baseN+" fields — no per-type config in this backup)"); }
     if(c.swDpadHaptics!==undefined) await sf(230,c.swDpadHaptics);

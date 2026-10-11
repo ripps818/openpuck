@@ -104,10 +104,10 @@ function typeResetFields(et){
     [PAD_STICK_FIELD0+et*2,0,20],[PAD_STICK_FIELD0+et*2+1,0,20],[108+et,typeDefaults(TYPE_DEFS[et]).rumble/2,25]];
   // firmware before protocol 30 has one limiter for both types, and the style only on the DualSense
   const perType=S.lastP && S.lastP[0]>=30;
-  if(sw||ds5) f.push(perType ? [120+et,70,30] : [115,70,27]);
+  if(sw||ds5) f.push(perType ? [hapField(HAP.KNEE,et),70,30] : [115,70,27]);
   const style=typeDefaults(TYPE_DEFS[et]).style;
-  if(sw) f.push([124+et,style,30]);
-  if(ds5) f.push([31,1,0],perType ? [124+et,style,30] : [88,style,22],[30,0,0],[114,0,26],[116,0,29]);
+  if(sw) f.push([hapField(HAP.STYLE,et),style,30]);
+  if(ds5) f.push([31,1,0],perType ? [hapField(HAP.STYLE,et),style,30] : [88,style,22],[30,0,0],[114,0,26],[116,0,29]);
   if(sw){
     f.push([38,0,19]);
     // the 0xAE frame is absent on firmware that predates these controls
@@ -140,9 +140,15 @@ export async function resetTypeDefaults(et){
   }finally{ mapResetBusy=false; $("#mapReset").disabled=false; }
 }
 // Strength is sent as percent/2 (field 22), so every value here must be even.
-// Protocol 30 keeps the grip limiter and haptic style per controller type (fields 120.. and 124..); older firmware
-// has one limiter (field 115) and the style on the DualSense only (field 88).
-const perTypeHaptics=()=>!!(S.lastP && S.lastP[0]>=30 && S.lastP.length>221);
+// Protocol 30 keeps four settings per controller type in one grid (firmware HAP_* in config.h): WebUSB field
+// 120 + 4 * setting + type, status blob byte 216 + 4 * setting + type (index 214 + ... here, the header being cut).
+// The release before it (29) has one limiter for all types (field 115) and the style on the DualSense only (field 88).
+export const HAP={KNEE:0,STYLE:1,CLICK:2,TICK:3};
+// per setting, in HAP order: the backup key and its range
+export const HAP_KEYS=[["limiter",50,100],["hapticStyle",0,3],["padClick",1,30],["padTick",0,4]];
+export const hapField=(k,et)=>120+4*k+et;
+export const hapValue=(p,k,et)=>p[214+4*k+et];
+export const perTypeHaptics=()=>!!(S.lastP && S.lastP[0]>=30);
 const HAPTIC_STYLES=[[3,"Wave"],[1,"Tone"],[2,"Split"],[0,"Rumble"]];
 export const RUMBLE_SCALES=Array.from({length:246},(_,i)=>10+i*2);
 const HD_PAD_SCALES=Array.from({length:251},(_,i)=>i*2);
@@ -228,7 +234,7 @@ export function initTypes(){
       if(def.key==="SWITCH"){
         const sty=document.createElement("select");
         for(const [v,lbl] of HAPTIC_STYLES){ const o=document.createElement("option"); o.value=v; o.textContent=v===typeDefaults(def).style?lbl+" (default)":lbl; sty.appendChild(o); }
-        sty.addEventListener("change",()=>setField(124+et,+sty.value));
+        sty.addEventListener("change",()=>setField(hapField(HAP.STYLE,et),+sty.value));
         const note=document.createElement("p"); note.className="note";
         note.textContent="How the grips play HD rumble. Wave streams both bands as a waveform. Tone plays each side's stronger band as a smooth tone. Split plays the low band as rumble and the high band as a tone. Rumble plays the stronger band as plain motor rumble. The trackpads always play the high band as tones.";
         const wrap=document.createElement("div"); wrap.className="hide"; wrap.append(row(gRum,"Haptics style",sty),note); gRum.appendChild(wrap);
@@ -238,7 +244,7 @@ export function initTypes(){
       if(def.key==="DS5"||def.key==="SWITCH"){
         const sel=document.createElement("select");
         for(const v of [50,60,70,80,90,100]){ const o=document.createElement("option"); o.value=v; o.textContent=v===100?"Off (hard clip)":v+"%"+(v===70?" (default)":""); sel.appendChild(o); }
-        sel.addEventListener("change",()=>setField(perTypeHaptics()?120+et:115,+sel.value));
+        sel.addEventListener("change",()=>setField(perTypeHaptics()?hapField(HAP.KNEE,et):115,+sel.value));
         const note=document.createElement("p"); note.className="note";
         note.textContent="Grip vibration above this level is rounded off toward full strength instead of clipping, which plays as a pop. Lower is smoother on the strongest hits, higher keeps more of their punch. It shapes the waveform streamed to the grips (the Wave style, and the DualSense speaker). Each controller type has its own.";
         const wrap=document.createElement("div"); wrap.className="hide"; wrap.append(row(gRum,"Grip limiter",sel),note); gRum.appendChild(wrap);
@@ -263,7 +269,7 @@ export function initTypes(){
         const sty=document.createElement("select");
         for(const [v,lbl] of [[3,"Wave"],[1,"Tone"],[2,"Split"],[0,"Rumble"]]){ const o=document.createElement("option"); o.value=v; o.textContent=lbl; sty.appendChild(o); }
         row(gAud,"Haptics style",sty);
-        sty.addEventListener("change",()=>setField(perTypeHaptics()?124+et:88, +sty.value));
+        sty.addEventListener("change",()=>setField(perTypeHaptics()?hapField(HAP.STYLE,et):88, +sty.value));
         rec.audioStyle=sty;
         // Create button presses the touchpad click instead (protocol v29)
         const ct=toggle(gBtn,"","off");

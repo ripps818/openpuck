@@ -41,7 +41,8 @@ uint8_t g_hapticLimitKnee=100; // 100 = limiter off: these checks are about the 
 #define AUDIO_STYLE_TONE 1
 #define AUDIO_STYLE_SPLIT 2
 #define AUDIO_STYLE_WAVE 3
-uint8_t g_typeHapticStyle[4]={3,3,3,3};
+enum{HAP_KNEE,HAP_STYLE,HAP_CLICK,HAP_TICK,HAP_COUNT};
+uint8_t g_typeHaptic[HAP_COUNT][4]={{70,70,70,70},{3,1,3,3},{9,9,9,9},{0,0,0,0}};
 uint16_t g_legacyLow[4]={},g_legacyHigh[4]={},g_audioLow[4]={},g_audioHigh[4]={},g_lastSentLow[4]={},g_lastSentHigh[4]={};
 unsigned long g_legacyMs[4]={};
 struct Msg{uint8_t rid,slot;std::vector<uint8_t> p;};
@@ -62,7 +63,7 @@ uint8_t hapticUlaw(float x){return x>0.001f?1:(x<-0.001f?2:0);}
 }
 uint8_t jcBondOf(uint8_t slot){return (slot+3)%4;}
 uint16_t word(const Msg&m,int off){assert(off+1<int(m.p.size()));return m.p[off]|(m.p[off+1]<<8);}
-void reset(){messages.clear();keepPcm=false;for(int i=0;i<4;i++){g_hdPcmState[i]={};g_hdRumble[i]={};g_shortcutFeedback[i]={};g_rumble80On[i]=false;g_rumble80Ms[i]=0;g_legacyLow[i]=g_legacyHigh[i]=g_audioLow[i]=g_audioHigh[i]=g_lastSentLow[i]=g_lastSentHigh[i]=0;blocked[i]=false;}now=100;g_rumbleStyle=8;g_usbMode=4;g_rumble=1;g_rumbleScale=100;g_hdPadScale=100;g_typeHapticStyle[ET_SWITCH]=AUDIO_STYLE_WAVE;USBDevice.sleep=false;}
+void reset(){messages.clear();keepPcm=false;for(int i=0;i<4;i++){g_hdPcmState[i]={};g_hdRumble[i]={};g_shortcutFeedback[i]={};g_rumble80On[i]=false;g_rumble80Ms[i]=0;g_legacyLow[i]=g_legacyHigh[i]=g_audioLow[i]=g_audioHigh[i]=g_lastSentLow[i]=g_lastSentHigh[i]=0;blocked[i]=false;}now=100;g_rumbleStyle=8;g_usbMode=4;g_rumble=1;g_rumbleScale=100;g_hdPadScale=100;g_typeHaptic[HAP_STYLE][ET_SWITCH]=AUDIO_STYLE_WAVE;USBDevice.sleep=false;}
 '''
 # reset needs the production type first.
 reset = head[head.index('void reset()'):]
@@ -202,27 +203,27 @@ test = '''int main(){
  // Switch haptic styles: how the grips play the bands (the pads always play the high band as tones).
  auto count=[&](uint8_t rid,int side=-1,int g=1000){int n=0;for(auto &m:messages)if(m.rid==rid && (side<0 || m.p[0]==side) && (g==1000 || int8_t(m.p[1])==g))n++;return n;};
  // tone: each side's stronger band is a grip tone at its level in dB (full scale = 0 dB), no PCM and no 0x80
- reset();keepPcm=true;g_typeHapticStyle[ET_SWITCH]=AUDIO_STYLE_TONE;hapticSwitchPitch(0,65535,0,0,32768,160,320,160,320);hapticHdTask();
+ reset();keepPcm=true;g_typeHaptic[HAP_STYLE][ET_SWITCH]=AUDIO_STYLE_TONE;hapticSwitchPitch(0,65535,0,0,32768,160,320,160,320);hapticHdTask();
  assert(count(0x83,HSIDE_LGRIP,0)==1 && count(0x83,HSIDE_RGRIP,-6)==1 && count(0x80)==0 && count(0x86)==0 && count(0x88)==0);
  for(auto &m:messages)if(m.rid==0x83 && m.p[0]==HSIDE_LGRIP){assert(word(m,2)==160 && word(m,4)==120);}
  for(auto &m:messages)if(m.rid==0x83 && m.p[0]==HSIDE_RGRIP){assert(word(m,2)==320);}
  // grip strength scales the tone level: 50% is -6 dB
- reset();g_typeHapticStyle[ET_SWITCH]=AUDIO_STYLE_TONE;g_rumbleScale=50;hapticSwitchPitch(0,65535,0,0,0,160,320,160,320);hapticHdTask();assert(count(0x83,HSIDE_LGRIP,-6)==1);
+ reset();g_typeHaptic[HAP_STYLE][ET_SWITCH]=AUDIO_STYLE_TONE;g_rumbleScale=50;hapticSwitchPitch(0,65535,0,0,0,160,320,160,320);hapticHdTask();assert(count(0x83,HSIDE_LGRIP,-6)==1);
  // silence cuts the grips once as the band goes quiet and stops with both-grip cuts, not pad cuts
- reset();g_typeHapticStyle[ET_SWITCH]=AUDIO_STYLE_TONE;hapticSwitchPitch(0,65535,0,0,0,160,320,160,320);hapticHdTask();
+ reset();g_typeHaptic[HAP_STYLE][ET_SWITCH]=AUDIO_STYLE_TONE;hapticSwitchPitch(0,65535,0,0,0,160,320,160,320);hapticHdTask();
  hapticSwitchHd(0,0,0,0,0);now+=1;hapticHdTask();assert(!g_hdRumble[0].active && count(0x83,HSIDE_GRIPS,-128)==2 && count(0x83,HSIDE_PADS,-128)==0);
  // split: the low band is 0x80 rumble, the high band a grip tone
- reset();g_typeHapticStyle[ET_SWITCH]=AUDIO_STYLE_SPLIT;hapticSwitchPitch(0,40000,20000,0,0,160,320,160,320);hapticHdTask();
+ reset();g_typeHaptic[HAP_STYLE][ET_SWITCH]=AUDIO_STYLE_SPLIT;hapticSwitchPitch(0,40000,20000,0,0,160,320,160,320);hapticHdTask();
  assert(count(0x83,HSIDE_LGRIP,-10)==1 && count(0x80)==1 && messages.back().rid==0x80 && word(messages.back(),3)==40000u*40000u/65535u && word(messages.back(),6)==0);
  hapticSwitchHd(0,0,0,0,0);now+=1;hapticHdTask();{int stops=0;for(auto &m:messages)if(m.rid==0x80 && m.p[0]==0)stops++;assert(stops==RUMBLE_STOP_REPS && !g_hdRumble[0].active);}
  // rumble: the stronger band of each side as 0x80, no grip tones
- reset();g_typeHapticStyle[ET_SWITCH]=AUDIO_STYLE_RUMBLE;hapticSwitchPitch(0,10000,50000,0,0,160,320,160,320);hapticHdTask();
+ reset();g_typeHaptic[HAP_STYLE][ET_SWITCH]=AUDIO_STYLE_RUMBLE;hapticSwitchPitch(0,10000,50000,0,0,160,320,160,320);hapticHdTask();
  assert(count(0x80)==1 && word(messages.back(),3)==50000u*50000u/65535u && count(0x83,HSIDE_LGRIP)==0 && count(0x83,HSIDE_RGRIP)==0);
  // leaving rumble for wave while it sounds stops the 0x80
- g_typeHapticStyle[ET_SWITCH]=AUDIO_STYLE_WAVE;now+=20;hapticHdTask();{int stops=0;for(auto &m:messages)if(m.rid==0x80 && m.p[0]==0)stops++;assert(stops==RUMBLE_STOP_REPS);}
+ g_typeHaptic[HAP_STYLE][ET_SWITCH]=AUDIO_STYLE_WAVE;now+=20;hapticHdTask();{int stops=0;for(auto &m:messages)if(m.rid==0x80 && m.p[0]==0)stops++;assert(stops==RUMBLE_STOP_REPS);}
  // leaving wave for tone while the stream plays trims it with 0x86 op 1
  reset();keepPcm=true;hapticSwitchPitch(0,30000,0,0,0,160,320,160,320);hapticHdTask();now+=8;hapticHdTask();assert(g_hdPcmState[0].on);
- g_typeHapticStyle[ET_SWITCH]=AUDIO_STYLE_TONE;hapticHdTask();assert(!g_hdPcmState[0].on);{bool off=false;for(auto &m:messages)off|=m.rid==0x86 && m.p[0]==1;assert(off);}
+ g_typeHaptic[HAP_STYLE][ET_SWITCH]=AUDIO_STYLE_TONE;hapticHdTask();assert(!g_hdPcmState[0].on);{bool off=false;for(auto &m:messages)off|=m.rid==0x86 && m.p[0]==1;assert(off);}
 
  uint32_t rng=7;hdrReset(0);
  for(int n=0;n<10000;n++){rng=rng*1664525u+1013904223u;for(int i=0;i<4;i++)b[i]=(rng>>(8*i))&255;hdrDecode(0,0,b,&lo,&hi);}

@@ -949,7 +949,7 @@ static void hapticHdTask()
 		__disable_irq();
 		HdRumbleState snapshot = g_hdRumble[slot];
 		__set_PRIMASK(pm);
-		uint8_t style = g_typeHapticStyle[ET_SWITCH];
+		uint8_t style = g_typeHaptic[HAP_STYLE][ET_SWITCH];
 		bool wave = style == AUDIO_STYLE_WAVE;
 		bool enabled = (g_rumbleStyle == RUMBLE_STYLE_HD) &&
 			       g_usbMode == MODE_SW_PRO && g_rumble &&
