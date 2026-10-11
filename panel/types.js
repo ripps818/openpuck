@@ -99,8 +99,12 @@ function typeResetFields(et){
   const key=TYPE_DEFS[et].key, sw=key==="SWITCH", ds5=key==="DS5", b=40+et*9;
   const f=[[b,5,0],[b+1,6,0],[b+2,7,0],[b+3,8,0],[b+4,sw?18:0,0],[b+5,sw?1:0,0],[b+6,sw?0:1,0],[b+7,0,0],[b+8,1,0],
     [PAD_STICK_FIELD0+et*2,0,20],[PAD_STICK_FIELD0+et*2+1,0,20],[108+et,100,25]];
-  if(sw||ds5) f.push([115,70,27]);
-  if(ds5) f.push([31,1,0],[88,3,22],[30,0,0],[114,0,26],[116,0,29]);
+  // firmware before protocol 30 has one limiter for both types, and the style only on the DualSense
+  const perType=S.lastP && S.lastP[0]>=30;
+  if(sw||ds5) f.push(perType ? [120+et,70,30] : [115,70,27]);
+  if(sw||ds5) f.push([124+et,3,30]);
+  if(ds5) f.push([31,1,0],[30,0,0],[114,0,26],[116,0,29]);
+  if(ds5 && !perType) f.push([88,3,22]);
   if(sw){
     f.push([38,0,19]);
     // the 0xAE frame is absent on firmware that predates these controls
@@ -114,7 +118,7 @@ export async function resetTypeDefaults(et){
   const name=TYPE_DEFS[et].name, key=TYPE_DEFS[et].key;
   const prof=profilesCapable();
   const shared=key==="XBOX" ? "\n\nThe Trackpad mouse settings are shared with Lizard mode and stay as they are."
-    : (key==="SWITCH"||key==="DS5") ? "\n\nThe grip limiter is one setting shared by the Switch and DS5 controller types, so it resets for both." : "";
+    : ((key==="SWITCH"||key==="DS5") && !(S.lastP && S.lastP[0]>=30)) ? "\n\nThe grip limiter is one setting shared by the Switch and DS5 controller types on this firmware, so it resets for both." : "";
   const what=prof ? "All three mapping profiles, and the trackpad, rumble and light settings" : "The button mapping, trackpad, rumble and light settings";
   if(!confirm("Reset the "+name+" controller type to its defaults?\n\n"+what+" go back to their factory values, and profile 1 is put in use. This saves to the puck immediately; your current choices for this controller type are lost."+shared)) return;
   mapResetBusy=true; $("#mapReset").disabled=true;
@@ -133,6 +137,10 @@ export async function resetTypeDefaults(et){
   }finally{ mapResetBusy=false; $("#mapReset").disabled=false; }
 }
 // Strength is sent as percent/2 (field 22), so every value here must be even.
+// Protocol 30 keeps the grip limiter and haptic style per controller type (fields 120.. and 124..); older firmware
+// has one limiter (field 115) and the style on the DualSense only (field 88).
+const perTypeHaptics=()=>!!(S.lastP && S.lastP[0]>=30 && S.lastP.length>221);
+const HAPTIC_STYLES=[[3,"Wave"],[1,"Tone"],[2,"Split"],[0,"Rumble"]];
 export const RUMBLE_SCALES=Array.from({length:246},(_,i)=>10+i*2);
 const HD_PAD_SCALES=Array.from({length:251},(_,i)=>i*2);
 
@@ -213,13 +221,23 @@ export function initTypes(){
         row(gRum,"Grip rumble strength",sel).classList.add("hide");
         sel.addEventListener("change",()=>setField(108+et, (+sel.value)/2));
         rec.rumbleScl=sel; }
-      // Grip limiter (protocol v27): one setting, shared by DualSense wave haptics/speaker and Switch HD rumble grips
+      // Haptics style of the Switch's HD rumble on the grips (protocol v30); the DualSense's is in its Audio haptics card
+      if(def.key==="SWITCH"){
+        const sty=document.createElement("select");
+        for(const [v,lbl] of HAPTIC_STYLES){ const o=document.createElement("option"); o.value=v; o.textContent=v===3?lbl+" (default)":lbl; sty.appendChild(o); }
+        sty.addEventListener("change",()=>setField(124+et,+sty.value));
+        const note=document.createElement("p"); note.className="note";
+        note.textContent="How the grips play HD rumble. Wave streams both bands as a waveform. Tone plays each side's stronger band as a smooth tone. Split plays the low band as rumble and the high band as a tone. Rumble plays the stronger band as plain motor rumble. The trackpads always play the high band as tones.";
+        const wrap=document.createElement("div"); wrap.className="hide"; wrap.append(row(gRum,"Haptics style",sty),note); gRum.appendChild(wrap);
+        rec.hdStyle=sty; rec.hdStyleWrap=wrap;
+      }
+      // Grip limiter (protocol v27, per controller type from v30): the Switch's HD rumble grips and the DualSense's wave haptics/speaker
       if(def.key==="DS5"||def.key==="SWITCH"){
         const sel=document.createElement("select");
         for(const v of [50,60,70,80,90,100]){ const o=document.createElement("option"); o.value=v; o.textContent=v===100?"Off (hard clip)":v+"%"+(v===70?" (default)":""); sel.appendChild(o); }
-        sel.addEventListener("change",()=>setField(115,+sel.value));
+        sel.addEventListener("change",()=>setField(perTypeHaptics()?120+et:115,+sel.value));
         const note=document.createElement("p"); note.className="note";
-        note.textContent="Grip vibration above this level is rounded off toward full strength instead of clipping, which plays as a pop. Lower is smoother on the strongest hits, higher keeps more of their punch. One setting for DualSense audio haptics and Switch HD rumble.";
+        note.textContent="Grip vibration above this level is rounded off toward full strength instead of clipping, which plays as a pop. Lower is smoother on the strongest hits, higher keeps more of their punch. It shapes the waveform streamed to the grips (the Wave style, and the DualSense speaker). Each controller type has its own.";
         const wrap=document.createElement("div"); wrap.className="hide"; wrap.append(row(gRum,"Grip limiter",sel),note); gRum.appendChild(wrap);
         rec.limiter=sel; rec.limiterWrap=wrap;
       }
@@ -242,7 +260,7 @@ export function initTypes(){
         const sty=document.createElement("select");
         for(const [v,lbl] of [[3,"Wave"],[1,"Tone"],[2,"Split"],[0,"Rumble"]]){ const o=document.createElement("option"); o.value=v; o.textContent=lbl; sty.appendChild(o); }
         row(gAud,"Haptics style",sty);
-        sty.addEventListener("change",()=>setField(88, +sty.value));
+        sty.addEventListener("change",()=>setField(perTypeHaptics()?124+et:88, +sty.value));
         rec.audioStyle=sty;
         // Create button presses the touchpad click instead (protocol v29)
         const ct=toggle(gBtn,"","off");

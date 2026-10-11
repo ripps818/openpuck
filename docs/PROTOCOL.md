@@ -500,9 +500,17 @@ Messages:
     Controller speaker (blob version >= 26): `114` DualSense speaker volume as percent/2, 0 = off (default),
     up to 200%. Status blob `p[208]` (payload byte 206). See DUALSENSE_HAPTICS.md §7.
     Grip limiter (blob version >= 27): `115` soft-limit knee of the grip PCM stream, percent of full scale,
-    50..100 (70 default, 100 = off: hard clip only); other values are ignored. One setting for DualSense audio
-    haptics and speaker and Switch HD rumble grips. Status blob `p[209]` (payload byte 207); saved in config
-    extension byte 14.
+    50..100 (70 default, 100 = off: hard clip only); other values are ignored. It started as one setting for
+    DualSense audio haptics and speaker and Switch HD rumble grips; field 115 still sets both types, and status blob
+    `p[209]` (payload byte 207) reports the active type's. From version 30 each type has its own: `120`-`123`
+    (120 + type; only Switch and DS5 take them) with the values of `115`, status blob `p[216..219]` (payload bytes
+    214..217).
+    Haptic style per type (blob version >= 30): `124`-`127` (124 + type; only Switch and DS5), `0` rumble, `1`
+    tone, `2` split, `3` wave (default), status blob `p[220..223]` (payload bytes 218..221). On the DualSense it is
+    the audio haptics style that `88` set (`88` still sets it; `p[205]` reports it). On the Switch it sets how the
+    grips play HD rumble: wave streams both bands as PCM, tone plays each side's stronger band as a `0x83` grip tone,
+    split plays the low band as `0x80` rumble and the high band as a grip tone, rumble plays each side's stronger band
+    as `0x80` rumble; the pads always play the high band as tones. Saved in the config tail with the limiter.
     Triggers (blob version >= 24): `102` deadzone % and `103` full-press % for the emulated modes. Travel at or
     below the deadzone reads 0, travel at or past the full-press point reads 255, linear between; 0/100 is
     raw. An edit that would put the deadzone at or above the full-press point is refused. Status blob

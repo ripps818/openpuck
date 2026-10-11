@@ -67,6 +67,12 @@ uint16_t g_audioHapticGain = 0;
 uint8_t g_audioHapticStyle = AUDIO_STYLE_WAVE;
 uint16_t g_audioSpeaker = 0;
 uint8_t g_hapticLimitKnee = HAPTIC_LIMIT_KNEE_DEFAULT;
+uint8_t g_typeLimitKnee[ET_COUNT] = { HAPTIC_LIMIT_KNEE_DEFAULT,
+				      HAPTIC_LIMIT_KNEE_DEFAULT,
+				      HAPTIC_LIMIT_KNEE_DEFAULT,
+				      HAPTIC_LIMIT_KNEE_DEFAULT };
+uint8_t g_typeHapticStyle[ET_COUNT] = { AUDIO_STYLE_WAVE, AUDIO_STYLE_WAVE,
+					AUDIO_STYLE_WAVE, AUDIO_STYLE_WAVE };
 uint8_t g_createAsTouch = 0;
 uint8_t g_trigInner = 0, g_trigOuter = 100;
 uint8_t g_ledBright = 0;
@@ -112,6 +118,8 @@ void applyActiveType()
 		g_padHaptics = 1;
 		g_rumble = 1;
 		g_rumbleStyle = RUMBLE_STYLE_NORMAL;
+		g_hapticLimitKnee = HAPTIC_LIMIT_KNEE_DEFAULT;
+		g_audioHapticStyle = g_typeHapticStyle[ET_DS5];
 		g_ledBright = 0;
 		g_padStick[0] = g_padStick[1] = PS_OFF;
 		remapDefaultMap(&g_btnMap);
@@ -129,6 +137,8 @@ void applyActiveType()
 	g_rumbleStyle = g_usbMode == MODE_SW_PRO ? RUMBLE_STYLE_HD :
 						   RUMBLE_STYLE_NORMAL;
 	g_rumbleScale = g_typeRumbleScale[g_etype];
+	g_hapticLimitKnee = g_typeLimitKnee[g_etype];
+	g_audioHapticStyle = g_typeHapticStyle[ET_DS5];
 	g_ledBright = t.ledBright;
 	g_padStick[0] = g_padStickCfg[g_etype][0];
 	g_padStick[1] = g_padStickCfg[g_etype][1];
@@ -190,6 +200,9 @@ struct Cfg {
 	// fill of an older file sets bit 39, past the last candidate, so it loads
 	// as the default set.
 	uint8_t rfChannelMask[5];
+	// per-type grip limiter knee (50..100) and haptic style (AUDIO_STYLE_*). 0xFF (an older file) -> the legacy
+	// shared value in ext bytes 14 and 11
+	uint8_t typeLimitKnee[ET_COUNT], typeHapticStyle[ET_COUNT];
 }; // rsvd0 = ex-padSmooth, now the one-shot debug-CDC arm
 
 // Shortest cfg.bin we still accept: the layout as of CFG_MAGIC 0xCF, i.e. everything before the appended tail.
@@ -217,11 +230,11 @@ void saveCfg()
 {
 	cfgExtWrite(3u, (uint8_t)(g_audioHapticGain / 2));
 	cfgExtWrite(4u, g_audioHaptics);
-	cfgExtWrite(11u, g_audioHapticStyle);
+	cfgExtWrite(11u, g_typeHapticStyle[ET_DS5]);
 	cfgExtWrite(12u, g_trigInner);
 	cfgExtWrite(13u, g_trigOuter);
 	// 14 was the HD grip renderer A/B switch (0/1); its old values fall outside the knee range and load as default
-	cfgExtWrite(14u, g_hapticLimitKnee);
+	cfgExtWrite(14u, g_typeLimitKnee[ET_DS5]);
 	cfgExtWrite(15u, (uint8_t)(g_audioSpeaker / 2));
 	cfgExtWrite(5u, g_ledMode);
 	cfgExtWrite(6u, g_ledPinA);
@@ -266,6 +279,8 @@ void saveCfg()
 	for (int i = 0; i < ET_COUNT; i++) {
 		c.type[i] = g_type[i];
 		c.typeRumbleScale2[i] = (uint8_t)(g_typeRumbleScale[i] / 2);
+		c.typeLimitKnee[i] = g_typeLimitKnee[i];
+		c.typeHapticStyle[i] = g_typeHapticStyle[i];
 		c.padStick[i][0] = g_padStickCfg[i][0];
 		c.padStick[i][1] = g_padStickCfg[i][1];
 	}
@@ -435,6 +450,17 @@ void loadCfg()
 		rfMask |= (uint64_t)c.rfChannelMask[i] << (8 * i);
 	g_rfChannelMask = rfChannelMaskValid(rfMask) ? rfMask :
 						       RF_CHANNEL_MASK_DEFAULT;
+	// per-type limiter and haptic style; a file from before them seeds every type with the legacy shared value
+	// (g_hapticLimitKnee, g_audioHapticStyle), and the Switch with the wave style it always played
+	for (uint8_t et = 0; et < ET_COUNT; et++) {
+		uint8_t knee = c.typeLimitKnee[et],
+			style = c.typeHapticStyle[et];
+		g_typeLimitKnee[et] =
+			(knee >= 50 && knee <= 100) ? knee : g_hapticLimitKnee;
+		g_typeHapticStyle[et] = style <= AUDIO_STYLE_WAVE ? style :
+					et == ET_DS5 ? g_audioHapticStyle :
+						       AUDIO_STYLE_WAVE;
+	}
 	if (c.swDpadHaptics <= 1)
 		g_swDpadHaptics = c.swDpadHaptics;
 	if (c.hdPadScale2 <= 250)
