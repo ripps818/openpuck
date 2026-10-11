@@ -7,6 +7,10 @@ r = Path(__file__).resolve().parents[2]
 storage = (r / 'OpenPuck/storage.cpp').read_text().replace('0xED000', '(uintptr_t)testFlash')
 remap = (r / 'OpenPuck/remap.cpp').read_text()
 btnmap = (r / 'OpenPuck/btnmap.cpp').read_text()
+lizard = (r / 'OpenPuck/lizard_map.cpp').read_text()
+# the default Lizard map uses a handful of TinyUSB keycodes; the values only need to be distinct here
+hid = '#pragma once\n' + ''.join(f'#define HID_KEY_{k} {0x40 + i}\n' for i, k in enumerate(
+    'ARROW_DOWN ARROW_LEFT ARROW_RIGHT ARROW_UP DELETE ENTER ESCAPE O PAGE_DOWN PAGE_UP TAB'.split()))
 test = r'''
 #include <cassert>
 #include <algorithm>
@@ -24,7 +28,7 @@ const TypeCfg g_typeDefault[ET_COUNT] = {
 	{ { 5, 6, 7, 8 }, 0, 0, 1, 0, 1 },
 };
 uint8_t g_padStickCfg[ET_COUNT][2];
-uint8_t g_etype = ET_NONE, g_shortcutFlags = SHORTCUT_ENABLED;
+uint8_t g_etype = ET_NONE, g_shortcutFlags = SHORTCUT_ENABLED, g_usbMode = MODE_STEAM;
 int applied = 0;
 void applyActiveType() { ++applied; btnmapUpdateGestureMask(); }
 
@@ -144,7 +148,7 @@ int main()
 	for (int bad = 0; bad < 6; bad++) {
 		std::vector<uint8_t> d = good;
 		if (bad == 0) d[0] ^= 1; // magic
-		if (bad == 1) d[1] = 3; // version
+		if (bad == 1) d[1] = 4; // version
 		if (bad == 2) d[4] = RS_COUNT + 1; // source count
 		if (bad == 3) d.pop_back();
 		if (bad == 4) d[BM_HDR_FOR_TEST] = BM_PROFILES; // active profile out of range
@@ -197,7 +201,7 @@ int main()
 	assert(btnmapDump(ET_DS4, frame) == BM_DUMP_LEN && frame[0] == 1 && frame[1] == ET_DS4 && frame[2] == 1);
 	assert(frame[3] == BM_PROFILES && frame[4] == RS_COUNT);
 	assert(!memcmp(frame + 5 + (RS_COUNT + 2), g_profile[ET_DS4][1].map.target, RS_COUNT) && frame[5 + 2 * (RS_COUNT + 2) - 2 + 0] == 0);
-	assert(btnmapDump(ET_COUNT, frame) == 0);
+	assert(btnmapDump(BM_LIZARD + 1, frame) == 0); // ET_COUNT is the Lizard profiles
 	// all of it survives a reboot
 	btnmapFlush();
 	static MapProfile snapshot[ET_COUNT][BM_PROFILES];
@@ -289,20 +293,20 @@ int main()
 	assert(g_gesture.enabled == 1 && g_gesture.prev == RS_L3 && g_gesture.next == RS_R3 && g_profileActive[ET_DS5] == activeNow);
 	{
 		std::vector<uint8_t> v1 = file();
-		v1.resize(v1.size() - 3);
+		v1.resize(v1.size() - 4);
 		v1[1] = 1;
 		files["/btnmap.bin"] = v1;
 		forget();
 		g_gesture = { 0, RS_START, RS_SELECT };
 		btnmapLoad();
 		assert(g_gesture.enabled == 1 && g_gesture.prev == RS_LB && g_gesture.next == RS_RB && g_profileActive[ET_DS5] == activeNow);
-		assert(file() == v1); // read as it is; the next change writes version 2
+		assert(file() == v1); // read as it is; the next change writes version 3
 		assert(btnmapSetGesture(1, RS_LB, RS_RB));
 		btnmapFlush();
-		std::vector<uint8_t> v2 = file();
-		assert(v2.size() == v1.size() + 3 && v2[1] == 2);
-		v2[v2.size() - 2] = RS_A; // a gesture button no shortcut may lose
-		files["/btnmap.bin"] = v2;
+		std::vector<uint8_t> v3 = file();
+		assert(v3.size() == v1.size() + 4 && v3[1] == 3);
+		v3[v3.size() - 3] = RS_A; // a gesture button no shortcut may lose
+		files["/btnmap.bin"] = v3;
 		forget();
 		btnmapLoad();
 		assert(g_gesture.prev == RS_LB && g_gesture.next == RS_RB && g_profileActive[ET_DS5] == activeNow);
@@ -316,6 +320,108 @@ int main()
 	g_etype = ET_NONE;
 	g_shortcutFlags = SHORTCUT_ENABLED;
 
+	// Lizard profiles: one binding file each, the active one in btnmap.bin
+	{
+		defaults();
+		forget();
+		files.clear();
+		btnmapLoad();
+		assert(g_lizardActive == 0);
+		// first boot: profiles 2 and 3 are written as copies of profile 1, and are never overwritten after
+		LizardMap scratch, a, b;
+		LizardBinding one = { LZ_OUT_KBD_CHORD, { 0, 0x28, 0, 0, 0, 0, 0 }, TB_A, 0 };
+		loadLizardMap(a);
+		a.count = 1;
+		a.bindings[0] = one;
+		saveLizardMap(a);
+		seedLizardProfiles(scratch);
+		assert(files.count("/lizard_map2.bin") && files["/lizard_map2.bin"] == files["/lizard_map.bin"]);
+		assert(files["/lizard_map3.bin"] == files["/lizard_map.bin"]);
+		a.bindings[0].outData[1] = 0x29;
+		saveLizardProfile(1, a);
+		seedLizardProfiles(scratch);
+		assert(files["/lizard_map2.bin"] != files["/lizard_map.bin"]);
+		loadLizardProfile(1, b);
+		assert(b.count == 1 && b.bindings[0].outData[1] == 0x29);
+		loadLizardProfile(0, b);
+		assert(b.count == 1 && b.bindings[0].outData[1] == 0x28);
+		// a profile file that went missing comes back as a copy of profile 1
+		files.erase("/lizard_map3.bin");
+		loadLizardProfile(2, b);
+		assert(b.bindings[0].outData[1] == 0x28 && files.count("/lizard_map3.bin"));
+
+		// outside Lizard mode, selecting stores the choice and leaves the live (default) map alone
+		defaultLizardMap();
+		const LizardMap live = g_lizardMap;
+		assert(btnmapLizardSelect(1) && g_lizardActive == 1 && !btnmapLizardSelect(BM_PROFILES));
+		assert(!memcmp(&live, &g_lizardMap, sizeof live));
+		btnmapFlush();
+		assert(file().size() == BM_LEN_FOR_TEST && file().back() == 1);
+		forget();
+		g_lizardActive = 0;
+		btnmapLoad();
+		assert(g_lizardActive == 1);
+		// the 0xB0 frame for Lizard is the header and the gesture
+		uint8_t lf[BM_DUMP_LEN];
+		assert(btnmapDump(BM_LIZARD, lf) == 8 && lf[1] == BM_LIZARD && lf[2] == 1 && lf[3] == BM_PROFILES && lf[4] == 0);
+		assert(lf[5] == g_gesture.enabled && lf[6] == g_gesture.prev && lf[7] == g_gesture.next);
+		assert(btnmapDump(BM_LIZARD + 1, lf) == 0);
+		// in Lizard mode the live map is the active profile, and selecting loads the new one
+		g_usbMode = MODE_LIZARD;
+		assert(btnmapLizardSelect(0) && g_lizardMap.count == 1 && g_lizardMap.bindings[0].outData[1] == 0x28);
+		// copy and reset write the profile's file, through the live map only when it is the running profile
+		assert(btnmapLizardCopy(1, 2, scratch) && files["/lizard_map3.bin"] == files["/lizard_map2.bin"]);
+		assert(g_lizardMap.bindings[0].outData[1] == 0x28);
+		assert(btnmapLizardCopy(2, 0, scratch) && g_lizardMap.bindings[0].outData[1] == 0x29);
+		assert(btnmapLizardReset(0, scratch) && g_lizardMap.count == live.count);
+		loadLizardProfile(0, b);
+		assert(b.count == live.count && !memcmp(b.bindings, live.bindings, b.count * sizeof(LizardBinding)));
+		assert(btnmapLizardReset(2, scratch) && g_lizardMap.count == live.count);
+		loadLizardProfile(1, b);
+		assert(b.count == 1); // untouched
+		assert(!btnmapLizardCopy(0, BM_PROFILES, scratch) && !btnmapLizardReset(BM_PROFILES, scratch));
+
+		// the gesture steps the Lizard profile in Lizard mode, and only there
+		g_etype = ET_NONE;
+		g_shortcutFlags = 0;
+		assert(btnmapSetGesture(1, RS_LB, RS_RB) && g_gestureMask == (TB_LB | TB_RB));
+		const uint32_t MOD4 = CHORD_BACK4;
+		assert(btnmapGesture(0, MOD4 | TB_RB, 20000, false) == 0 && btnmapGesture(0, MOD4 | TB_RB, 20040, false) == 2);
+		assert(g_lizardActive == 1 && g_lizardMap.count == 1 && g_lizardMap.bindings[0].outData[1] == 0x29);
+		btnmapFlush();
+		assert(file().back() == 1);
+		assert(btnmapGesture(0, MOD4, 20050, false) == 0);
+		assert(btnmapGesture(0, MOD4 | TB_LB, 20060, false) == 0 && btnmapGesture(0, MOD4 | TB_LB, 20100, false) == 1);
+		assert(g_lizardActive == 0 && g_lizardMap.count == live.count);
+		assert(btnmapGesture(0, MOD4, 20110, false) == 0);
+		// Steam mode (seamless lizard) has no profiles: no gesture, and the buttons stay the game's
+		g_usbMode = MODE_STEAM;
+		btnmapUpdateGestureMask();
+		assert(g_gestureMask == 0);
+		assert(btnmapGesture(0, MOD4 | TB_RB, 21000, false) == 0 && btnmapGesture(0, MOD4 | TB_RB, 21100, false) == 0);
+		assert(g_lizardActive == 0);
+		g_shortcutFlags = SHORTCUT_ENABLED;
+		// a version 2 file reads with Lizard profile 1
+		std::vector<uint8_t> v2 = file();
+		g_lizardActive = 2;
+		btnmapFlush();
+		v2.pop_back();
+		v2[1] = 2;
+		files["/btnmap.bin"] = v2;
+		forget();
+		btnmapLoad();
+		assert(g_lizardActive == 0 && file() == v2);
+		// an out-of-range Lizard profile is not worth the rest
+		std::vector<uint8_t> v3 = v2;
+		v3[1] = 3;
+		v3.push_back(BM_PROFILES);
+		files["/btnmap.bin"] = v3;
+		g_lizardActive = 2;
+		forget();
+		btnmapLoad();
+		assert(g_lizardActive == 0 && file() == v3);
+	}
+
 	// without a mounted filesystem the profiles still come up, and nothing is written
 	g_storageState = 0;
 	files.clear();
@@ -326,16 +432,18 @@ int main()
 	btnmapLegacySet(ET_DS4, 0, 1);
 	assert(g_profile[ET_DS4][0].map.target[RS_L4] == 1);
 }
-'''.replace('BM_LEN_FOR_TEST', '(5 + ET_COUNT * (1 + BM_PROFILES * (RS_COUNT + 2)) + 3)').replace('BM_HDR_FOR_TEST', '5')
+'''.replace('BM_LEN_FOR_TEST', '(5 + ET_COUNT * (1 + BM_PROFILES * (RS_COUNT + 2)) + 4)').replace('BM_HDR_FOR_TEST', '5')
 head = '''#include <stdint.h>
 #include <stddef.h>
 #include <string.h>
 '''
 with tempfile.TemporaryDirectory() as td:
     p = Path(td) / 'test.cpp'
-    p.write_text(head + storage + remap + btnmap + test)
+    (Path(td) / 'class/hid').mkdir(parents=True)
+    (Path(td) / 'class/hid/hid.h').write_text(hid)
+    p.write_text(head + storage + remap + lizard + btnmap + test)
     subprocess.run(['g++', '-std=c++11', '-Wall', '-Wextra', '-Werror', '-Wno-unused', '-fsanitize=address,undefined',
-                    '-I' + str(r / 'tests/storage/stubs'), '-I' + str(r / 'OpenPuck'), str(p), '-o', td + '/test'],
+                    '-I' + td, '-I' + str(r / 'tests/storage/stubs'), '-I' + str(r / 'OpenPuck'), str(p), '-o', td + '/test'],
                    check=True)
     subprocess.run([td + '/test'], check=True, env={'ASAN_OPTIONS': 'detect_leaks=0'})
 print('Button profiles: migration, storage, validation and edits through the older settings')

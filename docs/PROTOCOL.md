@@ -531,7 +531,9 @@ Messages:
     mode that is the live map. Every other mode runs the built-in defaults (Steam-mode seamless lizard), so
     the ops work on a separate copy loaded from flash, and committing it leaves the running defaults alone.
     Before version 28 the ops edited the running map in every mode, so outside Lizard mode a dump returned
-    the defaults and a commit saved them over the user's map.
+    the defaults and a commit saved them over the user's map. From version 30 there are three Lizard profiles
+    (type `4` below): the ops edit the one chosen with `0x34`, and until then (and on a host that never sends
+    it) the active one. The puck keeps the choice until it reboots.
   - `0x29` (status-blob version ≥ 28): turn on IMU streaming (`SETTING_IMU_MODE` = `0x07`) on every linked
     controller, sent three times because the RF relay is no-ack. The emulated modes do this at connect; Steam
     and Lizard modes never do, so there the panel's raw motion readout stays zero until this is sent. No reply.
@@ -546,9 +548,9 @@ Messages:
     (default: the original 14-channel pool 18, 20, 22, 34, 42, 46, 52, 56, 68, 70, 72, 74, 76, 80). Replies
     with an `0xAD` frame, which carries the mask in force. Firmware that predates it answers `0xAD` version 1;
     send it only once an `0xAD` version 2 frame has been seen.
-  - `0x2C`–`0x33` (status-blob version ≥ 30): button-mapping profiles. Each emulated type (`0` Xbox, `1`
+  - `0x2C`–`0x34` (status-blob version ≥ 30): button-mapping profiles. Each emulated type (`0` Xbox, `1`
     Switch, `2` DS4, `3` DS5, the same order as the per-type block of the status blob) keeps three profiles,
-    numbered `0`-`2`, and one of them is active. A profile is a map of one **target code** per **source** plus
+    numbered `0`-`2`, and one of them is active. Type `4` is Lizard mode's three binding maps (below). A profile is a map of one **target code** per **source** plus
     the two trackpad -> stick settings. Every op below is answered with that type's `0xB0` frame, so an
     argument out of range changes nothing and shows as unchanged.
     - `0x2C <type>`: send the type's profiles.
@@ -566,7 +568,8 @@ Messages:
       the running type's active profile, wrapping, and the controller buzzes the new profile's number (1-3)
       even when shortcut feedback is off. The two buttons are hidden from the host while the modifier is held.
       It is a puck-wide setting (`type` only addresses the reply), works whether or not the Mode shortcuts are
-      on, and does nothing in Steam, Lizard, DirectInput or SInput mode. `enabled` is 0 or 1 (default 1);
+      on. In Lizard mode it steps the Lizard profile; in Steam, DirectInput and SInput mode it does nothing.
+      `enabled` is 0 or 1 (default 1);
       `prev` / `next` must differ and be LB (`4`), RB (`5`), L3 (`6`), R3 (`7`), Select-side (`8`) or Start-side
       (`9`), which no shortcut uses (default LB / RB). A refused value changes nothing.
 
@@ -590,6 +593,14 @@ Messages:
     of each type, two bits each with the Xbox type in the lowest, so a profile switched on the controller
     shows without asking. A profile edited another way (a face button or paddle with a target the older fields cannot
     express) keeps that entry when an older field changes a different one.
+
+    Lizard profiles (type `4`): each is a whole lizard binding map, edited through the lizard ops above, so
+    of the ops here only `0x2C` (dump), `0x2F` (reset to the built-in default map), `0x30` (select) and `0x32`
+    (copy) apply; the others are refused. `0x34 <profile>` chooses the profile the lizard ops edit and is
+    answered with the type-4 `0xB0` frame. Profile `0` is stored in `/lizard_map.bin`, the file older firmware
+    reads, and profiles `1` and `2` in files of their own, first written as copies of profile `0`. In Lizard
+    mode the active one is the live map; selecting another loads it at once. The active Lizard profile is byte
+    47 of the `0xAE` payload, so a switch made on the controller shows on the next poll.
   - `0x20`–`0x24`: staged firmware update (begin/data/end/reboot/abort), acked with `0xAB` frames
   - `0x25 0x57 0x49 0x50 0x45`: **full board wipe** (`"WIPE"` magic, debug panel only). Erases the app
     region + LittleFS (settings + bonds) + bootloader-settings page and reboots app-less, so the board mounts
@@ -611,13 +622,14 @@ Messages:
     `[default mask: 5 B LE]`. In v2 the journal-builder index is a candidate index (channel `4 + 2i`), and
     the startup channel is the one the next boot uses (a saved channel that is no longer enabled is skipped).
   - `0xB0 <len> <payload>` (status-blob version ≥ 30): one type's mapping profiles, answering ops
-    `0x2C`-`0x32`: `[1][type][active][profiles][sources]`, then for each profile its `sources` target codes
+    `0x2C`-`0x34`: `[1][type][active][profiles][sources]`, then for each profile its `sources` target codes
     and the two trackpad -> stick bytes (`profiles × (sources + 2)` bytes), then the gesture
-    `[enabled][prev][next]`. Read the counts from the frame rather than assuming three profiles and 24
+    `[enabled][prev][next]`. Type `4` (Lizard) has no sources, so it is the header and the gesture. Read the counts from the frame rather than assuming three profiles and 24
     sources. A later version may append further sections after
     those bytes (button combinations, macros); skip what the length covers beyond what you know.
   - `0xAE 55 <payload>`: Switch Pro / HD rumble / shortcut settings: `[ver=1][37 zero bytes]`
-    `[swDpadHaptics][storageState][hdPadScale/2][4 zero bytes][swQamSelect][shortcutFlags][8 zero bytes]`.
+    `[swDpadHaptics][storageState][hdPadScale/2][4 zero bytes][swQamSelect][shortcutFlags][lizardProfile]`
+    `[7 zero bytes]`, where `lizardProfile` (version ≥ 30, zero before) is the active Lizard profile.
     The zero bytes held removed settings (Switch Pro profiles, rumble presets and slot, strength steps and
     slots) and keep the layout stable; storageState 0 unavailable, 1 mounted, 2 initialized blank flash, 3 save failed.
 

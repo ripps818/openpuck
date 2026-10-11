@@ -154,8 +154,8 @@ static void webusbSendBlob()
 
 	// clang-format off
 	// protocol version
-	// (30 = +mapping profiles: ops 0x2C..0x33 and the 0xB0 frame (see docs/PROTOCOL.md); the older paddle / QAM /
-	// swap fields keep working and now edit the active profile;
+	// (30 = +mapping profiles: ops 0x2C..0x34 and the 0xB0 frame (see docs/PROTOCOL.md), Lizard profiles included;
+	// the older paddle / QAM / swap fields and lizard ops keep working and now edit the active profile;
 	// 29 = +Create-as-touchpad-click toggle (field 116, blob p[210]); +selectable RF channel set: op 0x2B
 	// [mask: 5 bytes LE], 0xAD frame v2 (every even channel 4..80, rows paged by field 97's value, enabled +
 	// default masks appended; the panel keys off the 0xAD version, not this one);
@@ -408,8 +408,8 @@ static void webusbSendBlob()
 
 // Switch Pro / HD rumble / shortcut settings frame (protocol v23, op 0x27):
 //   [0xAE][len][ver=1][37 zero bytes, ex Switch Pro profiles][swDpadHaptics][storageState][hdPadScale/2]
-//   [4 zero bytes, ex rumble presets + slot][swQamSelect][shortcutFlags][8 zero bytes, ex strength steps + slots]
-//   (len = 55)
+//   [4 zero bytes, ex rumble presets + slot][swQamSelect][shortcutFlags][active Lizard profile (v30)]
+//   [7 zero bytes, ex strength steps + slots]   (len = 55)
 #define WB_SW_PAYLEN 55
 static void webusbSendSwitchFrame()
 {
@@ -424,7 +424,10 @@ static void webusbSendSwitchFrame()
 	memset(p + 43, 0, 4); // ex rumble presets + slot
 	p[47] = g_swQamSelect;
 	p[48] = g_shortcutFlags;
-	memset(p + 49, 0, 8); // ex strength steps + slots
+	// the status blob has no room left: this frame is read on every poll too, so a profile switched on the
+	// controller in Lizard mode shows without asking
+	p[49] = g_lizardActive;
+	memset(p + 50, 0, 7); // ex strength steps + slots
 	// drop-on-full, same anti-hang rule as the status blob
 	if (tud_vendor_write_available() >= sizeof p) {
 		usb_web.write(p, sizeof p);
@@ -708,8 +711,8 @@ static void webusbSendMapDump(uint8_t et)
 	static uint8_t f[2 + BM_DUMP_LEN];
 	f[0] = 0xB0;
 	f[1] = (uint8_t)btnmapDump(et, f + 2);
-	if (f[1] && tud_vendor_write_available() >= sizeof f) {
-		usb_web.write(f, sizeof f);
+	if (f[1] && tud_vendor_write_available() >= 2u + f[1]) {
+		usb_web.write(f, (uint16_t)(2 + f[1]));
 		usb_web.flush();
 	}
 }
@@ -836,19 +839,27 @@ static uint32_t webusbLizardMaskToLegacy(uint64_t m)
 	return out;
 }
 
-// The lizard map the panel edits (status v28). In MODE_LIZARD that is the live g_lizardMap. Every other mode
-// keeps the built-in defaults in g_lizardMap for Steam-mode seamless lizard, so the editor works on a separate
-// copy of the SAVED map instead, loaded from flash on first use; saving it never touches the live defaults.
-// Modes only change across a reboot, so the copy can't go stale.
+// The lizard map the panel edits (status v28): the Lizard profile chosen with op 0x34 (v30), else the active
+// one, which is what a panel without profiles edits. When that is the profile Lizard mode is running, it is the
+// live g_lizardMap. Otherwise (another profile, or another mode, where g_lizardMap keeps the built-in defaults
+// for Steam-mode seamless lizard) the editor works on a copy of the SAVED map, read from flash when the profile
+// it holds changes; saving it never touches the live map. The profile ops use the copy as scratch and drop it.
 static LizardMap s_lizardEdit;
-static bool s_lizardEditLoaded = false;
+static uint8_t s_lizardEditFor = 0xFF;
+static uint8_t s_lizardEditProfile = 0xFF;
+static uint8_t webusbLizardProfile()
+{
+	return s_lizardEditProfile < LZ_PROFILES ? s_lizardEditProfile :
+						   g_lizardActive;
+}
 static LizardMap &webusbLizardMap()
 {
-	if (g_usbMode == MODE_LIZARD)
+	const uint8_t p = webusbLizardProfile();
+	if (g_usbMode == MODE_LIZARD && p == g_lizardActive)
 		return g_lizardMap;
-	if (!s_lizardEditLoaded) {
-		loadLizardMap(s_lizardEdit);
-		s_lizardEditLoaded = true;
+	if (s_lizardEditFor != p) {
+		loadLizardProfile(p, s_lizardEdit);
+		s_lizardEditFor = p;
 	}
 	return s_lizardEdit;
 }
@@ -986,10 +997,10 @@ void webusbPoll()
 			uint8_t op = buf[0];
 			// 0x16 = test rumble (v21), 0x17..0x1A = lizard v2 (v21), 0x27 = Switch Pro/shortcut frame
 			// request (v23), 0x28 = save shortcut settings (v23), 0x29 = IMU on (v28), 0x2A = motion sample
-			// (v28), 0x2B = RF channel set (v29), 0x2C..0x33 = mapping profiles (v30); extend this range
+			// (v28), 0x2B = RF channel set (v29), 0x2C..0x34 = mapping profiles (v30); extend this range
 			// whenever a new opcode is added, or the parser drops it as garbage.
 			if ((op < 0x01 || op > 0x1A) &&
-			    (op < 0x20 || op > 0x33)) { // resync: drop one byte
+			    (op < 0x20 || op > 0x34)) { // resync: drop one byte
 				memmove(buf, buf + 1, --n);
 				continue;
 			}
@@ -1020,7 +1031,7 @@ void webusbPoll()
 				(op == 0x25)				 ? 5 :
 				(op == 0x20)				 ? 9 :
 				(op == 0x2B)				 ? 6 :
-				(op == 0x2C)				 ? 2 :
+				(op == 0x2C || op == 0x34)		 ? 2 :
 				(op == 0x2D || op == 0x31 || op == 0x33) ? 5 :
 				(op == 0x2E || op == 0x2F || op == 0x30) ? 3 :
 				(op == 0x32)				 ? 4 :
@@ -1107,14 +1118,18 @@ void webusbPoll()
 			// 0x2D <type> <profile> <source> <target>: set one entry; 0x2E <type> <profile>: the Nintendo
 			// layout; 0x2F: reset to the type's defaults; 0x30: make it the active one; 0x31 <type> <profile>
 			// <pad> <value>: trackpad -> stick; 0x32 <type> <from> <to>: copy; 0x33 <type> <enabled> <prev>
-			// <next>: the profile-switch gesture, which is puck-wide (type only addresses the reply). Every
-			// op is answered with the type's 0xB0 frame, so a refused one reads as unchanged.
-			else if (op >= 0x2C && op <= 0x33) {
-				const uint8_t et = buf[1];
+			// <next>: the profile-switch gesture, which is puck-wide (type only addresses the reply). Type
+			// BM_LIZARD (4) is the Lizard profiles: dump, reset, select and copy only, their bindings go through
+			// the lizard ops, and 0x34 <profile> chooses the profile those edit. Every op is answered with the
+			// type's 0xB0 frame, so a refused one reads as unchanged.
+			else if (op >= 0x2C && op <= 0x34) {
+				const uint8_t et = op == 0x34 ? BM_LIZARD :
+								buf[1];
+				const bool lz = et == BM_LIZARD;
 				bool ok = false;
 				switch (op) {
 				case 0x2C:
-					ok = et < ET_COUNT;
+					ok = et <= BM_LIZARD;
 					break;
 				case 0x2D:
 					ok = btnmapSetEntry(et, buf[2], buf[3],
@@ -1124,27 +1139,43 @@ void webusbPoll()
 					ok = btnmapApplyNintendo(et, buf[2]);
 					break;
 				case 0x2F:
-					ok = btnmapResetProfile(et, buf[2]);
+					ok = lz ? btnmapLizardReset(
+							  buf[2],
+							  s_lizardEdit) :
+						  btnmapResetProfile(et,
+								     buf[2]);
 					break;
 				case 0x30:
-					ok = btnmapSelect(et, buf[2]);
+					ok = lz ? btnmapLizardSelect(buf[2]) :
+						  btnmapSelect(et, buf[2]);
 					break;
 				case 0x31:
 					ok = btnmapSetProfilePadStick(
 						et, buf[2], buf[3], buf[4]);
 					break;
 				case 0x32:
-					ok = btnmapCopyProfile(et, buf[2],
-							       buf[3]);
+					ok = lz ? btnmapLizardCopy(
+							  buf[2], buf[3],
+							  s_lizardEdit) :
+						  btnmapCopyProfile(et, buf[2],
+								    buf[3]);
 					break;
-				default:
+				case 0x33:
 					ok = btnmapSetGesture(buf[2], buf[3],
 							      buf[4]);
 					break;
+				default:
+					ok = buf[1] < LZ_PROFILES;
+					if (ok)
+						s_lizardEditProfile = buf[1];
+					break;
 				}
+				// a Lizard reset or copy may have used the editor's copy as scratch
+				if (ok && lz)
+					s_lizardEditFor = 0xFF;
 				if (ok && et == g_etype)
 					applyActiveType();
-				if (et < ET_COUNT)
+				if (et <= BM_LIZARD)
 					g_mapDumpType = et;
 			}
 
@@ -1272,12 +1303,14 @@ void webusbPoll()
 				}
 				// 0x14: COMMIT the edited map to flash and echo it back.
 			} else if (op == 0x14) {
-				saveLizardMap(webusbLizardMap());
+				saveLizardProfile(webusbLizardProfile(),
+						  webusbLizardMap());
 				webusbSendLizard();
 				// 0x15: reset the map to the built-in defaults, persist, echo back.
 			} else if (op == 0x15) {
 				defaultLizardMap(webusbLizardMap());
-				saveLizardMap(webusbLizardMap());
+				saveLizardProfile(webusbLizardProfile(),
+						  webusbLizardMap());
 				webusbSendLizard();
 			} else if (op == 0x17) {
 				// Native lizard-map dump: 24-byte records with uint64 masks.
@@ -1303,11 +1336,13 @@ void webusbPoll()
 					}
 				}
 			} else if (op == 0x19) {
-				saveLizardMap(webusbLizardMap());
+				saveLizardProfile(webusbLizardProfile(),
+						  webusbLizardMap());
 				webusbSendLizardV2();
 			} else if (op == 0x1A) {
 				defaultLizardMap(webusbLizardMap());
-				saveLizardMap(webusbLizardMap());
+				saveLizardProfile(webusbLizardProfile(),
+						  webusbLizardMap());
 				webusbSendLizardV2();
 
 				// 0x20..0x24: staged firmware update (see fw_update.h). Each op is acked with an 0xAB

@@ -80,6 +80,9 @@ static void lizardEvalSlot(uint64_t buttons, uint8_t &outMod,
 static uint64_t lizardButtons(const PuckInput &in)
 {
 	uint64_t buttons = (uint64_t)in.buttons;
+	// the profile-switch buttons (btnmap.h) are the gesture's while the modifier is held, not a binding's
+	if (shortcutModifierHeld(in.buttons))
+		buttons &= ~(uint64_t)g_gestureMask;
 	if (in.lx > 12000)
 		buttons |= LZ_BTN_LSTICK_RT;
 	if (in.lx < -12000)

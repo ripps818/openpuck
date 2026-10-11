@@ -12,6 +12,7 @@
 #include <stdint.h>
 #include "remap.h"
 #include "config.h"
+#include "lizard_map.h"
 
 #define BM_PROFILES 3
 
@@ -21,6 +22,16 @@ struct MapProfile {
 };
 extern MapProfile g_profile[ET_COUNT][BM_PROFILES];
 extern uint8_t g_profileActive[ET_COUNT];
+
+// Lizard mode has BM_PROFILES binding maps of its own (lizard_map.h keeps them, one file each); only which one
+// is active is stored here. In the WebUSB profile ops and the 0xB0 frame it is type BM_LIZARD.
+#define BM_LIZARD ET_COUNT
+extern uint8_t g_lizardActive;
+// In Lizard mode selecting also loads the profile into the live g_lizardMap. Reset and copy write the profile's
+// file, through the live map when the profile is the one Lizard mode is running, else through scratch.
+bool btnmapLizardSelect(uint8_t profile, uint32_t holdMs = 0);
+bool btnmapLizardReset(uint8_t profile, LizardMap &scratch);
+bool btnmapLizardCopy(uint8_t from, uint8_t to, LizardMap &scratch);
 
 // Read /btnmap.bin; when it is missing or not ours, build the profiles from the older settings (every profile
 // of a type starts as a copy of them) and write the file. Call after the settings are loaded.
@@ -50,8 +61,9 @@ bool btnmapSetProfilePadStick(uint8_t et, uint8_t profile, uint8_t pad,
 			      uint8_t v);
 
 // The profile switch: with the modifier held, the previous / next button steps the running type's active profile
-// and the gesture answers with the new profile number (1-3) for the caller to buzz. Puck-wide, not per profile,
-// and independent of the Mode shortcuts switch. prev / next are RemapSource values and must differ.
+// (in Lizard mode, the Lizard profile) and the gesture answers with the new profile number (1-3) for the caller
+// to buzz. Puck-wide, not per profile, and independent of the Mode shortcuts switch. prev / next are RemapSource
+// values and must differ.
 struct ProfileGesture {
 	uint8_t enabled, prev, next;
 };
@@ -65,7 +77,7 @@ void btnmapUpdateGestureMask();
 
 // A type's profiles as the payload of the 0xB0 frame: [1][type][active][profiles][sources], then per profile
 // the targets and the two pad settings, then the gesture [enabled][prev][next]. Returns its length
-// (BM_DUMP_LEN), 0 for a bad type.
+// (BM_DUMP_LEN), 0 for a bad type. BM_LIZARD reports 0 sources, so it is the header and the gesture only.
 #define BM_DUMP_LEN (5 + BM_PROFILES * (RS_COUNT + 2) + 3)
 size_t btnmapDump(uint8_t et, uint8_t *out);
 

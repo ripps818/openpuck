@@ -185,8 +185,10 @@ void setup()
 	// seamless lizard (Steam mode with Steam closed) uses the built-in DEFAULT map, so edits
 	// made for pure lizard never change Steam-mode desktop behavior. (Without either call
 	// g_lizardMap.count stays 0 and lizard produces no keyboard/mouse output at all.)
+	// Lizard profiles 2 and 3 start as copies of profile 1; g_lizardMap is only scratch until the line below.
+	seedLizardProfiles(g_lizardMap);
 	if (g_usbMode == MODE_LIZARD)
-		loadLizardMap();
+		loadLizardProfile(g_lizardActive, g_lizardMap);
 	else
 		defaultLizardMap();
 	// regenerate per-slot session addresses from each bond UUID (deterministic, stable across reboots)

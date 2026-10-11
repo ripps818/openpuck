@@ -75,3 +75,12 @@ extern LizardMap g_lizardMap;
 void defaultLizardMap(LizardMap &m = g_lizardMap);
 void loadLizardMap(LizardMap &m = g_lizardMap);
 void saveLizardMap(const LizardMap &m = g_lizardMap);
+
+// The three Lizard mapping profiles, one file each. Profile 0 is /lizard_map.bin, the file older firmware
+// reads, so a downgrade keeps the first profile. A profile with no file yet is written as a copy of profile 0
+// when it is first read; seedLizardProfiles() does that at boot, so it never happens on the RF path. m is the
+// map to fill (scratch for the seed).
+#define LZ_PROFILES 3
+void loadLizardProfile(uint8_t profile, LizardMap &m);
+void saveLizardProfile(uint8_t profile, const LizardMap &m);
+void seedLizardProfiles(LizardMap &m);

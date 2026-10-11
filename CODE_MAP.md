@@ -284,6 +284,11 @@ The 28DE:1304 puck identity with four HID slot interfaces (interface N = bond sl
   `rfLizard()` walks it every input frame. `loadLizardMap`/`saveLizardMap`
   (`lizard_map.bin` via `storageWriteFile`), `defaultLizardMap`. Edited over WebUSB ops
   `0x11`-`0x15` (16-byte legacy records) and `0x17`-`0x1A` (24-byte).
+- Three Lizard profiles, one file each: `loadLizardProfile`/`saveLizardProfile(profile, m)`; profile 0 is
+  `lizard_map.bin` (what older firmware reads), 1 and 2 are `lizard_map2.bin` / `lizard_map3.bin`.
+  `seedLizardProfiles()` (setup) writes a missing one as a copy of profile 0, so the RF path only reads.
+  Which one is active is `g_lizardActive` in btnmap; in MODE_LIZARD `g_lizardMap` is that profile, loaded at
+  boot and on every switch. WebUSB `0x34` picks the profile the lizard ops edit (`webusbLizardMap()`).
 
 ## 8. XInput personality — `mode_xinput.cpp` / `mode_xinput.h`  (`g_xboxCtl`)
 
@@ -471,7 +476,9 @@ passed, `saveCfg()` flushes at once. The profile switch lives here too: `btnmapG
 suspended)` (called from rf_link's per-report chord block) debounces modifier + the configured previous / next
 button (`g_gesture`, puck-wide, stored in the file's trailer), steps the running type's active profile, calls
 `applyActiveType()` and returns the number to buzz (`hapticShortcutFeedback(.., force=true)`). Its two buttons are
-`g_gestureMask`, which `shortcutHostButtons` hides from the host while the modifier is held.
+`g_gestureMask`, which `shortcutHostButtons` hides from the host while the modifier is held. In MODE_LIZARD the
+gesture steps `g_lizardActive` instead (stored in the file's last byte, version 3), `btnmapLizardSelect` loads
+that profile into `g_lizardMap`, and `lizardButtons()` (mode_lizard.cpp) hides the two buttons.
 
 ---
 
