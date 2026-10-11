@@ -10,7 +10,7 @@
 static void lizardEvalSlot(uint64_t buttons, uint8_t &outMod,
 			   uint8_t outKeys[6], uint8_t &nKeys, uint8_t &outMBtn,
 			   uint8_t &consumerBits, bool &doRpadMouse,
-			   bool &doLpadScroll)
+			   bool &doLpadScroll, bool &doLstickMouse)
 {
 	if (g_touchpadDisabled)
 		buttons &= ~(TB_LPADT | TB_RPADT | TB_LPADC | TB_RPADC);
@@ -25,7 +25,9 @@ static void lizardEvalSlot(uint64_t buttons, uint8_t &outMod,
 		if (b.outType == LZ_OUT_MOUSE_AXIS) {
 			if (b.outData[0] == LZ_MSRC_RPAD && !g_touchpadDisabled)
 				doRpadMouse = true;
-			// LZ_MSRC_LSTICK and LZ_MSRC_GYRO could be added later
+			if (b.outData[0] == LZ_MSRC_LSTICK)
+				doLstickMouse = true;
+			// LZ_MSRC_GYRO is not driven yet
 			continue;
 		}
 		if (b.outType == LZ_OUT_SCROLL) {
@@ -102,6 +104,22 @@ static uint64_t lizardButtons(const PuckInput &in)
 	return buttons;
 }
 
+// Pixels per report for a stick held at full deflection, after a deadzone, and the curve between (squared, so
+// small deflections move the cursor slowly enough to aim). One report per RF poll, about 250 a second.
+#define LZ_STICK_DEAD 5000
+#define LZ_STICK_MAX_PX 5.0f
+static float lizardStickSpeed(int16_t v)
+{
+	const int a = v < 0 ? -(int)v : (int)v;
+	if (a <= LZ_STICK_DEAD)
+		return 0;
+	float n = (float)(a - LZ_STICK_DEAD) / (float)(32767 - LZ_STICK_DEAD);
+	if (n > 1.0f)
+		n = 1.0f;
+	const float px = LZ_STICK_MAX_PX * n * n;
+	return v < 0 ? -px : px;
+}
+
 // Per-slot glide/scroll integrators + last-sent report state for rfLizard. These are FILE-SCOPE (not
 // function-local statics) so rfLizardRelease() can reset them on a lizard->Steam handoff: without that reset
 // a key/mouse-button that was DOWN the instant Steam takes over is never released (the change-dedup below
@@ -114,6 +132,7 @@ static bool plt[NSLOT] = { false };
 static float sacc = 0;
 static uint8_t pmbtn = 0; // last-sent mouse buttons
 static uint8_t prevCC = 0; // last-sent consumer bits
+static float lsx = 0, lsy = 0; // left-stick pointer sub-pixel carry
 static uint8_t pmod = 0, pkc[6] = {
 	0, 0, 0, 0, 0, 0
 }; // last-sent kbd modifier + keycodes
@@ -126,15 +145,15 @@ void rfLizard(Adafruit_USBD_HID *mdev, Adafruit_USBD_HID *kdev, uint8_t mrid,
 	uint8_t outKeys[6] = { 0, 0, 0, 0, 0, 0 };
 	uint8_t nKeys = 0;
 	uint8_t outMBtn = 0;
-	bool doRpadMouse = false, doLpadScroll = false;
+	bool doRpadMouse = false, doLpadScroll = false, doLstickMouse = false;
 	uint8_t consumerBits = 0;
 
 	for (int s = 0; s < NSLOT; s++) {
 		if (!g_slot[s].used)
 			continue;
 		lizardEvalSlot(lizardButtons(g_in[s]), outMod, outKeys, nKeys,
-			       outMBtn, consumerBits, doRpadMouse,
-			       doLpadScroll);
+			       outMBtn, consumerBits, doRpadMouse, doLpadScroll,
+			       doLstickMouse);
 	}
 
 	// ---- right pad -> mouse motion with glide ----
@@ -189,6 +208,36 @@ void rfLizard(Adafruit_USBD_HID *mdev, Adafruit_USBD_HID *kdev, uint8_t mrid,
 			dy = 127;
 		if (dy < -127)
 			dy = -127;
+	}
+
+	// ---- left stick -> mouse motion ----
+	// Speed, not position: a held deflection keeps the cursor moving. The carry is shared like the pad's, and
+	// every controller's stick adds to the one cursor.
+	if (doLstickMouse) {
+		float sumx = 0, sumy = 0;
+		for (int s = 0; s < NSLOT; s++) {
+			if (!g_slot[s].used)
+				continue;
+			sumx += lizardStickSpeed(g_in[s].lx);
+			sumy += lizardStickSpeed(g_in[s].ly);
+		}
+		// stick up is positive, the cursor's y grows downward
+		float mxf = sumx + lsx, myf = -sumy + lsy;
+		int sx = (int)mxf, sy = (int)myf;
+		lsx = mxf - sx;
+		lsy = myf - sy;
+		dx += sx;
+		dy += sy;
+		if (dx > 127)
+			dx = 127;
+		if (dx < -127)
+			dx = -127;
+		if (dy > 127)
+			dy = 127;
+		if (dy < -127)
+			dy = -127;
+	} else {
+		lsx = lsy = 0;
 	}
 
 	// ---- left pad -> scroll wheel ----
@@ -293,7 +342,7 @@ void rfLizardRelease(Adafruit_USBD_HID *mdev, Adafruit_USBD_HID *kdev,
 		ply[s] = 0;
 		plt[s] = false;
 	}
-	rmx = rmy = sacc = 0;
+	rmx = rmy = sacc = lsx = lsy = 0;
 	pmbtn = 0;
 	prevCC = 0;
 	pmod = 0;
