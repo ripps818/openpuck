@@ -32,6 +32,8 @@ unsigned long g_connReplyMs[NSLOT];
 bool g_touchpadDisabled = false;
 int g_mDiv = 64, g_mFric = 50;
 uint8_t g_usbMode = MODE_LIZARD;
+uint8_t g_shortcutFlags = SHORTCUT_ENABLED;
+uint32_t g_gestureMask = 0;
 LizardMap g_lizardMap;
 
 static Adafruit_USBD_HID dev;
@@ -89,6 +91,21 @@ int main()
 	assert(both > 800);
 	g_in[1].lx = 0;
 	g_slot[1].used = false;
+	// the right stick is its own source, and both can be bound at once
+	bind(LZ_MSRC_RSTICK);
+	g_in[0].rx = 32767;
+	g_in[0].ry = -32767;
+	run(100, 0, 0, &x, &y);
+	assert(x > 400 && y > 400); // right and down
+	g_in[0].rx = g_in[0].ry = 0;
+	run(100, 32767, 32767, &x, &y);
+	assert(x == 0 && y == 0);
+	g_lizardMap.count = 2;
+	g_lizardMap.bindings[1] = LizardBinding{ LZ_OUT_MOUSE_AXIS, { LZ_MSRC_LSTICK, 0, 0, 0, 0, 0, 0 }, 0, 0 };
+	g_in[0].rx = 32767;
+	run(100, 32767, 0, &x, &y);
+	assert(x > 800); // both sticks add up
+	g_in[0].rx = 0;
 	// without a stick binding the stick does not move the cursor, and a right-pad binding is not the stick
 	bind(LZ_MSRC_RPAD);
 	run(100, 32767, 32767, &x, &y);

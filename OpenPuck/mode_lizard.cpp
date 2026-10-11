@@ -10,7 +10,8 @@
 static void lizardEvalSlot(uint64_t buttons, uint8_t &outMod,
 			   uint8_t outKeys[6], uint8_t &nKeys, uint8_t &outMBtn,
 			   uint8_t &consumerBits, bool &doRpadMouse,
-			   bool &doLpadScroll, bool &doLstickMouse)
+			   bool &doLpadScroll, bool &doLstickMouse,
+			   bool &doRstickMouse)
 {
 	if (g_touchpadDisabled)
 		buttons &= ~(TB_LPADT | TB_RPADT | TB_LPADC | TB_RPADC);
@@ -27,6 +28,8 @@ static void lizardEvalSlot(uint64_t buttons, uint8_t &outMod,
 				doRpadMouse = true;
 			if (b.outData[0] == LZ_MSRC_LSTICK)
 				doLstickMouse = true;
+			if (b.outData[0] == LZ_MSRC_RSTICK)
+				doRstickMouse = true;
 			// LZ_MSRC_GYRO is not driven yet
 			continue;
 		}
@@ -145,7 +148,8 @@ void rfLizard(Adafruit_USBD_HID *mdev, Adafruit_USBD_HID *kdev, uint8_t mrid,
 	uint8_t outKeys[6] = { 0, 0, 0, 0, 0, 0 };
 	uint8_t nKeys = 0;
 	uint8_t outMBtn = 0;
-	bool doRpadMouse = false, doLpadScroll = false, doLstickMouse = false;
+	bool doRpadMouse = false, doLpadScroll = false, doLstickMouse = false,
+	     doRstickMouse = false;
 	uint8_t consumerBits = 0;
 
 	for (int s = 0; s < NSLOT; s++) {
@@ -153,7 +157,7 @@ void rfLizard(Adafruit_USBD_HID *mdev, Adafruit_USBD_HID *kdev, uint8_t mrid,
 			continue;
 		lizardEvalSlot(lizardButtons(g_in[s]), outMod, outKeys, nKeys,
 			       outMBtn, consumerBits, doRpadMouse, doLpadScroll,
-			       doLstickMouse);
+			       doLstickMouse, doRstickMouse);
 	}
 
 	// ---- right pad -> mouse motion with glide ----
@@ -210,16 +214,22 @@ void rfLizard(Adafruit_USBD_HID *mdev, Adafruit_USBD_HID *kdev, uint8_t mrid,
 			dy = -127;
 	}
 
-	// ---- left stick -> mouse motion ----
+	// ---- stick -> mouse motion ----
 	// Speed, not position: a held deflection keeps the cursor moving. The carry is shared like the pad's, and
-	// every controller's stick adds to the one cursor.
-	if (doLstickMouse) {
+	// every controller's sticks add to the one cursor (both, when both are bound).
+	if (doLstickMouse || doRstickMouse) {
 		float sumx = 0, sumy = 0;
 		for (int s = 0; s < NSLOT; s++) {
 			if (!g_slot[s].used)
 				continue;
-			sumx += lizardStickSpeed(g_in[s].lx);
-			sumy += lizardStickSpeed(g_in[s].ly);
+			if (doLstickMouse) {
+				sumx += lizardStickSpeed(g_in[s].lx);
+				sumy += lizardStickSpeed(g_in[s].ly);
+			}
+			if (doRstickMouse) {
+				sumx += lizardStickSpeed(g_in[s].rx);
+				sumy += lizardStickSpeed(g_in[s].ry);
+			}
 		}
 		// stick up is positive, the cursor's y grows downward
 		float mxf = sumx + lsx, myf = -sumy + lsy;

@@ -638,7 +638,8 @@ Lizard binding wire format (16 bytes), matching `LizardBinding` in `lizard_map.h
 
 ```text
 [0]     outType   (0 none, 1 keyboard chord, 2 mouse btn, 3 mouse axis, 4 scroll, 5 consumer)
-[1..7]  outData[0..6]  (type-specific payload)
+[1..7]  outData[0..6]  (type-specific payload; mouse axis: [0] source, 0 right trackpad, 1 left stick,
+                        2 gyro (not driven yet), 3 right stick)
 [8..11] trigMask  u32 LE  (button bits: any-of)
 [12..15] holdMask u32 LE  (button bits: all-of guard)
 ```

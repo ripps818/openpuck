@@ -41,7 +41,7 @@ for(let i=0;i<12;i++) LZ_KEYS.push([0x3a+i,"F"+(i+1)]);
 // every key is drawn as a keycap bearing its name (panel/icons.js)
 for(const k of LZ_KEYS) if(k[0]) k.push("key:"+k[1]);
 const LZ_MBTNS = [[1,"Left click","mouseL"],[2,"Right click","mouseR"],[4,"Middle click","mouseM"]];
-const LZ_AXIS_SRC = [[0,"Right trackpad","padR"],[1,"Left stick","stickL"],[2,"Gyro","gyro"]];
+const LZ_AXIS_SRC = [[0,"Right trackpad","padR"],[1,"Left stick","stickL"],[3,"Right stick","stickR"],[2,"Gyro","gyro"]];
 const LZ_GYRO_ACT = [[0,"Always"],[1,"While right pad touched","padR"],[2,"While left stick deflected","stickL"],[3,"While hold-button held"]];
 const LZ_CONSUMER = [[1,"Volume +","volUp"],[2,"Volume −","volDown"]];
 
