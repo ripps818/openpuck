@@ -58,11 +58,18 @@ extern ButtonMap g_btnMap;
 
 // Every source acts as itself, except the paddles (LB, RB, L3, R3) and QAM (nothing).
 void remapDefaultMap(ButtonMap *m);
+// A and B trade places, and X and Y: the Nintendo layout.
+uint8_t remapSwapCode(uint8_t code);
 // The map the separate paddle / QAM / swap settings describe. The swap exchanges A with B and X with Y, and also
 // the paddle / QAM targets that name one of them; the Xbox types keep their paddle targets as absolute buttons
-// (paddlesFollowSwap false).
+// (paddlesFollowSwap false). Apply sets only the face, paddle and QAM entries; View is the reverse, giving the
+// paddle / QAM codes as the user chose them.
+void remapApplyLegacy(ButtonMap *m, const uint8_t back[4], uint8_t qam,
+		      bool swap, bool paddlesFollowSwap);
 void remapLegacyMap(ButtonMap *m, const uint8_t back[4], uint8_t qam, bool swap,
 		    bool paddlesFollowSwap);
+void remapLegacyView(const ButtonMap &m, bool paddlesFollowSwap,
+		     uint8_t back[4], uint8_t *qam);
 // True when the face buttons are exchanged in pairs (the Nintendo layout).
 bool remapFacesSwapped(const ButtonMap &m);
 

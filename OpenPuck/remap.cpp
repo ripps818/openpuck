@@ -59,7 +59,7 @@ static uint32_t codeToTb(uint8_t c)
 }
 
 // the Nintendo layout: A and B trade places, as do X and Y
-static uint8_t swapCode(uint8_t c)
+uint8_t remapSwapCode(uint8_t c)
 {
 	switch (c) {
 	case 1:
@@ -78,7 +78,7 @@ static uint8_t swapCode(uint8_t c)
 RemapTarget remapTarget(uint8_t code, bool swap)
 {
 	if (swap)
-		code = swapCode(code);
+		code = remapSwapCode(code);
 	return { codeToTb(code), code == REMAP_CODE_CAPTURE };
 }
 
@@ -99,17 +99,35 @@ void remapDefaultMap(ButtonMap *m)
 	memcpy(m->target, SELF, sizeof m->target);
 }
 
+void remapApplyLegacy(ButtonMap *m, const uint8_t back[4], uint8_t qam,
+		      bool swap, bool paddlesFollowSwap)
+{
+	for (uint8_t i = 0; i < 4; i++)
+		m->target[RS_A + i] = swap ? remapSwapCode((uint8_t)(i + 1)) :
+					     (uint8_t)(i + 1);
+	for (uint8_t i = 0; i < 4; i++)
+		m->target[RS_L4 + i] = swap && paddlesFollowSwap ?
+					       remapSwapCode(back[i]) :
+					       back[i];
+	m->target[RS_QAM] = swap ? remapSwapCode(qam) : qam;
+}
+
 void remapLegacyMap(ButtonMap *m, const uint8_t back[4], uint8_t qam, bool swap,
 		    bool paddlesFollowSwap)
 {
 	remapDefaultMap(m);
+	remapApplyLegacy(m, back, qam, swap, paddlesFollowSwap);
+}
+
+void remapLegacyView(const ButtonMap &m, bool paddlesFollowSwap,
+		     uint8_t back[4], uint8_t *qam)
+{
+	const bool swap = remapFacesSwapped(m);
 	for (uint8_t i = 0; i < 4; i++)
-		m->target[RS_A + i] = swap ? swapCode((uint8_t)(i + 1)) :
-					     (uint8_t)(i + 1);
-	for (uint8_t i = 0; i < 4; i++)
-		m->target[RS_L4 + i] =
-			swap && paddlesFollowSwap ? swapCode(back[i]) : back[i];
-	m->target[RS_QAM] = swap ? swapCode(qam) : qam;
+		back[i] = swap && paddlesFollowSwap ?
+				  remapSwapCode(m.target[RS_L4 + i]) :
+				  m.target[RS_L4 + i];
+	*qam = swap ? remapSwapCode(m.target[RS_QAM]) : m.target[RS_QAM];
 }
 
 bool remapFacesSwapped(const ButtonMap &m)

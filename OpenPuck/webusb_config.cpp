@@ -1,6 +1,7 @@
 #include "webusb_config.h"
 #include "board_config.h"
 #include "config.h"
+#include "btnmap.h"
 #include "radio.h"
 #include "storage.h"
 #include "bonds.h"
@@ -1291,13 +1292,9 @@ void webusbPoll()
 					uint8_t et = (uint8_t)((f - 40) / 9),
 						k = (uint8_t)((f - 40) % 9);
 					if (et < ET_COUNT) {
-						if (k < 4)
-							g_type[et].back[k] = v;
-						else if (k == 4)
-							g_type[et].qamMap = v;
-						else if (k == 5)
-							g_type[et].abSwap =
-								v ? 1 : 0;
+						if (k <= 5)
+							btnmapLegacySet(et, k,
+									v);
 						else if (k == 6)
 							g_type[et].padHaptics =
 								v <= PAD_HAPTICS_CLICK ?
@@ -1341,8 +1338,7 @@ void webusbPoll()
 				// Legacy single-value fields (4 abSwap, 5-8 back, 21 qam) edit the ACTIVE emulated type.
 				case 4:
 					if (g_etype < ET_COUNT) {
-						g_type[g_etype].abSwap = v ? 1 :
-									     0;
+						btnmapLegacySet(g_etype, 5, v);
 						applyActiveType();
 					}
 					break;
@@ -1351,7 +1347,9 @@ void webusbPoll()
 				case 7:
 				case 8:
 					if (g_etype < ET_COUNT) {
-						g_type[g_etype].back[f - 5] = v;
+						btnmapLegacySet(
+							g_etype,
+							(uint8_t)(f - 5), v);
 						applyActiveType();
 					}
 					break;
@@ -1420,7 +1418,7 @@ void webusbPoll()
 				// QAM physical button remap code (0=default/unmapped) -- active emulated type
 				case 21:
 					if (g_etype < ET_COUNT) {
-						g_type[g_etype].qamMap = v;
+						btnmapLegacySet(g_etype, 4, v);
 						applyActiveType();
 					}
 					break;
@@ -1440,7 +1438,7 @@ void webusbPoll()
 					uint8_t et = (uint8_t)((f - 80) / 2),
 						pad = (uint8_t)((f - 80) % 2);
 					if (et < ET_COUNT && v <= PS_MAX) {
-						g_padStickCfg[et][pad] = v;
+						btnmapSetPadStick(et, pad, v);
 						if (et == g_etype)
 							applyActiveType();
 					}

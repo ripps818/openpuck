@@ -35,6 +35,7 @@ using namespace Adafruit_LittleFS_Namespace;
 #include "rf_diag.h"
 #include "webusb_config.h"
 #include "lizard_map.h"
+#include "btnmap.h"
 #include "serial_console.h"
 #include "wake_hid.h"
 #include "status_led.h"
@@ -444,6 +445,8 @@ void loop()
 #endif
 	faultDiagSetStage(7);
 	usbMountTask(); // dynamic mount/unmount of connected controllers (no-op unless enabled)
+	btnmapTask(
+		millis()); // button profile edits made on the RF path or over USB are written here
 	faultDiagSetStage(8);
 	usbTxPump(); // drain queued device->host reports HERE, in loop -- never off-loop (jitters the RF poll)
 	puckCmdLogDrain(); // print captured USB feature commands (diagnostic; no-op unless g_cmdCapture)
@@ -488,6 +491,8 @@ void loop()
 #endif
 	faultDiagSetStage(7);
 	usbMountTask(); // dynamic mount/unmount of connected controllers (no-op unless enabled)
+	btnmapTask(
+		millis()); // button profile edits made on the RF path or over USB are written here
 	faultDiagSetStage(8);
 	usbTxPump(); // drain queued device->host reports HERE, in loop -- never off-loop (jitters the RF poll)
 	puckCmdLogDrain(); // print captured USB feature commands (diagnostic; no-op unless g_cmdCapture)

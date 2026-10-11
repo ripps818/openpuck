@@ -5,6 +5,7 @@
 #include "haptics.h"
 #include "bonds.h"
 #include "config.h"
+#include "btnmap.h"
 #include "puck_hid.h" // g_cmdCapture (feature-command capture toggle)
 #include "fault_diag.h"
 #include "usb_mount.h" // modeSwitchReboot()
@@ -329,8 +330,9 @@ void serialConsolePoll()
 			} else if (line[0] == 'W') {
 				// A/B swap edits the ACTIVE emulated type (Xbox/Switch/DS4/DS5); puck modes have none.
 				if (g_etype < ET_COUNT) {
-					g_type[g_etype].abSwap =
-						!g_type[g_etype].abSwap;
+					btnmapLegacySet(
+						g_etype, 5,
+						!g_type[g_etype].abSwap);
 					applyActiveType();
 					saveCfg();
 					Serial.printf(
@@ -345,7 +347,8 @@ void serialConsolePoll()
 				uint8_t code = strtoul(line + 2, 0, 10);
 				// back paddles edit the ACTIVE emulated type. code 18 = Capture/Screenshot (Switch only).
 				if (i >= 0 && i < 4 && g_etype < ET_COUNT) {
-					g_type[g_etype].back[i] = code;
+					btnmapLegacySet(g_etype, (uint8_t)i,
+							code);
 					applyActiveType();
 					saveCfg();
 					Serial.printf(
@@ -364,7 +367,7 @@ void serialConsolePoll()
 			} else if (line[0] == 'Q') {
 				uint8_t code = strtoul(line + 1, 0, 10);
 				if (g_etype < ET_COUNT) {
-					g_type[g_etype].qamMap = code;
+					btnmapLegacySet(g_etype, 4, code);
 					applyActiveType();
 					saveCfg();
 					Serial.printf(

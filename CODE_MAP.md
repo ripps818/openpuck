@@ -457,7 +457,17 @@ beyond callers'.
 TB_* word with its target code from the live `g_btnMap`; every emulated mode calls it and turns the
 result into its own report bits. `remapTarget(code, swap)` is the one code -> TB_* table. Switch
 Capture has no TB_* bit and comes back as `capture`. `applyActiveType()` builds `g_btnMap` from the
-type's paddle / QAM / swap settings (`remapLegacyMap`). Target codes from 128 are reserved for macros.
+active profile (`btnmapActiveMap`). Target codes from 128 are reserved for macros.
+
+### `btnmap.cpp` / `btnmap.h` — stored mapping profiles (loop task; USB handlers and the RF path only mark it dirty)
+`g_profile[type][3]` (a `ButtonMap` + the trackpad -> stick setting) and `g_profileActive[type]`,
+persisted in `/btnmap.bin` (fixed layout, checked on load; anything else is rebuilt). `btnmapLoad()` runs
+after `loadCfg()`: no valid file -> every profile of a type starts as a copy of the older per-type settings
+(`g_type[]` paddles / QAM / swap, `g_padStickCfg[]`) and the file is written. The older settings stay as a
+view of the active profile (`g_type[]`, `g_padStickCfg[]`, so cfg.bin, the blob and older panels / backups
+still work); the legacy WebUSB fields and the serial console edit the profile through `btnmapLegacySet` /
+`btnmapSetPadStick`. Writes: `btnmapTouch(holdMs)` marks it, `btnmapTask(now)` (loop) writes once the hold has
+passed, `saveCfg()` flushes at once.
 
 ---
 

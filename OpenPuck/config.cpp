@@ -2,6 +2,7 @@
 #include "storage.h"
 #include "triton.h"
 #include "remap.h"
+#include "btnmap.h"
 #include "radio.h"
 #include "rf_link.h" // g_rxWin (poll RX window persisted here)
 #include "haptics.h" // g_hapticBlockOn, g_hapticBlockMs
@@ -126,9 +127,10 @@ void applyActiveType()
 	g_ledBright = t.ledBright;
 	g_padStick[0] = g_padStickCfg[g_etype][0];
 	g_padStick[1] = g_padStickCfg[g_etype][1];
-	// the Xbox types take a paddle target as an absolute button; every other type applies the swap to it
-	remapLegacyMap(&g_btnMap, g_back, g_qamMap, g_abSwap,
-		       g_etype != ET_XBOX);
+	// the active profile, or until the profiles are loaded the map the settings above describe
+	if (!btnmapActiveMap(g_etype, &g_btnMap))
+		remapLegacyMap(&g_btnMap, g_back, g_qamMap, g_abSwap,
+			       g_etype != ET_XBOX);
 }
 // poll rate defaults to POLL_US_DEFAULT (250 Hz), matching the real Valve puck (see config.h). The
 // delivered report rate equals the poll rate (fresh IMU in every reply). Live-adjustable via console
@@ -262,11 +264,14 @@ void saveCfg()
 		c.padStick[i][1] = g_padStickCfg[i][1];
 	}
 	storageWriteFile(CFG_FILE, "/cfg.tmp", (const uint8_t *)&c, sizeof c);
+	// a reset can follow a settings save at once, so any profile edit still waiting goes out with it
+	btnmapFlush();
 }
 
 void loadCfg()
 {
 	if (g_storageState == 0) {
+		btnmapLoad();
 		applyActiveType();
 		return;
 	}
@@ -443,7 +448,9 @@ void loadCfg()
 		g_shortcutFlags = c.shortcutFlags & ~6u;
 	else
 		g_shortcutFlags = SHORTCUT_ENABLED;
-	// resolve the active emulated type's settings into the live mirrors the mode builders read
+	// resolve the active emulated type's settings into the live mirrors the mode builders read, after the
+	// stored mapping profiles (built from the settings above on the first boot) are loaded
+	btnmapLoad();
 	applyActiveType();
 	// clear the one-shot so the NEXT cold boot reverts to the default/persist policy
 	if (consume) {
