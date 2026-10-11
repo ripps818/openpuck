@@ -43,7 +43,7 @@
 #define TB_R2 0x800000u
 #define TB_L2 0x8000000u
 
-// Virtual PS targets, settable ONLY via a back-paddle/QAM remap (psOrBackCode / tritonFromCode), never by the
+// Virtual PS targets, settable ONLY via a back-paddle/QAM remap (remapTarget in remap.cpp), never by the
 // controller itself. They live on bits 30/31 -- the only bits the SC2 0x45 report does NOT use (see PROTOCOL.md
 // §8.1; bits 0..29 are all real). They originally aliased 0x00100000 (right stick touch) and 0x01000000 (left
 // stick touch), so merely RESTING a thumb on a capacitive stick fired the DualSense trackpad-click / mute.

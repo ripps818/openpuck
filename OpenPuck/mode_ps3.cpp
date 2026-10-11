@@ -251,7 +251,7 @@ static void ds3Imu(uint8_t *out, int16_t v)
 // Offsets are the genuine report's rd[] minus one (rd[0] is the prepended id).
 static void ds3Build(uint8_t slot, uint8_t out[48])
 {
-	uint32_t b = psButtonsFromSteam(g_in[slot].buttons);
+	uint32_t b = psButtonsFromSteam(g_in[slot].buttons, REMAP_NO_SWAP);
 	bool l2 = (g_in[slot].lt > SW_TRIG_ON) || (b & TB_L2);
 	bool r2 = (g_in[slot].rt > SW_TRIG_ON) || (b & TB_R2);
 	memset(out, 0, 48);
@@ -266,7 +266,9 @@ static void ds3Build(uint8_t slot, uint8_t out[48])
 		 ((b & TB_DUP) ? 0x10 : 0) | ((b & TB_DRT) ? 0x20 : 0) |
 		 ((b & TB_DDN) ? 0x40 : 0) | ((b & TB_DLF) ? 0x80 : 0);
 
-	// out[2] (rd[3]): L2 R2 L1 R1 Triangle Circle Cross Square. g_abSwap swaps the A/B + X/Y face pair.
+	// out[2] (rd[3]): L2 R2 L1 R1 Triangle Circle Cross Square.
+	// With the swap on, A -> Triangle, B -> Circle, X -> Cross, Y -> Square: not a plain A/B + X/Y exchange,
+	// and applied after the paddle / QAM targets (REMAP_NO_SWAP). Kept as it was so PS3 users see no change.
 	uint8_t tri, cir, crs, sqr;
 	if (g_abSwap) {
 		tri = (b & TB_A) ? 0x10 : 0;

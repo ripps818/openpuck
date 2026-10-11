@@ -2,11 +2,11 @@
 //
 // These are reused across the DualSense / DS4 / Switch personalities: analog-stick rescaling, Steam-trackpad
 // -> absolute-touch mapping, and the PlayStation-layout button/hat/face/shoulder packers. Per-target button
-// code maps (codeToXB / codeToSwitch / codeToJc) live with their own controllers; only the cross-mode pieces
-// are here.
+// button remapping (paddles, QAM, A/B swap) is in remap.h; only the cross-mode pieces are here.
 #pragma once
 #include <stdint.h>
 #include "triton.h"
+#include "remap.h"
 
 // int16 stick (center 0) -> uint8 (center 0x80), optional axis invert (HID Y is down-positive).
 uint8_t swStick(int16_t v, bool invert);
@@ -76,63 +76,13 @@ uint32_t padDpadButtons(const PuckInput &in);
 void slotSticks(uint8_t slot, int16_t *lx, int16_t *ly, int16_t *rx,
 		int16_t *ry);
 
-// Convert configurable button code -> TB_* flag (shared across modes).
-static inline uint32_t tritonFromCode(uint8_t c)
-{
-	switch (c) {
-	case 1:
-		return TB_A;
-	case 2:
-		return TB_B;
-	case 3:
-		return TB_X;
-	case 4:
-		return TB_Y;
-	case 5:
-		return TB_LB;
-	case 6:
-		return TB_RB;
-	case 7:
-		return TB_L3;
-	case 8:
-		return TB_R3;
-	// 9 = the Select-side button (Xbox Back, Switch Minus, PlayStation Create/Share) and 10 = the
-	// Start-side one (Xbox Start, Switch Plus, PlayStation Options). TB_VIEW / TB_MENU are named
-	// BACKWARDS with respect to those positions (see triton.h), so 9 must produce TB_MENU. Mapping 10
-	// to TB_QAM was a dead end: no mode turns a TB_QAM bit into a host button, so "Options" did
-	// nothing while "Create" came out as Options.
-	case 9:
-		return TB_MENU;
-	case 10:
-		return TB_VIEW;
-	case 11:
-		return TB_STEAM;
-	case 12:
-		return TB_DUP;
-	case 13:
-		return TB_DDN;
-	case 14:
-		return TB_DLF;
-	case 15:
-		return TB_DRT;
-	case 16:
-		return TB_TOUCH;
-	case 17:
-		return TB_MUTE;
-	case 19:
-		return TB_L2; // left trigger (LT / L2 / ZL)
-	case 20:
-		return TB_R2; // right trigger (RT / R2 / ZR)
-	default:
-		return 0;
-	}
-}
-
 // PlayStation-layout button packing (shared by mode_ps5 + mode_hidgyro).
 uint32_t psButtonsFromSteam(
-	uint32_t raw); // apply back-paddle + chord-guard + QAM remapping
+	uint32_t raw,
+	RemapStyle style =
+		REMAP_SWAP_TARGETS); // apply chord-guard + the button remap
 // L1..R3 + Create/Options byte. lt/rt are the per-slot analog trigger values so the digital ZL/ZR trip
 // doesn't leak across slots when several slots are active.
 uint8_t psShouldersByte(uint32_t b, uint8_t lt, uint8_t rt);
 uint8_t psHatNibble(uint32_t b); // d-pad -> 8-way hat (8 = neutral)
-uint8_t psFaceNibble(uint32_t b); // face buttons (with A/B + X/Y swap)
+uint8_t psFaceNibble(uint32_t b); // face buttons

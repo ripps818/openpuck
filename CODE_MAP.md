@@ -448,9 +448,16 @@ driver matches). Dynamic-mount, STREAM-style. **Registers a set-report callback.
 
 ### `gamepad_util.cpp` / `gamepad_util.h` — shared report-builders (called from loop task)
 `swStick`, `psNeutralCalib` (writes through `buf[33]`), trackpad→touch mappers
-(`touchPackPads` writes 8 bytes = two 4-byte points), `psButtonsFromSteam` (back-paddle/
-QAM/chord remap), `psShouldersByte`, `psHatNibble`, `psFaceNibble`, `tritonFromCode`.
-Reads `g_qamMap`/`g_abSwap`/`g_back[]`. Pure transforms, no buffers beyond callers'.
+(`touchPackPads` writes 8 bytes = two 4-byte points), `psButtonsFromSteam` (chord guard +
+`remapButtons`), `psShouldersByte`, `psHatNibble`, `psFaceNibble`. Pure transforms, no buffers
+beyond callers'.
+
+### `remap.cpp` / `remap.h` — button remapping (called from loop task and usbd task)
+`remapButtons(b, style, &capture)`: replaces A/B/X/Y, L4/R4/L5/R5 and QAM in the shortcut-masked
+TB_* word with their configured targets (`g_abSwap`, `g_back[]`, `g_qamMap`); every emulated mode
+calls it and turns the result into its own report bits. `remapTarget(code, swap)` is the one
+code -> TB_* table. Switch Capture has no TB_* bit and comes back as `capture`. `RemapStyle`
+keeps each mode's A/B-swap behaviour for paddle/QAM targets. Reads globals only, no state.
 
 ---
 

@@ -72,22 +72,22 @@ static void xinputSend(uint8_t, uint16_t b, uint8_t lt, uint8_t rt, int16_t, int
 
 slices = [
     # shared PlayStation packers: psButtonsFromSteam and the code tables behind it
-    cut(gu, '// Map g_back[] paddle code'),
+    (r / 'OpenPuck/remap.cpp').read_text(),
+    cut(gu, 'uint32_t psButtonsFromSteam('),
     # Xbox 360
     cut(xi, 'enum {\n\tXB_DUP', '// ===================== XInput custom TinyUSB class driver'),
-    cut(xi, 'static uint16_t codeToXB(', '// Right pad -> mouse on a second HID-mouse interface'),
+    cut(xi, 'static void rfXboxGamepad(', '// Right pad -> mouse on a second HID-mouse interface'),
     # Switch HORIPAD
-    cut(hori, 'static uint16_t codeToSwitch(', '// Dynamic-mount mode: begin() is unused'),
+    cut(hori, '// HORIPAD/Switch button bits', '// Dynamic-mount mode: begin() is unused'),
     # Switch Pro
     cut(jc, '#define JC_BTN_Y', '#define JC_BTN_ZL') + '#define JC_BTN_ZL (1u << 23)\n',
-    cut(jc, 'static uint32_t codeToJc(', '// NSLOT Pro-Controller HIDs'),
     'static inline uint8_t jcBondOf(uint8_t u) { return u; }\nstatic uint8_t g_jcTimer[NSLOT];\n',
     cut(jc, 'static int jcStick12(', 'static void switchProBuild('),
     # Original Xbox
     cut(og, 'enum {\n\tXBOX_OG_DUP', 'struct XboxOgOutputReport'),
     '#pragma pack(pop)\n',
     cut(og, 'static void xboxOgNeutralReport(', '// Wholesale clear'),
-    cut(og, 'enum XboxOgRemapTarget', 'static bool xboxOgBondRecent('),
+    cut(og, 'static void xboxOgBuildReport(', 'static bool xboxOgBondRecent('),
     # PS3
     cut(ps3, 'static void ds3Imu(', '// Neutral input report'),
     # DualSense and DS4

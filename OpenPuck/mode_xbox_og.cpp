@@ -1,6 +1,7 @@
 #include "mode_xbox_og.h"
 #include "triton.h"
 #include "gamepad_util.h"
+#include "remap.h"
 #include "config.h"
 #include "haptics.h"
 #include "bonds.h"
@@ -533,104 +534,10 @@ static Adafruit_USBD_XboxOg g_xboxOgInterface;
 
 XboxOgController g_xboxOgCtl;
 
-enum XboxOgRemapTarget : uint8_t {
-	XBOX_OG_TARGET_NONE,
-	XBOX_OG_TARGET_A,
-	XBOX_OG_TARGET_B,
-	XBOX_OG_TARGET_X,
-	XBOX_OG_TARGET_Y,
-	XBOX_OG_TARGET_WHITE,
-	XBOX_OG_TARGET_BLACK,
-	XBOX_OG_TARGET_L3,
-	XBOX_OG_TARGET_R3,
-	XBOX_OG_TARGET_BACK,
-	XBOX_OG_TARGET_START,
-	XBOX_OG_TARGET_DUP,
-	XBOX_OG_TARGET_DDOWN,
-	XBOX_OG_TARGET_DLEFT,
-	XBOX_OG_TARGET_DRIGHT,
-};
-
-// Remaps target Controller S outputs independently of the RF button masks.
-// Codes come from the shared remap code space: 5/6 (LB/RB) drive White/Black,
-// 9/10 are semantic Back/Start, and 11 (Guide) has no Controller S target.
-static constexpr XboxOgRemapTarget XBOX_OG_REMAP[] = {
-	XBOX_OG_TARGET_NONE,   XBOX_OG_TARGET_A,     XBOX_OG_TARGET_B,
-	XBOX_OG_TARGET_X,      XBOX_OG_TARGET_Y,     XBOX_OG_TARGET_WHITE,
-	XBOX_OG_TARGET_BLACK,  XBOX_OG_TARGET_L3,    XBOX_OG_TARGET_R3,
-	XBOX_OG_TARGET_BACK,   XBOX_OG_TARGET_START, XBOX_OG_TARGET_NONE,
-	XBOX_OG_TARGET_DUP,    XBOX_OG_TARGET_DDOWN, XBOX_OG_TARGET_DLEFT,
-	XBOX_OG_TARGET_DRIGHT,
-};
-
-static_assert(sizeof XBOX_OG_REMAP / sizeof XBOX_OG_REMAP[0] == 16,
-	      "Xbox remap table must cover codes 0 through 15");
-
-static void xboxOgApplyRemap(XboxOgInputReport &report, uint8_t code)
-{
-	uint32_t mapped = tritonFromCode(code);
-
-	// LT/RT are codes 19/20, outside the table -- these two must stay above
-	// the bounds check or a paddle mapped to a trigger does nothing.
-	if (mapped & TB_L2)
-		report.left_trigger = 0xFF;
-	if (mapped & TB_R2)
-		report.right_trigger = 0xFF;
-	if (code >= sizeof XBOX_OG_REMAP / sizeof XBOX_OG_REMAP[0])
-		return;
-
-	switch (XBOX_OG_REMAP[code]) {
-	case XBOX_OG_TARGET_A:
-		report.a = 0xFF;
-		break;
-	case XBOX_OG_TARGET_B:
-		report.b = 0xFF;
-		break;
-	case XBOX_OG_TARGET_X:
-		report.x = 0xFF;
-		break;
-	case XBOX_OG_TARGET_Y:
-		report.y = 0xFF;
-		break;
-	case XBOX_OG_TARGET_WHITE:
-		report.white = 0xFF;
-		break;
-	case XBOX_OG_TARGET_BLACK:
-		report.black = 0xFF;
-		break;
-	case XBOX_OG_TARGET_L3:
-		report.buttons |= XBOX_OG_L3;
-		break;
-	case XBOX_OG_TARGET_R3:
-		report.buttons |= XBOX_OG_R3;
-		break;
-	case XBOX_OG_TARGET_BACK:
-		report.buttons |= XBOX_OG_BACK;
-		break;
-	case XBOX_OG_TARGET_START:
-		report.buttons |= XBOX_OG_START;
-		break;
-	case XBOX_OG_TARGET_DUP:
-		report.buttons |= XBOX_OG_DUP;
-		break;
-	case XBOX_OG_TARGET_DDOWN:
-		report.buttons |= XBOX_OG_DDOWN;
-		break;
-	case XBOX_OG_TARGET_DLEFT:
-		report.buttons |= XBOX_OG_DLEFT;
-		break;
-	case XBOX_OG_TARGET_DRIGHT:
-		report.buttons |= XBOX_OG_DRIGHT;
-		break;
-	case XBOX_OG_TARGET_NONE:
-	default:
-		break;
-	}
-}
-
 static void xboxOgBuildReport(XboxOgInputReport &report, const uint8_t *raw)
 {
-	uint32_t buttons = shortcutHostButtons(btnsOf(raw));
+	uint32_t buttons =
+		remapButtons(shortcutHostButtons(btnsOf(raw)), REMAP_ABSOLUTE);
 
 	xboxOgNeutralReport(report);
 	if (buttons & TB_DUP)
@@ -656,13 +563,13 @@ static void xboxOgBuildReport(XboxOgInputReport &report, const uint8_t *raw)
 	// A/B/X/Y and White/Black are analog pressure bytes, so a digital press
 	// writes full scale; the shoulders have no button bit at all.
 	if (buttons & TB_A)
-		(g_abSwap ? report.b : report.a) = 0xFF;
+		report.a = 0xFF;
 	if (buttons & TB_B)
-		(g_abSwap ? report.a : report.b) = 0xFF;
+		report.b = 0xFF;
 	if (buttons & TB_X)
-		(g_abSwap ? report.y : report.x) = 0xFF;
+		report.x = 0xFF;
 	if (buttons & TB_Y)
-		(g_abSwap ? report.x : report.y) = 0xFF;
+		report.y = 0xFF;
 	if (buttons & TB_LB)
 		report.white = 0xFF;
 	if (buttons & TB_RB)
@@ -674,14 +581,6 @@ static void xboxOgBuildReport(XboxOgInputReport &report, const uint8_t *raw)
 		report.left_trigger = 0xFF;
 	if (buttons & TB_R2)
 		report.right_trigger = 0xFF;
-
-	const uint32_t paddle_buttons[] = { TB_L4, TB_R4, TB_L5, TB_R5 };
-
-	for (int i = 0; i < 4; i++)
-		if (buttons & paddle_buttons[i])
-			xboxOgApplyRemap(report, g_back[i]);
-	if ((buttons & TB_QAM) && g_qamMap)
-		xboxOgApplyRemap(report, g_qamMap);
 
 	// Raw-report offsets, not slotSticks(): like mode_xinput this mode decodes 0x45 in place and never
 	// touches g_in. 16/18 = left pad X/Y, 22/24 = right pad X/Y.
