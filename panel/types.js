@@ -5,7 +5,7 @@ import { MODE_NAMES, MODE_ORDER } from './status.js';
 import { openNav } from './nav.js';
 import { iconEl } from './icons.js';
 import { glyphSelect } from './glyphselect.js';
-import { buildProfileCards, profileOp, profilesCapable, setPadStick } from './profiles.js';
+import { buildPadClick, buildProfileCards, profileOp, profilesCapable, setPadStick } from './profiles.js';
 
 // Per-emulated-type config (must match firmware ET_* order: Xbox=0, Switch=1, DS4=2, DS5=3). Each type lists
 // only the remap targets that exist on that controller. Field id sent to firmware = 40 + et*9 + k
@@ -19,11 +19,16 @@ export const BTN_GLYPH = {
   Cross:"cross", Circle:"circle", Square:"square", Triangle:"triangle", L1:"L1", R1:"R1", Create:"view", Options:"menu", PS:"ps", L2:"L2", R2:"R2",
   "Touchpad Click":"padClick", Mute:"mute",
 };
+// padTargets: the trackpad click targets (codes 21 left, 22 right) a mode does something with. Xbox 360 mode clicks
+// its mouse with them (22 the left button, 21 the right); the PlayStation modes press that half of the touchpad;
+// the Switch modes have no use for them, so they are not offered.
+const PS_PADS = {21:["Touchpad click, left half","padClickL"],22:["Touchpad click, right half","padClickR"]};
 export const TYPE_DEFS = [
-  {key:"XBOX", name:"Xbox", labels:{1:"A",2:"B",3:"X",4:"Y",5:"LB",6:"RB",7:"L3",8:"R3",9:"Back",10:"Start",11:"Guide",19:"LT",20:"RT",...DPAD}},
-  {key:"SWITCH", name:"Switch", labels:{1:"A",2:"B",3:"X",4:"Y",5:"L",6:"R",7:"L-Stick",8:"R-Stick",9:"Minus",10:"Plus",11:"Home",19:"ZL",20:"ZR",...DPAD,18:"Capture / Screenshot"}},
-  {key:"DS4", name:"DS4", labels:{1:"Cross",2:"Circle",3:"Square",4:"Triangle",5:"L1",6:"R1",7:"L3",8:"R3",9:"Create",10:"Options",11:"PS",19:"L2",20:"R2",...DPAD,16:"Touchpad Click"}},
-  {key:"DS5", name:"DS5", labels:{1:"Cross",2:"Circle",3:"Square",4:"Triangle",5:"L1",6:"R1",7:"L3",8:"R3",9:"Create",10:"Options",11:"PS",19:"L2",20:"R2",...DPAD,16:"Touchpad Click",17:"Mute"}},
+  {key:"XBOX", name:"Xbox", labels:{1:"A",2:"B",3:"X",4:"Y",5:"LB",6:"RB",7:"L3",8:"R3",9:"Back",10:"Start",11:"Guide",19:"LT",20:"RT",...DPAD},
+    padTargets:{21:["Mouse right click","mouseR"],22:["Mouse left click","mouseL"]}},
+  {key:"SWITCH", name:"Switch", labels:{1:"A",2:"B",3:"X",4:"Y",5:"L",6:"R",7:"L-Stick",8:"R-Stick",9:"Minus",10:"Plus",11:"Home",19:"ZL",20:"ZR",...DPAD,18:"Capture / Screenshot"}, padTargets:{}},
+  {key:"DS4", name:"DS4", labels:{1:"Cross",2:"Circle",3:"Square",4:"Triangle",5:"L1",6:"R1",7:"L3",8:"R3",9:"Create",10:"Options",11:"PS",19:"L2",20:"R2",...DPAD,16:"Touchpad Click"}, padTargets:PS_PADS},
+  {key:"DS5", name:"DS5", labels:{1:"Cross",2:"Circle",3:"Square",4:"Triangle",5:"L1",6:"R1",7:"L3",8:"R3",9:"Create",10:"Options",11:"PS",19:"L2",20:"R2",...DPAD,16:"Touchpad Click",17:"Mute"}, padTargets:PS_PADS},
 ];
 // Which emulated type a USB mode belongs to (mirror of firmware etypeForMode); -1 = puck mode (no type).
 export function etypeForMode(m){ switch(m){case 1:case 10:return 0; case 2:case 4:return 1; case 6:case 8:case 9:return 2; case 5:case 7:return 3; default:return -1;} }
@@ -34,7 +39,15 @@ export const typeEls = []; // one entry per TYPE_DEFS: {sec, tab, activeDot, bac
 // (pad 0 = left trackpad, 1 = right). While mapped and touched the pad drives that stick; on release the
 // stick re-centers, and an untouched mapped pad leaves the physical stick in control.
 export const PAD_STICK_FIELD0 = 80;
-const PAD_STICK_OPTS = [[0,"Off (touchpad)"],[1,"Left stick","stickL"],[2,"Right stick","stickR"]];
+// What touching a pad does, per type and pad. 0 is what the pad does with no mapping: the touchpad on the
+// PlayStation types, the mouse on the Xbox right pad, nothing on the rest. The D-pad modes read the pad in Switch
+// Pro mode only.
+function padTouchOptions(def, pad){
+  const off = def.key==="XBOX" ? (pad ? "Mouse" : "Off") : def.key==="SWITCH" ? "Off" : "Touchpad, "+(pad ? "right" : "left")+" half";
+  const o = [[0,off],[1,"Left stick","stickL"],[2,"Right stick","stickR"]];
+  if(def.key==="SWITCH") o.push([3,"D-pad on touch (Switch Pro)"],[4,"D-pad on click (Switch Pro)"]);
+  return o;
+}
 function mkSelect(def, includeNone){
   const sel=document.createElement("select");
   if(includeNone){ const o=document.createElement("option"); o.value=0; o.textContent="— none —"; sel.appendChild(o); }
@@ -68,7 +81,7 @@ export function setTab(et){
   $("#mapTypesPane").classList.toggle("hide", et===LIZARD_TAB);
   $("#mapLizardPane").classList.toggle("hide", et!==LIZARD_TAB);
   // the trackpad mouse card is one setting shared by the Xbox and Lizard profiles: show it in whichever is open
-  if(et===0) typeEls[0].sec.appendChild($("#mouseCard"));
+  if(et===0) typeEls[0].mouseHost.appendChild($("#mouseCard"));
   else if(et===LIZARD_TAB) $("#mapLizardPane").appendChild($("#mouseCard"));
   if(et===LIZARD_TAB) return;
   $("#mapTypeName").textContent="· "+TYPE_DEFS[et].name;
@@ -105,7 +118,7 @@ export async function resetTypeDefaults(et){
   try{
     const ver=S.lastP?S.lastP[0]:0;
     // with profiles, the mapping and trackpad -> stick fields only reach the active profile: reset every profile instead
-    const b=40+et*9, mapped=new Set([b,b+1,b+2,b+3,b+4,b+5,PAD_STICK_FIELD0+et*2,PAD_STICK_FIELD0+et*2+1]);
+    const b=40+et*9, mapped=new Set([b,b+1,b+2,b+3,b+4,b+5,PAD_STICK_FIELD0+et*2,PAD_STICK_FIELD0+et*2+1,116]);
     const fields=typeResetFields(et).filter(([field,,min])=>ver>=min && !(prof && mapped.has(field)));
     if(prof){
       for(let i=0;i<3;i++) await profileOp([0x2F,et,i]);
@@ -159,23 +172,35 @@ export function initTypes(){
         sel.addEventListener("change",()=>setField(40+et*9+4, +sel.value));
         rec.qam=sel; }
       const ab=toggle(gBtn,"","off"); ab.parentElement.classList.add("prof-legacy");
-      // only the DS5 has more in this card (Create = touchpad click); elsewhere the profiles replace all of it
-      if(def.key!=="DS5") gBtn.classList.add("prof-legacy");
+      // with profiles the whole card is replaced: its Create switch is a preset now
+      gBtn.classList.add("prof-legacy");
       relabel(ab,iconEl("A"),iconEl("B"),plus(),iconEl("X"),iconEl("Y")," swap");
-      // trackpad -> joystick mapping (one select per pad) + trackpad haptics
-      const gPad=group("Trackpads");
+      // Trackpads: a column per pad, what touching it does and what its click acts as; then what they share
+      const gPad=group("Trackpads"); gPad.classList.add("span");
+      const cols=document.createElement("div"); cols.className="mapsrc"; gPad.appendChild(cols);
       for(let pad=0; pad<2; pad++){
+        const col=document.createElement("div"); col.className="mapsrc-group pad-col"; cols.appendChild(col);
+        const h=document.createElement("h3"); h.append(iconEl(pad?"padR":"padL")," "+(pad?"Right":"Left")+" trackpad"); col.appendChild(h);
         const sel=document.createElement("select");
-        for(const [v,lbl,glyph] of (et===1 ? [...PAD_STICK_OPTS,[3,"D-pad on touch (Switch Pro)"],[4,"D-pad on click (Switch Pro)"]] : PAD_STICK_OPTS)){ const o=document.createElement("option"); o.value=v; o.textContent=lbl; o.dataset.glyph=glyph||(v===4?(pad?"padClickR":"padClickL"):(pad?"padR":"padL")); sel.appendChild(o); }
-        row(gPad,"",glyphSelect(sel)).querySelector("label").append(iconEl(pad?"padR":"padL")," Trackpad");
+        for(const [v,lbl,glyph] of padTouchOptions(def,pad)){ const o=document.createElement("option"); o.value=v; o.textContent=lbl; o.dataset.glyph=glyph||(v===4?(pad?"padClickR":"padClickL"):(pad?"padR":"padL")); sel.appendChild(o); }
+        row(col,"Touch",glyphSelect(sel));
         sel.addEventListener("change",()=>setPadStick(et,pad,+sel.value,PAD_STICK_FIELD0+et*2+pad));
         rec.padStick.push(sel);
+        buildPadClick(et,pad,col);
       }
+      { const note=document.createElement("p"); note.className="note";
+        note.textContent={
+          XBOX:"In Xbox 360 mode the right trackpad moves a mouse pointer while its Touch is Mouse, and a click acts as set here: by default the right pad is the left mouse button and the left pad the right one. The Original Xbox has no mouse.",
+          SWITCH:"A click does nothing in the Switch modes unless you map it to a button here. The D-pad modes read the trackpad themselves, so they work whatever Click is set to.",
+        }[def.key] || "A trackpad that drives a stick no longer reports as a touchpad, but its click still presses the touchpad unless you map it to something else here.";
+        gPad.appendChild(note); }
       // 1 = controller's own haptics (ticks while moving + clicks), 2 = clicks only, 0 = off
       const pad=document.createElement("select");
       for(const [v,lbl] of [[1,"On"],[2,"Clicks only"],[0,"Off"]]){ const o=document.createElement("option"); o.value=v; o.textContent=lbl; pad.appendChild(o); }
       row(gPad,"Trackpad haptics",pad);
       pad.addEventListener("change",()=>setField(40+et*9+6, +pad.value));
+      // the Xbox pointer's speed is one setting shared with Lizard mode: setTab() moves its card in or out of here
+      if(def.key==="XBOX"){ rec.mouseHost=document.createElement("div"); rec.mouseHost.className="pad-mouse"; gPad.appendChild(rec.mouseHost); }
       // rumble on/off, grip strength, grip limiter
       const gRum=group("Rumble");
       const rumble=toggle(gRum,"Rumble","on");
@@ -245,7 +270,9 @@ export function initTypes(){
       // Switch Pro-only settings get their own card on the Switch profile
       if(def.key==="SWITCH"){
         const g=group("Switch Pro mode only"); g.classList.add("span");
-        for(const id of ["swClickControls","qamSelectRow","swGyroMapBlock","swGyroOld","hdPadBlock"]) g.appendChild(document.getElementById(id));
+        for(const id of ["qamSelectRow","swGyroMapBlock","swGyroOld"]) g.appendChild(document.getElementById(id));
+        // the D-pad click feedback and the HD trackpad strength belong with the trackpads
+        for(const id of ["swClickControls","hdPadBlock"]) gPad.appendChild(document.getElementById(id));
       }
       host.appendChild(sec); typeEls.push(rec);
     });

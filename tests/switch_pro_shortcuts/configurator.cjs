@@ -41,9 +41,10 @@ assert($('#scQam .ic-mod'));assert.equal($('#qamSelectRow label .ic').title,'Qui
 for(const el of document.querySelectorAll('.chord,.chordD'))assert(!el.parentElement.classList.contains('hide'));
 assert.deepEqual(await act(()=>$('#scQam').click()),[2,240,56]);s[46]=56;await apply();assert(mods().every(m=>m==='All four back buttons|All four back buttons'),mods().join());
 for(const [id,bit] of [['scFeedback',8],['scCapture',16],['scEnabled',32]])assert.deepEqual(await act(()=>$('#'+id).click()),[2,240,s[46]^bit]);
-// Switch Pro-only controls (and HD trackpad strength) live in the Switch tab of Button mapping.
-const swTab=$('#swClickControls').parentElement;assert($('#typeCfgs').contains(swTab));
-for(const id of ['#qamSelectRow','#swGyroMap','#hdPadScale'])assert(swTab.contains($(id)),id);
+// Switch Pro-only controls live in the Switch tab of Button mapping; the trackpad ones (click feedback, HD strength) in its Trackpads card.
+const swTab=$('#qamSelectRow').parentElement;assert($('#typeCfgs').contains(swTab));
+for(const id of ['#swGyroMap'])assert(swTab.contains($(id)),id);
+const padTab=$('#swClickControls').parentElement;assert($('#typeCfgs').contains(padTab)&&padTab!==swTab);assert(padTab.contains($('#hdPadScale')));
 assert(!$('#swClickControls').classList.contains('hide'));assert.equal($('#swClickFeedback').value,'1');
 const change=el=>act(()=>el.dispatchEvent(new w.Event('change')));
 const click=$('#swClickFeedback');click.value='0';assert.deepEqual(await change(click),[2,230,0]);
@@ -56,8 +57,8 @@ const own=(sec,q)=>[...sec.querySelectorAll(q)].filter(e=>!e.closest('.prof-card
 {const labs=own(secs[0],'.row label');
  assert.deepEqual(labs.slice(0,4).map(l=>l.textContent.trim()+'|'+l.querySelector('.ic').title),['L4|L4 (back upper-left)','R4|R4 (back upper-right)','L5|L5 (back lower-left)','R5|R5 (back lower-right)']);
  assert.equal(labs[4].querySelector('.ic').dataset.ic,'qam');assert.equal(labs[4].textContent.trim(),'QAM');
- // the trackpad mapping rows are labelled by the left / right pad glyph plus the word
- assert.deepEqual(own(secs[0],'.row label .ic[data-ic^=pad]').map(e=>e.title+'|'+e.nextSibling.textContent),['Left trackpad| Trackpad','Right trackpad| Trackpad']);
+ // each trackpad column is headed by the left / right pad glyph plus the word
+ assert.deepEqual(own(secs[0],'.pad-col h3 .ic').map(e=>e.title+'|'+e.nextSibling.textContent),['Left trackpad| Left trackpad','Right trackpad| Right trackpad']);
  // the A/B swap and Create toggles are labelled with their glyphs too
  const swapLab=labs.find(l=>l.querySelector('.ic[data-ic=A]')),createLab=own(secs[3],'.row label').find(l=>l.querySelector('.ic[data-ic=padClick]'));
  assert.deepEqual([...swapLab.querySelectorAll('.ic')].map(e=>e.dataset.ic),['A','B','X','Y']);assert(swapLab.textContent.endsWith(' swap'));
@@ -112,8 +113,8 @@ assert(document.querySelectorAll('.modebtn').length>=11);assert($('#lizardList')
 // The remap lists draw a dropdown over each (hidden) select so every target's glyph shows beside its name.
 {const gsel=sel=>sel.parentElement,btnOf=sel=>gsel(sel).querySelector('.gsel-btn'),listOf=sel=>gsel(sel).querySelector('.gsel-list');
  const sels=[...document.querySelectorAll('.gsel > select')].filter(e=>!e.closest('.prof-card'));
- // per profile: four back buttons, QAM and the two trackpad-to-stick pickers; plus the Switch QAM + View picker
- assert.equal(sels.length,4*7+1);
+ // per profile: four back buttons, QAM, the two trackpad touch pickers and their two click pickers; plus the Switch QAM + View picker
+ assert.equal(sels.length,4*9+1);
  for(const sel of sels){assert(sel.hidden);assert(listOf(sel).classList.contains('hide'));}
  // every target on every controller has a glyph (only the none / default entry has none), by the right name
  const g=et=>Object.fromEntries([...own(secs[et],'select')[0].options].map(o=>[o.textContent,o.dataset.glyph||'']));

@@ -18,7 +18,8 @@ export const profilesCapable = () => !!(S.dev && S.lastP && S.lastP[0] >= PROFIL
 export const LZ_TYPE = 4;
 
 // The firmware's RemapSource order. own = the target code a source acts as by default (the type's label for it
-// names the button); the paddles, QAM and trackpad clicks have names of their own.
+// names the button); the paddles, QAM and trackpad clicks have names of their own. The trackpad clicks (20, 21)
+// are not in the button map: each sits beside its pad in the type's Trackpads card (buildPadClick).
 const SOURCES = [
   {own:1}, {own:2}, {own:3}, {own:4}, {own:5}, {own:6}, {own:7}, {own:8}, {own:9}, {own:10}, {own:11},
   {own:12}, {own:13}, {own:14}, {own:15},
@@ -28,10 +29,11 @@ const SOURCES = [
 ];
 const GROUPS = [
   ["Face buttons", [0,1,2,3]], ["Shoulders and triggers", [4,5,22,23]], ["Sticks", [6,7]],
-  ["Menu buttons", [8,9,10]], ["D-pad", [11,12,13,14]], ["Back buttons", [15,16,17,18]], ["Quick Access and trackpads", [19,20,21]],
+  ["Menu buttons", [8,9,10]], ["D-pad", [11,12,13,14]], ["Back buttons and Quick Access", [15,16,17,18,19]],
 ];
-// the targets a map can point at beyond the type's own labels: the trackpad clicks (21/22), "none" is 0
-const PAD_TARGETS = {21:["Left pad click","padClickL"], 22:["Right pad click","padClickR"]};
+// the trackpad click targets (21/22) are in a type's list only where its mode does something with them: the
+// touchpad click on the PlayStation types, the mouse buttons on Xbox (TYPE_DEFS padTargets). "none" is 0.
+const SRC_SELECT = 8, SRC_PADC = 20, CODE_TOUCHPAD = 16;
 // the buttons the profile switch may use: no shortcut or chord uses them (LB, RB, L3, R3, Select-side, Start-side)
 const GESTURE_SOURCES = [4,5,6,7,8,9];
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -45,7 +47,7 @@ const sel0 = et => (S.profileSel[et] | 0);
 function targetOptions(def){
   const opts = [[0, "— none —", null]];
   for(const c of Object.keys(def.labels).map(Number).sort((a, b) => a - b)) opts.push([c, def.labels[c], BTN_GLYPH[def.labels[c]]]);
-  for(const c of [21, 22]) opts.push([c, PAD_TARGETS[c][0], PAD_TARGETS[c][1]]);
+  for(const c of [21, 22]) if(def.padTargets[c]) opts.push([c, def.padTargets[c][0], def.padTargets[c][1]]);
   return opts;
 }
 function fillTargets(sel, def){
@@ -54,6 +56,8 @@ function fillTargets(sel, def){
 }
 // a stored code this type has no name for (a reserved or macro code written by newer software) stays visible
 function showValue(sel, v){
+  // a trackpad click target this type has no use for (Switch) is kept but does nothing: it reads as none
+  if((v === 21 || v === 22) && ![...sel.options].some(x => +x.value === v)) v = 0;
   let o = [...sel.options].find(x => +x.value === v);
   if(!o){ o = document.createElement("option"); o.value = v; o.textContent = "Other (" + v + ")"; o.dataset.extra = "1"; sel.appendChild(o); }
   sel.value = v;
@@ -196,6 +200,14 @@ export function buildProfileCards(sec, et, def){
     return true;
   });
   rec.ps = ps;
+  // PlayStation types: the preset that replaced the Create = touchpad click switch. Like the layout above it
+  // writes one entry of this profile and reverts with the same button.
+  if(def.labels[CODE_TOUCHPAD]){
+    rec.create = btn("Create = touchpad click", "", () => {
+      const st = S.profiles[et], on = st && st.maps[sel0(et)][SRC_SELECT] === CODE_TOUCHPAD;
+      return profileOp([0x2D, et, sel0(et), SRC_SELECT, on ? 9 : CODE_TOUCHPAD]);
+    });
+  }
   rec.reset = btn("Reset this profile", "Put this profile's mapping back to the factory one", () => {
     if(!confirm("Reset profile " + (sel0(et) + 1) + " of the " + def.name + " controller type to its factory mapping?\n\nIts button map and trackpad settings are replaced. The other profiles stay as they are.")) return;
     return profileOp([0x2F, et, sel0(et)]);
@@ -245,6 +257,18 @@ export function buildProfileCards(sec, et, def){
 
   recs[et] = rec;
   return rec;
+}
+
+// A trackpad's click is a source like the buttons of the map, with its row in the type's Trackpads card beside what
+// touching the pad does. The row only works with profiles, so it hides with the other profile cards.
+export function buildPadClick(et, pad, col){
+  const rec = recs[et], i = SRC_PADC + pad;
+  const r = document.createElement("div"); r.className = "row"; const l = document.createElement("label"); l.textContent = "Click";
+  const s = document.createElement("select"); fillTargets(s, rec.def);
+  r.append(l, glyphSelect(s)); col.appendChild(r);
+  s.addEventListener("change", () => profileOp([0x2D, et, sel0(et), i, +s.value]));
+  rec.sources[i] = s; rec.cards.push(r);
+  return r;
 }
 
 // ---- the Lizard tab: a profile strip above its bindings editor ----
@@ -338,6 +362,13 @@ export function renderProfiles(et){
   rec.nintendo.title = swapped ?
     "Put the four face buttons back as themselves. Only their four entries in this profile change." :
     "Swap " + faces + ", as on a Nintendo controller. Only the four face-button entries of this profile change; press it again to revert.";
+  if(rec.create){
+    const on = map[SRC_SELECT] === CODE_TOUCHPAD, name = rec.def.labels[9];
+    rec.create.textContent = on ? "Revert " + name + " button" : name + " = touchpad click";
+    rec.create.title = on ?
+      "Put the " + name + " button back as itself. Only its entry in this profile changes." :
+      "Make the " + name + " button press the touchpad. Only its entry in this profile changes; press it again to revert.";
+  }
   rec.title.textContent = "Button map · profile " + (sel + 1) + (sel === st.active ? " (in use)" : "");
   rec.sources.forEach((s, i) => {
     if(!s || held(s)) return;

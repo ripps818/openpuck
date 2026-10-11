@@ -14,7 +14,7 @@ for(const k of ['window','document','navigator','location','localStorage','histo
 let confirms=[];globalThis.confirm=m=>{confirms.push(m);return true;};globalThis.fetch=async()=>({ok:false,json:async()=>[]});
 const mod=f=>import(pathToFileURL(path.join(js,f)).href);
 await mod('app.js');
-const {S}=await mod('state.js'),{applyBlob,applySw}=await mod('status.js'),{typeEls,setTab}=await mod('types.js');
+const {S}=await mod('state.js'),{applyBlob,applySw}=await mod('status.js'),{typeEls,setTab,LIZARD_TAB}=await mod('types.js');
 const {profilesDrain}=await mod('profiles.js'),{buildBackup,importBackup}=await mod('backup.js');
 
 // the firmware's default map (remapDefaultMap): every source itself, paddles LB/RB/L3/R3, QAM none
@@ -85,8 +85,8 @@ const shown=el=>!el.classList.contains('hide');
 p[0]=29;await apply();
 assert.equal(cards(0).length,3);for(let et=0;et<4;et++)assert(cards(et).every(c=>!shown(c)));
 const legacyShown=el=>!el.classList.contains('prof-off');
-// per type: the back-button card, the QAM row and the swap row; and the Buttons card, except on the DS5
-assert.equal(legacy().length,4*3+3);assert(legacy().every(legacyShown));
+// per type: the back-button card, the QAM row and the swap row; and the Buttons card, with the DS5's Create switch
+assert.equal(legacy().length,4*3+4);assert(legacy().every(legacyShown));
 assert.equal(S.profileLoadDue.size,0);
 
 // v30: the cards appear, the paddle / QAM / swap controls go, and every type is queued for a load
@@ -113,7 +113,7 @@ assert.deepEqual(dots(1),[false,false,true]);
 const labels=et=>rec(et).sources.map(sel=>sel.closest('.row').querySelector('label').lastChild.textContent.trim());
 assert.deepEqual(labels(3).slice(0,4),['Cross','Circle','Square','Triangle']);
 assert.deepEqual(labels(0).slice(0,4),['A','B','X','Y']);
-assert.deepEqual(labels(0).slice(15,24),['L4','R4','L5','R5','QAM','Left trackpad click','Right trackpad click','LT (full pull)','RT (full pull)']);
+assert.deepEqual(labels(0).slice(15,24),['L4','R4','L5','R5','QAM','Click','Click','LT (full pull)','RT (full pull)']);
 for(const et of [2,3]){
   assert.equal(rec(et).nintendo.textContent,'Apply Nintendo layout');
   assert(/^Swap Cross and Circle, and Square and Triangle \(A and B, X and Y trade places\)/.test(rec(et).nintendo.title),rec(et).nintendo.title);
@@ -126,6 +126,50 @@ const has=(et,c)=>[...rec(et).sources[0].options].some(o=>+o.value===c);
 assert(has(1,18)&&!has(0,18)&&!has(2,18));assert(has(3,17)&&!has(2,17));
 // every source shows its stored target
 assert.deepEqual(rec(0).sources.map(sel=>+sel.value),DEF);
+
+// each trackpad is a column of the Trackpads card: what touching it does, and what its click acts as
+const padCols=et=>[...typeEls[et].sec.querySelectorAll('.pad-col')],padCard=et=>padCols(et)[0].closest('.card');
+for(let et=0;et<4;et++){
+  const cols=padCols(et);assert.equal(cols.length,2);
+  assert.deepEqual(cols.map(c=>c.querySelector('h3').lastChild.textContent.trim()),['Left trackpad','Right trackpad']);
+  assert.deepEqual(cols.map(c=>[...c.querySelectorAll('.row label')].map(l=>l.textContent)),[['Touch','Click'],['Touch','Click']]);
+  assert.deepEqual(cols.map(c=>c.querySelectorAll('select')[0]),typeEls[et].padStick);
+  assert.deepEqual(cols.map(c=>c.querySelectorAll('select')[1]),[rec(et).sources[20],rec(et).sources[21]]);
+  assert(cols.every(c=>c.closest('.card')===padCard(et)&&!c.closest('.prof-card')));
+}
+const touch=(et,pad)=>[...typeEls[et].padStick[pad].options].map(o=>o.textContent);
+assert.deepEqual(touch(0,0),['Off','Left stick','Right stick']);assert.deepEqual(touch(0,1),['Mouse','Left stick','Right stick']);
+assert.deepEqual(touch(1,1),['Off','Left stick','Right stick','D-pad on touch (Switch Pro)','D-pad on click (Switch Pro)']);
+assert.deepEqual([touch(2,0)[0],touch(3,1)[0]],['Touchpad, left half','Touchpad, right half']);
+// a click can only act as what the type's mode does with it: the mouse on Xbox, the touchpad on PlayStation, nothing on Switch
+const padT=et=>[...rec(et).sources[20].options].filter(o=>+o.value>=21).map(o=>o.value+'='+o.textContent+'|'+o.dataset.glyph);
+assert.deepEqual(padT(0),['21=Mouse right click|mouseR','22=Mouse left click|mouseL']);
+assert.deepEqual(padT(1),[]);
+assert.deepEqual(padT(2),['21=Touchpad click, left half|padClickL','22=Touchpad click, right half|padClickR']);assert.deepEqual(padT(3),padT(2));
+assert.deepEqual([rec(0).sources[20].value,rec(0).sources[21].value],['21','22']);
+// the factory entries on Switch are the pad clicks too, but nothing there uses them: they read as none
+assert.deepEqual([rec(1).sources[20].value,rec(1).sources[21].value],['0','0']);assert(![...rec(1).sources[20].options].some(o=>o.dataset.extra));
+// the click rows write the same entries the button map does, and the Xbox pointer and the Switch trackpad settings sit in the card
+{const sel0=model[0].active;
+ assert.deepEqual(await opsOf(()=>change(rec(0).sources[21],1)),[[0x2D,0,sel0,21,1]]);assert.equal(model[0].maps[sel0][21],1);
+ assert.deepEqual(await opsOf(()=>change(rec(0).sources[21],22)),[[0x2D,0,sel0,21,22]]);}
+assert(padCard(0).contains(document.querySelector('#mouseCard')));
+assert(padCard(1).contains(document.querySelector('#swClickControls'))&&padCard(1).contains(document.querySelector('#hdPadBlock')));
+setTab(LIZARD_TAB);assert(!padCard(0).contains(document.querySelector('#mouseCard')));assert(document.querySelector('#mapLizardPane').contains(document.querySelector('#mouseCard')));
+setTab(0);assert(padCard(0).contains(document.querySelector('#mouseCard')));
+// older firmware has no profile ops: the click rows hide with the cards, the touch selects stay
+p[0]=29;await apply();for(let et=0;et<4;et++){assert(padCols(et).every(c=>!shown(c.querySelectorAll('.row')[1])&&shown(c.querySelectorAll('.row')[0])));}
+p[0]=30;await apply();for(let et=0;et<4;et++)assert(padCols(et).every(c=>shown(c.querySelectorAll('.row')[1])));
+
+// PlayStation types have a Create preset (it replaced the Create = touchpad click switch); the others do not
+assert(!rec(0).create&&!rec(1).create&&rec(2).create&&rec(3).create);
+{const sel0=model[3].active;
+ assert.equal(rec(3).create.textContent,'Create = touchpad click');assert(/^Make the Create button press the touchpad/.test(rec(3).create.title));
+ assert.deepEqual(await opsOf(()=>rec(3).create.click()),[[0x2D,3,sel0,8,16]]);
+ assert.equal(rec(3).sources[8].value,'16');assert.equal(rec(3).create.textContent,'Revert Create button');assert(/^Put the Create button back/.test(rec(3).create.title));
+ assert.equal(rec(2).create.textContent,'Create = touchpad click'); // another type's profile is not changed
+ assert.deepEqual(await opsOf(()=>rec(3).create.click()),[[0x2D,3,sel0,8,9]]);
+ assert.equal(rec(3).sources[8].value,'9');assert.equal(rec(3).create.textContent,'Create = touchpad click');}
 
 // Quick Access is not mappable while it is the shortcut modifier of the enabled mode shortcuts
 {const qam=()=>rec(0).sources[19],bare=()=>[...qam().options].map(o=>o.textContent).join();
