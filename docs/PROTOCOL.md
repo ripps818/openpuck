@@ -545,6 +545,40 @@ Messages:
     (default: the original 14-channel pool 18, 20, 22, 34, 42, 46, 52, 56, 68, 70, 72, 74, 76, 80). Replies
     with an `0xAD` frame, which carries the mask in force. Firmware that predates it answers `0xAD` version 1;
     send it only once an `0xAD` version 2 frame has been seen.
+  - `0x2C`–`0x32` (status-blob version ≥ 30): button-mapping profiles. Each emulated type (`0` Xbox, `1`
+    Switch, `2` DS4, `3` DS5, the same order as the per-type block of the status blob) keeps three profiles,
+    numbered `0`-`2`, and one of them is active. A profile is a map of one **target code** per **source** plus
+    the two trackpad -> stick settings. Every op below is answered with that type's `0xB0` frame, so an
+    argument out of range changes nothing and shows as unchanged.
+    - `0x2C <type>`: send the type's profiles.
+    - `0x2D <type> <profile> <source> <target>`: set one map entry.
+    - `0x2E <type> <profile>`: apply the Nintendo layout, i.e. overwrite the four face-button entries (A, B, X,
+      Y) with the pairs exchanged. Nothing else in the profile changes.
+    - `0x2F <type> <profile>`: reset the profile to the type's defaults (the Switch type starts with the
+      Nintendo layout and QAM on Capture).
+    - `0x30 <type> <profile>`: make it the active profile.
+    - `0x31 <type> <profile> <pad> <value>`: trackpad -> stick for `pad` 0 (left) / 1 (right); the values are
+      those of fields 80-87.
+    - `0x32 <type> <from> <to>`: copy a profile over another.
+
+    Sources (index in the map, in order): `0` A, `1` B, `2` X, `3` Y, `4` LB, `5` RB, `6` L3, `7` R3,
+    `8` Select-side button (Xbox Back, Switch Minus, PlayStation Create), `9` Start-side button, `10` Steam,
+    `11`-`14` D-pad up / down / left / right, `15`-`18` L4 / R4 / L5 / R5, `19` QAM, `20` / `21` left / right
+    trackpad click, `22` / `23` the left / right trigger's digital full-pull click.
+
+    Target codes: `0` none, `1`-`4` A / B / X / Y, `5`-`8` LB / RB / L3 / R3, `9` Select-side, `10` Start-side,
+    `11` Steam, `12`-`15` D-pad up / down / left / right, `16` PlayStation touchpad click, `17` PlayStation
+    mute, `18` Switch Capture, `19` / `20` LT / RT, `21` / `22` left / right trackpad click. `23`-`127` are
+    reserved and `128`-`255` are reserved for macro slots; a code the running mode cannot express acts as none,
+    and is kept as stored. Targets are the buttons a source *acts as*: with the Nintendo layout, source A holds
+    target `2`.
+
+    The older per-type fields (`4`-`8`, `21`, `40`-`75`) keep working and edit the **active** profile: paddle
+    and QAM codes are read and written as the user chose them, and the swap field sets or clears the Nintendo
+    layout and re-reads the paddle / QAM codes through it, as it always did. The status blob's per-type bytes
+    report the same view of the active profile, and its swap byte is set while the four face entries are
+    exchanged. A profile edited another way (a face button or paddle with a target the older fields cannot
+    express) keeps that entry when an older field changes a different one.
   - `0x20`–`0x24`: staged firmware update (begin/data/end/reboot/abort), acked with `0xAB` frames
   - `0x25 0x57 0x49 0x50 0x45`: **full board wipe** (`"WIPE"` magic, debug panel only). Erases the app
     region + LittleFS (settings + bonds) + bootloader-settings page and reboots app-less, so the board mounts
@@ -565,6 +599,11 @@ Messages:
     `[rowStart][rowCount][rowCount × 9-byte rows][the 29 v1 trailer bytes][enabled mask: 5 B LE]`
     `[default mask: 5 B LE]`. In v2 the journal-builder index is a candidate index (channel `4 + 2i`), and
     the startup channel is the one the next boot uses (a saved channel that is no longer enabled is skipped).
+  - `0xB0 <len> <payload>` (status-blob version ≥ 30): one type's mapping profiles, answering ops
+    `0x2C`-`0x32`: `[1][type][active][profiles][sources]`, then for each profile its `sources` target codes
+    and the two trackpad -> stick bytes (`profiles × (sources + 2)` bytes). Read the counts from the frame
+    rather than assuming three profiles and 24 sources. A later version may append further sections after
+    those bytes (button combinations, macros); skip what the length covers beyond what you know.
   - `0xAE 55 <payload>`: Switch Pro / HD rumble / shortcut settings: `[ver=1][37 zero bytes]`
     `[swDpadHaptics][storageState][hdPadScale/2][4 zero bytes][swQamSelect][shortcutFlags][8 zero bytes]`.
     The zero bytes held removed settings (Switch Pro profiles, rumble presets and slot, strength steps and

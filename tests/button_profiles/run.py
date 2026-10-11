@@ -17,6 +17,12 @@ std::map<std::string, std::vector<uint8_t> > files;
 InternalFileSystem InternalFS;
 uint32_t testFlash[7168];
 TypeCfg g_type[ET_COUNT];
+const TypeCfg g_typeDefault[ET_COUNT] = {
+	{ { 5, 6, 7, 8 }, 0, 0, 1, 0, 1 },
+	{ { 5, 6, 7, 8 }, 18, 1, 0, 0, 1 },
+	{ { 5, 6, 7, 8 }, 0, 0, 1, 0, 1 },
+	{ { 5, 6, 7, 8 }, 0, 0, 1, 0, 1 },
+};
 uint8_t g_padStickCfg[ET_COUNT][2];
 
 static const std::vector<uint8_t> &file() { return files["/btnmap.bin"]; }
@@ -147,6 +153,56 @@ int main()
 		assert(g_profile[ET_XBOX][0].map.target[RS_L4] == 5 && g_profileActive[ET_XBOX] == 0);
 		assert(file().size() == BM_LEN_FOR_TEST && file()[0] == 0x42);
 	}
+
+	// the profile ops reach any profile of a type; out-of-range arguments change nothing
+	defaults();
+	forget();
+	files.clear();
+	btnmapLoad();
+	btnmapFlush();
+	const MapProfile p0 = g_profile[ET_DS4][0];
+	assert(btnmapSetEntry(ET_DS4, 1, RS_LB, 20) && g_profile[ET_DS4][1].map.target[RS_LB] == 20);
+	assert(btnmapSetEntry(ET_DS4, 1, RS_LPADC, REMAP_CODE_MACRO_BASE + 3) && g_profile[ET_DS4][1].map.target[RS_LPADC] == 131);
+	assert(same(p0, g_profile[ET_DS4][0]) && g_type[ET_DS4].back[0] == 5); // not the active profile: nothing moves
+	assert(!btnmapSetEntry(ET_COUNT, 0, RS_A, 1) && !btnmapSetEntry(ET_DS4, BM_PROFILES, RS_A, 1) &&
+	       !btnmapSetEntry(ET_DS4, 0, RS_COUNT, 1));
+	assert(same(p0, g_profile[ET_DS4][0]));
+	assert(btnmapSetEntry(ET_DS4, 0, RS_R4, 15) && g_type[ET_DS4].back[1] == 15); // the active one moves the view
+	// the Nintendo layout touches the four face entries and nothing else
+	assert(btnmapApplyNintendo(ET_DS4, 1) && remapFacesSwapped(g_profile[ET_DS4][1].map));
+	assert(g_profile[ET_DS4][1].map.target[RS_LB] == 20 && g_profile[ET_DS4][1].map.target[RS_L4] == 5);
+	assert(!btnmapApplyNintendo(ET_DS4, 3));
+	// copy, reset (to the type's defaults, not to identity: the Switch type starts swapped with QAM on Capture)
+	assert(btnmapCopyProfile(ET_DS4, 1, 2) && same(g_profile[ET_DS4][2], g_profile[ET_DS4][1]));
+	assert(!btnmapCopyProfile(ET_DS4, 1, 3) && !btnmapCopyProfile(ET_DS4, 3, 1));
+	assert(btnmapSetProfilePadStick(ET_DS4, 2, 0, PS_RIGHT) && g_profile[ET_DS4][2].padStick[0] == PS_RIGHT);
+	assert(g_padStickCfg[ET_DS4][0] == 0); // the view follows the active profile
+	assert(!btnmapSetProfilePadStick(ET_DS4, 2, 2, PS_LEFT) && !btnmapSetProfilePadStick(ET_DS4, 2, 0, PS_MAX + 1));
+	assert(btnmapResetProfile(ET_SWITCH, 2) && remapFacesSwapped(g_profile[ET_SWITCH][2].map));
+	assert(g_profile[ET_SWITCH][2].map.target[RS_QAM] == 18 && g_profile[ET_SWITCH][2].map.target[RS_L4] == 5);
+	assert(btnmapResetProfile(ET_DS4, 2) && !remapFacesSwapped(g_profile[ET_DS4][2].map) &&
+	       g_profile[ET_DS4][2].padStick[0] == PS_OFF && g_profile[ET_DS4][2].map.target[RS_LB] == 5);
+	// selecting changes the active profile, and the view with it
+	assert(btnmapSelect(ET_DS4, 1) && g_profileActive[ET_DS4] == 1 && g_type[ET_DS4].abSwap == 1);
+	assert(btnmapActiveMap(ET_DS4, &m) && m.target[RS_LB] == 20);
+	assert(!btnmapSelect(ET_DS4, 3) && g_profileActive[ET_DS4] == 1 && g_profileActive[ET_XBOX] == 0);
+	// the legacy settings now edit profile 1
+	btnmapLegacySet(ET_DS4, 4, 3);
+	assert(g_profile[ET_DS4][1].map.target[RS_QAM] == 4 && g_profile[ET_DS4][0].map.target[RS_QAM] == 0);
+	// the dump a panel reads
+	uint8_t frame[BM_DUMP_LEN + 1];
+	assert(btnmapDump(ET_DS4, frame) == BM_DUMP_LEN && frame[0] == 1 && frame[1] == ET_DS4 && frame[2] == 1);
+	assert(frame[3] == BM_PROFILES && frame[4] == RS_COUNT);
+	assert(!memcmp(frame + 5 + (RS_COUNT + 2), g_profile[ET_DS4][1].map.target, RS_COUNT) && frame[5 + 2 * (RS_COUNT + 2) - 2 + 0] == 0);
+	assert(btnmapDump(ET_COUNT, frame) == 0);
+	// all of it survives a reboot
+	btnmapFlush();
+	static MapProfile snapshot[ET_COUNT][BM_PROFILES];
+	memcpy(snapshot, g_profile, sizeof snapshot);
+	const uint8_t activeDs4 = g_profileActive[ET_DS4];
+	forget();
+	btnmapLoad();
+	assert(!memcmp(snapshot, g_profile, sizeof snapshot) && g_profileActive[ET_DS4] == activeDs4);
 
 	// without a mounted filesystem the profiles still come up, and nothing is written
 	g_storageState = 0;

@@ -8,6 +8,7 @@
 // Storage is written from loop context only: the RF path and USB handlers call btnmapTouch(), and the loop
 // writes the file (btnmapTask), or saveCfg() does.
 #pragma once
+#include <stddef.h>
 #include <stdint.h>
 #include "remap.h"
 #include "config.h"
@@ -33,6 +34,25 @@ MapProfile &btnmapActive(uint8_t et);
 // The caller refreshes the live map (applyActiveType) when et is the running type.
 void btnmapLegacySet(uint8_t et, uint8_t k, uint8_t v);
 void btnmapSetPadStick(uint8_t et, uint8_t pad, uint8_t v);
+
+// Editing any profile of a type, for the WebUSB profile ops. Each returns false, changing nothing, for an
+// argument out of range. The caller refreshes the live map (applyActiveType) when et is the running type and the
+// profile is its active one (or select was called).
+bool btnmapSetEntry(uint8_t et, uint8_t profile, uint8_t source,
+		    uint8_t target);
+// The Nintendo layout: overwrites the four face-button entries only, so a face button set some other way is lost
+// but nothing else is touched.
+bool btnmapApplyNintendo(uint8_t et, uint8_t profile);
+bool btnmapResetProfile(uint8_t et, uint8_t profile);
+bool btnmapCopyProfile(uint8_t et, uint8_t from, uint8_t to);
+bool btnmapSelect(uint8_t et, uint8_t profile);
+bool btnmapSetProfilePadStick(uint8_t et, uint8_t profile, uint8_t pad,
+			      uint8_t v);
+
+// A type's profiles as the payload of the 0xB0 frame: [1][type][active][profiles][sources], then per profile
+// the targets and the two pad settings. Returns its length (BM_DUMP_LEN), 0 for a bad type.
+#define BM_DUMP_LEN (5 + BM_PROFILES * (RS_COUNT + 2))
+size_t btnmapDump(uint8_t et, uint8_t *out);
 
 // Mark the file out of date. It is written holdMs after the last change, so a burst of edits is one write.
 void btnmapTouch(uint32_t holdMs = 0);

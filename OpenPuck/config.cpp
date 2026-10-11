@@ -40,12 +40,15 @@ int g_mDiv = 64, g_mFric = 94;
 // 16/17 PS touch/mute, 18 Switch Capture). Switch differs: QAM defaults to Capture(18), A/B swap on, and
 // trackpad haptics off. qamMap 0 = unmapped (hardcoded per-mode behavior). ledBright 0 = no override.
 // rumble 1 = enabled (default), 0 = host rumble silenced for that type.
-TypeCfg g_type[ET_COUNT] = {
-	/* ET_XBOX   */ { { 5, 6, 7, 8 }, 0, 0, 1, 0, 1 },
-	/* ET_SWITCH */ { { 5, 6, 7, 8 }, 18, 1, 0, 0, 1 },
-	/* ET_DS4    */ { { 5, 6, 7, 8 }, 0, 0, 1, 0, 1 },
-	/* ET_DS5    */ { { 5, 6, 7, 8 }, 0, 0, 1, 0, 1 },
-};
+#define TYPE_DEFAULTS                                               \
+	{                                                           \
+		/* ET_XBOX   */ { { 5, 6, 7, 8 }, 0, 0, 1, 0, 1 },  \
+		/* ET_SWITCH */ { { 5, 6, 7, 8 }, 18, 1, 0, 0, 1 }, \
+		/* ET_DS4    */ { { 5, 6, 7, 8 }, 0, 0, 1, 0, 1 },  \
+		/* ET_DS5    */ { { 5, 6, 7, 8 }, 0, 0, 1, 0, 1 },  \
+	}
+TypeCfg g_type[ET_COUNT] = TYPE_DEFAULTS;
+const TypeCfg g_typeDefault[ET_COUNT] = TYPE_DEFAULTS;
 uint8_t g_etype = ET_NONE;
 
 // Trackpad -> stick mapping, off for every type by default (pads keep their touch/mouse behavior).

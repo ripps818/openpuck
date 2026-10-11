@@ -56,6 +56,8 @@ static volatile bool g_swFrameRequest = false;
 // Motion sample for the panel's 3D view (op 0x2A <slot> -> one 0xAF frame). The panel asks ~25 times a second, so
 // it is deferred to the usbd task like the blob; 0xFF = nothing pending.
 static volatile uint8_t g_motionSlot = 0xFF;
+// Type whose mapping profiles the next 0xB0 frame carries (v30); 0xFF = nothing pending.
+static volatile uint8_t g_mapDumpType = 0xFF;
 // Firmware-update ack ([0xAB][5][status][nextOff u32 LE]). Like the blob it is written from the usbd task
 // (webusbSofDrain), but unlike the blob it is NEVER dropped -- the panel's transfer flow-control is strict
 // ping-pong on these acks, so an unsent ack just stays pending until the FIFO has room (the panel is
@@ -149,7 +151,9 @@ static void webusbSendBlob()
 
 	// clang-format off
 	// protocol version
-	// (29 = +Create-as-touchpad-click toggle (field 116, blob p[210]); +selectable RF channel set: op 0x2B
+	// (30 = +mapping profiles: ops 0x2C..0x32 and the 0xB0 frame (see docs/PROTOCOL.md); the older paddle / QAM /
+	// swap fields keep working and now edit the active profile;
+	// 29 = +Create-as-touchpad-click toggle (field 116, blob p[210]); +selectable RF channel set: op 0x2B
 	// [mask: 5 bytes LE], 0xAD frame v2 (every even channel 4..80, rows paged by field 97's value, enabled +
 	// default masks appended; the panel keys off the 0xAD version, not this one);
 	// 28 = lizard-map ops 0x11..0x1A edit the SAVED map in every mode (a separate copy outside MODE_LIZARD,
@@ -176,7 +180,7 @@ static void webusbSendBlob()
 	// cfg; 8 = +per-slot link status; 7 = +raw accel; 
 	// 6 = +swPro120/gyroScale)
 	// clang-format on
-	p[2] = 29;
+	p[2] = 30;
 	p[3] = g_usbMode;
 	p[4] = (uint8_t)g_mDiv;
 	p[5] = (uint8_t)g_mFric;
@@ -692,6 +696,18 @@ static void webusbSendMotion(uint8_t slot)
 	}
 }
 
+// All of a type's mapping profiles (see btnmapDump). Drop-on-full like the status blob: the panel asks again.
+static void webusbSendMapDump(uint8_t et)
+{
+	static uint8_t f[2 + BM_DUMP_LEN];
+	f[0] = 0xB0;
+	f[1] = (uint8_t)btnmapDump(et, f + 2);
+	if (f[1] && tud_vendor_write_available() >= sizeof f) {
+		usb_web.write(f, sizeof f);
+		usb_web.flush();
+	}
+}
+
 static void webusbSofDrain(void)
 {
 	// If loop() has stopped beating, it's wedged -- keep pushing the blob (which carries the live stuck stage)
@@ -728,6 +744,11 @@ static void webusbSofDrain(void)
 	if (g_motionSlot != 0xFF) {
 		webusbSendMotion(g_motionSlot);
 		g_motionSlot = 0xFF;
+	}
+	if (g_mapDumpType != 0xFF) {
+		const uint8_t et = g_mapDumpType;
+		g_mapDumpType = 0xFF;
+		webusbSendMapDump(et);
 	}
 	if (g_rfStatusRequest && webusbSendRfStatus())
 		g_rfStatusRequest = false;
@@ -959,10 +980,10 @@ void webusbPoll()
 			uint8_t op = buf[0];
 			// 0x16 = test rumble (v21), 0x17..0x1A = lizard v2 (v21), 0x27 = Switch Pro/shortcut frame
 			// request (v23), 0x28 = save shortcut settings (v23), 0x29 = IMU on (v28), 0x2A = motion sample
-			// (v28), 0x2B = RF channel set (v29); extend this range whenever a new opcode is added, or the
-			// parser drops it as garbage.
+			// (v28), 0x2B = RF channel set (v29), 0x2C..0x32 = mapping profiles (v30); extend this range
+			// whenever a new opcode is added, or the parser drops it as garbage.
 			if ((op < 0x01 || op > 0x1A) &&
-			    (op < 0x20 || op > 0x2B)) { // resync: drop one byte
+			    (op < 0x20 || op > 0x32)) { // resync: drop one byte
 				memmove(buf, buf + 1, --n);
 				continue;
 			}
@@ -989,10 +1010,14 @@ void webusbPoll()
 				 op == 0x0F || op == 0x10 || op == 0x13 ||
 				 op == 0x2A) ?
 					       2 :
-				(op == 0x0A) ? 4 :
-				(op == 0x25) ? 5 :
-				(op == 0x20) ? 9 :
-				(op == 0x2B) ? 6 :
+				(op == 0x0A)				 ? 4 :
+				(op == 0x25)				 ? 5 :
+				(op == 0x20)				 ? 9 :
+				(op == 0x2B)				 ? 6 :
+				(op == 0x2C)				 ? 2 :
+				(op == 0x2D || op == 0x31)		 ? 5 :
+				(op == 0x2E || op == 0x2F || op == 0x30) ? 3 :
+				(op == 0x32)				 ? 4 :
 				(op == 0x21) ? (uint8_t)(6 + (n >= 6 ? buf[5] :
 								       0)) :
 					       1;
@@ -1070,6 +1095,46 @@ void webusbPoll()
 					saveCfg();
 				g_rfStatusPage = 0;
 				g_rfStatusRequest = true;
+			}
+
+			// Mapping profiles (v30), all addressed by <type> then <profile> (0..2). 0x2C <type>: dump;
+			// 0x2D <type> <profile> <source> <target>: set one entry; 0x2E <type> <profile>: the Nintendo
+			// layout; 0x2F: reset to the type's defaults; 0x30: make it the active one; 0x31 <type> <profile>
+			// <pad> <value>: trackpad -> stick; 0x32 <type> <from> <to>: copy. Every op is answered with the
+			// type's 0xB0 frame, so a refused one reads as unchanged.
+			else if (op >= 0x2C && op <= 0x32) {
+				const uint8_t et = buf[1];
+				bool ok = false;
+				switch (op) {
+				case 0x2C:
+					ok = et < ET_COUNT;
+					break;
+				case 0x2D:
+					ok = btnmapSetEntry(et, buf[2], buf[3],
+							    buf[4]);
+					break;
+				case 0x2E:
+					ok = btnmapApplyNintendo(et, buf[2]);
+					break;
+				case 0x2F:
+					ok = btnmapResetProfile(et, buf[2]);
+					break;
+				case 0x30:
+					ok = btnmapSelect(et, buf[2]);
+					break;
+				case 0x31:
+					ok = btnmapSetProfilePadStick(
+						et, buf[2], buf[3], buf[4]);
+					break;
+				default:
+					ok = btnmapCopyProfile(et, buf[2],
+							       buf[3]);
+					break;
+				}
+				if (ok && et == g_etype)
+					applyActiveType();
+				if (et < ET_COUNT)
+					g_mapDumpType = et;
 			}
 
 			// trigger controller power-off (same path Steam 0x9F / host-suspend use)

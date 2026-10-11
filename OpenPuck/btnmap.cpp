@@ -177,6 +177,100 @@ void btnmapSetPadStick(uint8_t et, uint8_t pad, uint8_t v)
 	btnmapTouch();
 }
 
+static bool bmValid(uint8_t et, uint8_t profile)
+{
+	return g_bmReady && et < ET_COUNT && profile < BM_PROFILES;
+}
+
+// an edit to the active profile also moves the older view of it
+static void bmChanged(uint8_t et, uint8_t profile)
+{
+	if (profile == g_profileActive[et])
+		bmMirrorLegacy();
+	btnmapTouch();
+}
+
+bool btnmapSetEntry(uint8_t et, uint8_t profile, uint8_t source, uint8_t target)
+{
+	if (!bmValid(et, profile) || source >= RS_COUNT)
+		return false;
+	g_profile[et][profile].map.target[source] = target;
+	bmChanged(et, profile);
+	return true;
+}
+
+bool btnmapApplyNintendo(uint8_t et, uint8_t profile)
+{
+	if (!bmValid(et, profile))
+		return false;
+	ButtonMap &m = g_profile[et][profile].map;
+	for (uint8_t i = 0; i < 4; i++)
+		m.target[RS_A + i] = remapSwapCode((uint8_t)(i + 1));
+	bmChanged(et, profile);
+	return true;
+}
+
+bool btnmapResetProfile(uint8_t et, uint8_t profile)
+{
+	if (!bmValid(et, profile))
+		return false;
+	MapProfile &p = g_profile[et][profile];
+	const TypeCfg &d = g_typeDefault[et];
+	remapLegacyMap(&p.map, d.back, d.qamMap, d.abSwap,
+		       bmPaddlesFollowSwap(et));
+	p.padStick[0] = p.padStick[1] = PS_OFF;
+	bmChanged(et, profile);
+	return true;
+}
+
+bool btnmapCopyProfile(uint8_t et, uint8_t from, uint8_t to)
+{
+	if (!bmValid(et, from) || !bmValid(et, to))
+		return false;
+	g_profile[et][to] = g_profile[et][from];
+	bmChanged(et, to);
+	return true;
+}
+
+bool btnmapSelect(uint8_t et, uint8_t profile)
+{
+	if (!bmValid(et, profile))
+		return false;
+	g_profileActive[et] = profile;
+	bmMirrorLegacy();
+	btnmapTouch();
+	return true;
+}
+
+bool btnmapSetProfilePadStick(uint8_t et, uint8_t profile, uint8_t pad,
+			      uint8_t v)
+{
+	if (!bmValid(et, profile) || pad > 1 || v > PS_MAX)
+		return false;
+	g_profile[et][profile].padStick[pad] = v;
+	bmChanged(et, profile);
+	return true;
+}
+
+size_t btnmapDump(uint8_t et, uint8_t *out)
+{
+	if (!g_bmReady || et >= ET_COUNT)
+		return 0;
+	out[0] = 1;
+	out[1] = et;
+	out[2] = g_profileActive[et];
+	out[3] = BM_PROFILES;
+	out[4] = RS_COUNT;
+	uint8_t *d = out + 5;
+	for (uint8_t i = 0; i < BM_PROFILES; i++) {
+		memcpy(d, g_profile[et][i].map.target, RS_COUNT);
+		d += RS_COUNT;
+		*d++ = g_profile[et][i].padStick[0];
+		*d++ = g_profile[et][i].padStick[1];
+	}
+	return BM_DUMP_LEN;
+}
+
 void btnmapTouch(uint32_t holdMs)
 {
 	g_bmDirty = true;
