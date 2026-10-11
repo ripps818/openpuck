@@ -35,6 +35,7 @@ using namespace Adafruit_LittleFS_Namespace;
 #include "rf_diag.h"
 #include "webusb_config.h"
 #include "lizard_map.h"
+#include "btnmap.h"
 #include "serial_console.h"
 #include "wake_hid.h"
 #include "status_led.h"
@@ -131,6 +132,8 @@ void modeSwitchReboot(uint8_t mode)
 	if (modeValid(mode))
 		saveMode(
 			mode); // 0xFF / invalid => keep the current mode (bond-import reboot)
+	// a profile switch waits a few seconds before it is written; the reboot must not drop it
+	btnmapFlush();
 	if (USBDevice.mounted())
 		USBDevice.detach();
 
@@ -182,8 +185,10 @@ void setup()
 	// seamless lizard (Steam mode with Steam closed) uses the built-in DEFAULT map, so edits
 	// made for pure lizard never change Steam-mode desktop behavior. (Without either call
 	// g_lizardMap.count stays 0 and lizard produces no keyboard/mouse output at all.)
+	// Lizard profiles 2 and 3 start as copies of profile 1; g_lizardMap is only scratch until the line below.
+	seedLizardProfiles(g_lizardMap);
 	if (g_usbMode == MODE_LIZARD)
-		loadLizardMap();
+		loadLizardProfile(g_lizardActive, g_lizardMap);
 	else
 		defaultLizardMap();
 	// regenerate per-slot session addresses from each bond UUID (deterministic, stable across reboots)
@@ -444,6 +449,8 @@ void loop()
 #endif
 	faultDiagSetStage(7);
 	usbMountTask(); // dynamic mount/unmount of connected controllers (no-op unless enabled)
+	btnmapTask(
+		millis()); // button profile edits made on the RF path or over USB are written here
 	faultDiagSetStage(8);
 	usbTxPump(); // drain queued device->host reports HERE, in loop -- never off-loop (jitters the RF poll)
 	puckCmdLogDrain(); // print captured USB feature commands (diagnostic; no-op unless g_cmdCapture)
@@ -488,6 +495,8 @@ void loop()
 #endif
 	faultDiagSetStage(7);
 	usbMountTask(); // dynamic mount/unmount of connected controllers (no-op unless enabled)
+	btnmapTask(
+		millis()); // button profile edits made on the RF path or over USB are written here
 	faultDiagSetStage(8);
 	usbTxPump(); // drain queued device->host reports HERE, in loop -- never off-loop (jitters the RF poll)
 	puckCmdLogDrain(); // print captured USB feature commands (diagnostic; no-op unless g_cmdCapture)

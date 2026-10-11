@@ -488,7 +488,8 @@ Messages:
     shortcut presets / strength steps / slots and are ignored.
     Per-type grip strength (blob version >= 25): `108`-`111` as percent/2 for emulated types 0-3 (Xbox,
     Switch, DS4, DS5); `104`-`107` (a per-type rumble style during development) are ignored. Status blob
-    `p[212..215]` (payload bytes 210..213) report all four; `p[210..211]` are zero (`p[209]` before v27).
+    `p[212..215]` (payload bytes 210..213) report all four. `p[210]` (Create as touchpad click, v29) and `p[211]`
+    (active mapping profiles, v30) are zero on older firmware, as `p[209]` is before v27.
     Controller speaker (blob version >= 26): `114` DualSense speaker volume as percent/2, 0 = off (default),
     up to 200%. Status blob `p[208]` (payload byte 206). See DUALSENSE_HAPTICS.md §7.
     Grip limiter (blob version >= 27): `115` soft-limit knee of the grip PCM stream, percent of full scale,
@@ -530,7 +531,9 @@ Messages:
     mode that is the live map. Every other mode runs the built-in defaults (Steam-mode seamless lizard), so
     the ops work on a separate copy loaded from flash, and committing it leaves the running defaults alone.
     Before version 28 the ops edited the running map in every mode, so outside Lizard mode a dump returned
-    the defaults and a commit saved them over the user's map.
+    the defaults and a commit saved them over the user's map. From version 30 there are three Lizard profiles
+    (type `4` below): the ops edit the one chosen with `0x34`, and until then (and on a host that never sends
+    it) the active one. The puck keeps the choice until it reboots.
   - `0x29` (status-blob version ≥ 28): turn on IMU streaming (`SETTING_IMU_MODE` = `0x07`) on every linked
     controller, sent three times because the RF relay is no-ack. The emulated modes do this at connect; Steam
     and Lizard modes never do, so there the panel's raw motion readout stays zero until this is sent. No reply.
@@ -545,6 +548,60 @@ Messages:
     (default: the original 14-channel pool 18, 20, 22, 34, 42, 46, 52, 56, 68, 70, 72, 74, 76, 80). Replies
     with an `0xAD` frame, which carries the mask in force. Firmware that predates it answers `0xAD` version 1;
     send it only once an `0xAD` version 2 frame has been seen.
+  - `0x2C`–`0x34` (status-blob version ≥ 30): button-mapping profiles. Each emulated type (`0` Xbox, `1`
+    Switch, `2` DS4, `3` DS5, the same order as the per-type block of the status blob) keeps three profiles,
+    numbered `0`-`2`, and one of them is active. Type `4` is Lizard mode's three binding maps (below). A profile is a map of one **target code** per **source** plus
+    the two trackpad -> stick settings. Every op below is answered with that type's `0xB0` frame, so an
+    argument out of range changes nothing and shows as unchanged.
+    - `0x2C <type>`: send the type's profiles.
+    - `0x2D <type> <profile> <source> <target>`: set one map entry.
+    - `0x2E <type> <profile>`: toggle the Nintendo layout, i.e. overwrite the four face-button entries (A, B,
+      X, Y) with the pairs exchanged, or, when they already are, with each button as itself. Nothing else in
+      the profile changes. A panel reads which of the two it will do from the profile it holds.
+    - `0x2F <type> <profile>`: reset the profile to the type's defaults (the Switch type starts with the
+      Nintendo layout and QAM on Capture).
+    - `0x30 <type> <profile>`: make it the active profile.
+    - `0x31 <type> <profile> <pad> <value>`: trackpad -> stick for `pad` 0 (left) / 1 (right); the values are
+      those of fields 80-87.
+    - `0x32 <type> <from> <to>`: copy a profile over another.
+    - `0x33 <type> <enabled> <prev> <next>`: the profile-switch gesture. With the shortcut modifier held (all
+      four back buttons, or Quick Access, as set in the Mode shortcuts card), the `prev` / `next` source steps
+      the running type's active profile, wrapping, and the controller buzzes the new profile's number (1-3)
+      even when shortcut feedback is off. The two buttons are hidden from the host while the modifier is held.
+      It is a puck-wide setting (`type` only addresses the reply), works whether or not the Mode shortcuts are
+      on. In Lizard mode it steps the Lizard profile; in Steam, DirectInput and SInput mode it does nothing.
+      `enabled` is 0 or 1 (default 1);
+      `prev` / `next` must differ and be LB (`4`), RB (`5`), L3 (`6`), R3 (`7`), Select-side (`8`) or Start-side
+      (`9`), which no shortcut uses (default LB / RB). A refused value changes nothing.
+
+    Sources (index in the map, in order): `0` A, `1` B, `2` X, `3` Y, `4` LB, `5` RB, `6` L3, `7` R3,
+    `8` Select-side button (Xbox Back, Switch Minus, PlayStation Create), `9` Start-side button, `10` Steam,
+    `11`-`14` D-pad up / down / left / right, `15`-`18` L4 / R4 / L5 / R5, `19` QAM, `20` / `21` left / right
+    trackpad click, `22` / `23` the left / right trigger's digital full-pull click.
+
+    Target codes: `0` none, `1`-`4` A / B / X / Y, `5`-`8` LB / RB / L3 / R3, `9` Select-side, `10` Start-side,
+    `11` Steam, `12`-`15` D-pad up / down / left / right, `16` PlayStation touchpad click, `17` PlayStation
+    mute, `18` Switch Capture, `19` / `20` LT / RT, `21` / `22` left / right trackpad click. `23`-`127` are
+    reserved and `128`-`255` are reserved for macro slots; a code the running mode cannot express acts as none,
+    and is kept as stored. Targets are the buttons a source *acts as*: with the Nintendo layout, source A holds
+    target `2`.
+
+    The older per-type fields (`4`-`8`, `21`, `40`-`75`) keep working and edit the **active** profile: paddle
+    and QAM codes are read and written as the user chose them, and the swap field sets or clears the Nintendo
+    layout and re-reads the paddle / QAM codes through it, as it always did. The status blob's per-type bytes
+    report the same view of the active profile, and its swap byte is set while the four face entries are
+    exchanged. Blob byte `211` (firmware index; `209` in the payload the panel reads) holds the active profile
+    of each type, two bits each with the Xbox type in the lowest, so a profile switched on the controller
+    shows without asking. A profile edited another way (a face button or paddle with a target the older fields cannot
+    express) keeps that entry when an older field changes a different one.
+
+    Lizard profiles (type `4`): each is a whole lizard binding map, edited through the lizard ops above, so
+    of the ops here only `0x2C` (dump), `0x2F` (reset to the built-in default map), `0x30` (select) and `0x32`
+    (copy) apply; the others are refused. `0x34 <profile>` chooses the profile the lizard ops edit and is
+    answered with the type-4 `0xB0` frame. Profile `0` is stored in `/lizard_map.bin`, the file older firmware
+    reads, and profiles `1` and `2` in files of their own, first written as copies of profile `0`. In Lizard
+    mode the active one is the live map; selecting another loads it at once. The active Lizard profile is byte
+    47 of the `0xAE` payload, so a switch made on the controller shows on the next poll.
   - `0x20`–`0x24`: staged firmware update (begin/data/end/reboot/abort), acked with `0xAB` frames
   - `0x25 0x57 0x49 0x50 0x45`: **full board wipe** (`"WIPE"` magic, debug panel only). Erases the app
     region + LittleFS (settings + bonds) + bootloader-settings page and reboots app-less, so the board mounts
@@ -565,8 +622,15 @@ Messages:
     `[rowStart][rowCount][rowCount × 9-byte rows][the 29 v1 trailer bytes][enabled mask: 5 B LE]`
     `[default mask: 5 B LE]`. In v2 the journal-builder index is a candidate index (channel `4 + 2i`), and
     the startup channel is the one the next boot uses (a saved channel that is no longer enabled is skipped).
+  - `0xB0 <len> <payload>` (status-blob version ≥ 30): one type's mapping profiles, answering ops
+    `0x2C`-`0x34`: `[1][type][active][profiles][sources]`, then for each profile its `sources` target codes
+    and the two trackpad -> stick bytes (`profiles × (sources + 2)` bytes), then the gesture
+    `[enabled][prev][next]`. Type `4` (Lizard) has no sources, so it is the header and the gesture. Read the counts from the frame rather than assuming three profiles and 24
+    sources. A later version may append further sections after
+    those bytes (button combinations, macros); skip what the length covers beyond what you know.
   - `0xAE 55 <payload>`: Switch Pro / HD rumble / shortcut settings: `[ver=1][37 zero bytes]`
-    `[swDpadHaptics][storageState][hdPadScale/2][4 zero bytes][swQamSelect][shortcutFlags][8 zero bytes]`.
+    `[swDpadHaptics][storageState][hdPadScale/2][4 zero bytes][swQamSelect][shortcutFlags][lizardProfile]`
+    `[7 zero bytes]`, where `lizardProfile` (version ≥ 30, zero before) is the active Lizard profile.
     The zero bytes held removed settings (Switch Pro profiles, rumble presets and slot, strength steps and
     slots) and keep the layout stable; storageState 0 unavailable, 1 mounted, 2 initialized blank flash, 3 save failed.
 
@@ -574,7 +638,8 @@ Lizard binding wire format (16 bytes), matching `LizardBinding` in `lizard_map.h
 
 ```text
 [0]     outType   (0 none, 1 keyboard chord, 2 mouse btn, 3 mouse axis, 4 scroll, 5 consumer)
-[1..7]  outData[0..6]  (type-specific payload)
+[1..7]  outData[0..6]  (type-specific payload; mouse axis: [0] source, 0 right trackpad, 1 left stick,
+                        2 gyro (not driven yet), 3 right stick)
 [8..11] trigMask  u32 LE  (button bits: any-of)
 [12..15] holdMask u32 LE  (button bits: all-of guard)
 ```

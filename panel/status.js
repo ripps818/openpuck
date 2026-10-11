@@ -9,6 +9,7 @@ import { syncMapNav, syncNav } from './nav.js';
 import { syncMotionCap } from './motion.js';
 import { repaintGlyphSelects } from './glyphselect.js';
 import { fillIcon } from './icons.js';
+import { profilesCapable, profilesNoteBlob, profilesNoteSw, syncProfileVisibility } from './profiles.js';
 
 export const MODE_NAMES = ["Steam","Xbox 360","Switch HORIPAD","Lizard","Switch Pro","PS5 DualSense","PS4 DualShock","PS5 DualSense (single HID)","PS4 DualShock (single HID)","PS3 DualShock","Original Xbox","DirectInput","SInput"];
 // display order for mode lists (MODE_NAMES is indexed by the firmware's mode number); single-HID after their base
@@ -41,6 +42,7 @@ const CHORD_DPAD_DEF = [9, 8, 7, 2];       // firmware defaults: PS3, DS4 game, 
 export function applySw(s){
   S.lastSw=s;
   swStatusApply(s);
+  profilesNoteSw(s);
   $("#shortcutToggles").classList.toggle("hide",!s);
   $("#hdPadBlock").classList.toggle("hide",!s);
   $("#qamSelectRow").classList.toggle("hide",!s);
@@ -295,6 +297,9 @@ export function applyBlob(p){
   { const la=((p.length>179 && p[179] === 0xEE) || (p.length>197 && p[197] === 0xEE)); $("#isMachineInternal").textContent = la?"on":"off"; $("#isMachineInternal").classList.toggle("active",!!la); }
   // per-type button config (blob v10/v17): 4 types x 9 bytes. readBlob() strips the 2-byte [0xA5][len] header, so
   // the firmware's buffer index 75 lands at JS index 73 here.
+  const profCap=profilesCapable();
+  syncProfileVisibility();
+  profilesNoteBlob(p);
   if(p.length>=73+TYPE_DEFS.length*9){
     const activeEt=etypeForMode(mode);
     typeEls.forEach((rec,et)=>{
@@ -340,7 +345,8 @@ export function applyBlob(p){
       rec.padStick.forEach((sel,pad)=>{
         // hidden entirely on firmware too old to speak the mapping, so the panel never shows a dead control
         sel.closest(".row").classList.toggle("hide", !padStickCap);
-        if(padStickCap && !held(sel)) sel.value=p[185+et*2+pad];
+        // with profiles the selects show the profile being edited (renderProfiles), not the active one
+        if(padStickCap && !profCap && !held(sel)) sel.value=p[185+et*2+pad];
       });
       // dot marks the type matching the current puck mode
       rec.activeDot.style.display = (et===activeEt) ? "" : "none";

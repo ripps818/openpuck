@@ -1,6 +1,8 @@
 #include "config.h"
 #include "storage.h"
 #include "triton.h"
+#include "remap.h"
+#include "btnmap.h"
 #include "radio.h"
 #include "rf_link.h" // g_rxWin (poll RX window persisted here)
 #include "haptics.h" // g_hapticBlockOn, g_hapticBlockMs
@@ -38,12 +40,15 @@ int g_mDiv = 64, g_mFric = 94;
 // 16/17 PS touch/mute, 18 Switch Capture). Switch differs: QAM defaults to Capture(18), A/B swap on, and
 // trackpad haptics off. qamMap 0 = unmapped (hardcoded per-mode behavior). ledBright 0 = no override.
 // rumble 1 = enabled (default), 0 = host rumble silenced for that type.
-TypeCfg g_type[ET_COUNT] = {
-	/* ET_XBOX   */ { { 5, 6, 7, 8 }, 0, 0, 1, 0, 1 },
-	/* ET_SWITCH */ { { 5, 6, 7, 8 }, 18, 1, 0, 0, 1 },
-	/* ET_DS4    */ { { 5, 6, 7, 8 }, 0, 0, 1, 0, 1 },
-	/* ET_DS5    */ { { 5, 6, 7, 8 }, 0, 0, 1, 0, 1 },
-};
+#define TYPE_DEFAULTS                                               \
+	{                                                           \
+		/* ET_XBOX   */ { { 5, 6, 7, 8 }, 0, 0, 1, 0, 1 },  \
+		/* ET_SWITCH */ { { 5, 6, 7, 8 }, 18, 1, 0, 0, 1 }, \
+		/* ET_DS4    */ { { 5, 6, 7, 8 }, 0, 0, 1, 0, 1 },  \
+		/* ET_DS5    */ { { 5, 6, 7, 8 }, 0, 0, 1, 0, 1 },  \
+	}
+TypeCfg g_type[ET_COUNT] = TYPE_DEFAULTS;
+const TypeCfg g_typeDefault[ET_COUNT] = TYPE_DEFAULTS;
 uint8_t g_etype = ET_NONE;
 
 // Trackpad -> stick mapping, off for every type by default (pads keep their touch/mouse behavior).
@@ -108,6 +113,8 @@ void applyActiveType()
 		g_rumbleStyle = RUMBLE_STYLE_NORMAL;
 		g_ledBright = 0;
 		g_padStick[0] = g_padStick[1] = PS_OFF;
+		remapDefaultMap(&g_btnMap);
+		btnmapUpdateGestureMask();
 		return;
 	}
 	const TypeCfg &t = g_type[g_etype];
@@ -124,6 +131,11 @@ void applyActiveType()
 	g_ledBright = t.ledBright;
 	g_padStick[0] = g_padStickCfg[g_etype][0];
 	g_padStick[1] = g_padStickCfg[g_etype][1];
+	// the active profile, or until the profiles are loaded the map the settings above describe
+	if (!btnmapActiveMap(g_etype, &g_btnMap))
+		remapLegacyMap(&g_btnMap, g_back, g_qamMap, g_abSwap,
+			       g_etype != ET_XBOX);
+	btnmapUpdateGestureMask();
 }
 // poll rate defaults to POLL_US_DEFAULT (250 Hz), matching the real Valve puck (see config.h). The
 // delivered report rate equals the poll rate (fresh IMU in every reply). Live-adjustable via console
@@ -257,11 +269,14 @@ void saveCfg()
 		c.padStick[i][1] = g_padStickCfg[i][1];
 	}
 	storageWriteFile(CFG_FILE, "/cfg.tmp", (const uint8_t *)&c, sizeof c);
+	// a reset can follow a settings save at once, so any profile edit still waiting goes out with it
+	btnmapFlush();
 }
 
 void loadCfg()
 {
 	if (g_storageState == 0) {
+		btnmapLoad();
 		applyActiveType();
 		return;
 	}
@@ -438,7 +453,9 @@ void loadCfg()
 		g_shortcutFlags = c.shortcutFlags & ~6u;
 	else
 		g_shortcutFlags = SHORTCUT_ENABLED;
-	// resolve the active emulated type's settings into the live mirrors the mode builders read
+	// resolve the active emulated type's settings into the live mirrors the mode builders read, after the
+	// stored mapping profiles (built from the settings above on the first boot) are loaded
+	btnmapLoad();
 	applyActiveType();
 	// clear the one-shot so the NEXT cold boot reverts to the default/persist policy
 	if (consume) {

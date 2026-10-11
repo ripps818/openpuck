@@ -17,7 +17,8 @@
 #define LZ_OUT_KBD_CHORD 1u
 // Mouse button: outData[0]=button bitmask (bit0=left, bit1=right, bit2=middle).
 #define LZ_OUT_MOUSE_BTN 2u
-// Mouse axis: outData[0]=source (LZ_MSRC_*), outData[1]=gyro activation (LZ_GYRO_*).
+// Mouse axis: outData[0]=source (LZ_MSRC_*), outData[1]=gyro activation (LZ_GYRO_*). The right pad and the two sticks
+// are driven; the gyro is not yet.
 #define LZ_OUT_MOUSE_AXIS 3u
 // Scroll wheel from an analog source: outData[0]=source (LZ_MSRC_*).
 #define LZ_OUT_SCROLL 4u
@@ -27,6 +28,7 @@
 // ---- analog source (outData[0] for MOUSE_AXIS and SCROLL) ----
 #define LZ_MSRC_RPAD 0u // right trackpad (MOUSE_AXIS; touch-gated by TB_RPADT)
 #define LZ_MSRC_LSTICK 1u // left analog stick (MOUSE_AXIS)
+#define LZ_MSRC_RSTICK 3u // right analog stick (MOUSE_AXIS)
 #define LZ_MSRC_GYRO \
 	2u // gyroscope (MOUSE_AXIS; activation-gated, see LZ_GYRO_*)
 #define LZ_MSRC_LPAD 0u // left trackpad (SCROLL; touch-gated by TB_LPADT)
@@ -75,3 +77,12 @@ extern LizardMap g_lizardMap;
 void defaultLizardMap(LizardMap &m = g_lizardMap);
 void loadLizardMap(LizardMap &m = g_lizardMap);
 void saveLizardMap(const LizardMap &m = g_lizardMap);
+
+// The three Lizard mapping profiles, one file each. Profile 0 is /lizard_map.bin, the file older firmware
+// reads, so a downgrade keeps the first profile. A profile with no file yet is written as a copy of profile 0
+// when it is first read; seedLizardProfiles() does that at boot, so it never happens on the RF path. m is the
+// map to fill (scratch for the seed).
+#define LZ_PROFILES 3
+void loadLizardProfile(uint8_t profile, LizardMap &m);
+void saveLizardProfile(uint8_t profile, const LizardMap &m);
+void seedLizardProfiles(LizardMap &m);

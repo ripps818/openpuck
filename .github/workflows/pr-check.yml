@@ -66,6 +66,9 @@ jobs:
       - name: RF channel set panel test
         run: NODE_PATH="$RUNNER_TEMP/ui-tests/node_modules" node tests/rf_channel_set/panel.cjs
 
+      - name: Mapping profiles panel test
+        run: NODE_PATH="$RUNNER_TEMP/ui-tests/node_modules" node tests/button_profiles/panel.cjs
+
   build:
     if: github.repository == 'ripps818/openpuck'
     runs-on: ubuntu-latest

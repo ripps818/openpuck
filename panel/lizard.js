@@ -1,8 +1,9 @@
 import { S } from './state.js';
 import { log } from './util.js';
-import { readIn, send, waitIdle } from './protocol.js';
+import { readFrame, readIn, send, waitIdle } from './protocol.js';
 import { glyphSelect } from './glyphselect.js';
 import { iconEl } from './icons.js';
+import { lizardProfileSel } from './profiles.js';
 
 // ===================== Lizard (desktop) binding map =====================
 // Mirrors firmware lizard_map.h. A binding is {outType, od:[7], trig, hold}. Output types and the
@@ -40,7 +41,7 @@ for(let i=0;i<12;i++) LZ_KEYS.push([0x3a+i,"F"+(i+1)]);
 // every key is drawn as a keycap bearing its name (panel/icons.js)
 for(const k of LZ_KEYS) if(k[0]) k.push("key:"+k[1]);
 const LZ_MBTNS = [[1,"Left click","mouseL"],[2,"Right click","mouseR"],[4,"Middle click","mouseM"]];
-const LZ_AXIS_SRC = [[0,"Right trackpad","padR"],[1,"Left stick","stickL"],[2,"Gyro","gyro"]];
+const LZ_AXIS_SRC = [[0,"Right trackpad","padR"],[1,"Left stick","stickL"],[3,"Right stick","stickR"],[2,"Gyro","gyro"]];
 const LZ_GYRO_ACT = [[0,"Always"],[1,"While right pad touched","padR"],[2,"While left stick deflected","stickL"],[3,"While hold-button held"]];
 const LZ_CONSUMER = [[1,"Volume +","volUp"],[2,"Volume −","volDown"]];
 
@@ -142,6 +143,7 @@ function lzV2Select(options,value,onchange,noneLabel){
 }
 // ---- lizard editor: one block per binding, a readable summary line on top, labelled fields below ----
 let lzDirty=false;
+export const lzIsDirty=()=>lzDirty;
 function lzSetDirty(on){ lzDirty=on; const d=document.getElementById("lzDirty"); if(d) d.classList.toggle("hide",!on); }
 const lzName=(list,v)=>{ const m=list.find(x=>Number(x[0])===Number(v)); return m?m[1]:""; };
 const lzGlyph=(list,v)=>{ const m=list.find(x=>Number(x[0])===Number(v)); return m&&m[2]; };
@@ -279,6 +281,26 @@ export async function lzV2Load(){
 	}catch(e){ log("lizard load failed: "+e.message); }
 	finally{S.lizardBusy=false;}
 }
+// One Lizard profile's bindings (status v30), for backups: op 0x34 points the lizard ops at the profile. The
+// caller holds the pipe and points them back at the profile on screen afterwards.
+export async function lzReadProfile(profile){
+	await send([0x34,profile]);
+	if(!await readFrame(0xB0,5,256)) throw new Error("no answer choosing Lizard profile "+(profile+1));
+	return lzV2ReadMap(lzV2Ops().dump);
+}
+export async function lzWriteProfile(profile,bindings){
+	await send([0x34,profile]);
+	if(!await readFrame(0xB0,5,256)) throw new Error("no answer choosing Lizard profile "+(profile+1));
+	const ops=lzV2Ops(), count=Math.min(LZ_MAX,bindings.length);
+	await send([0x13,count]);
+	for(let i=0;i<count;i++){
+		const b=bindings[i], cmd=[ops.set,i,(b.outType||0)&0xff];
+		for(let k=0;k<7;k++)cmd.push(((b.od&&b.od[k])||0)&0xff);
+		lzWriteLE(cmd,b.trig,8);lzWriteLE(cmd,b.hold,8);
+		await send(cmd);
+	}
+	return lzV2ReadMap(ops.save);
+}
 export async function lzV2Save(){
 	if(S.lizardBusy||!S.dev)return;
 	S.lizardBusy=true;
@@ -303,7 +325,8 @@ export async function lzV2Save(){
 }
 export async function lzV2Reset(){
 	if(S.lizardBusy||!S.dev)return;
-	if(!confirm("Reset the lizard map to the built-in defaults? This saves to the puck immediately; your bindings are lost.")) return;
+	const prof=lizardProfileSel();
+	if(!confirm("Reset "+(prof===null?"the lizard map":"Lizard profile "+(prof+1))+" to the built-in defaults? This saves to the puck immediately; your bindings are lost.")) return;
 	S.lizardBusy=true;
 	try{
 		// runs from the first status blob, while that poll is still reading its Switch frame: wait for the pipe

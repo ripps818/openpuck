@@ -174,6 +174,8 @@ struct TypeCfg {
 	uint8_t rumble;
 };
 extern TypeCfg g_type[ET_COUNT];
+// what g_type starts as, and what a mapping profile resets to
+extern const TypeCfg g_typeDefault[ET_COUNT];
 // Per-type grip rumble strength (percent). g_rumbleScale is the active type's live copy (applyActiveType); an
 // edit to it is kept with rumbleStoreActive(). The rumble style is not a setting: applyActiveType picks HD
 // Emulation in Switch Pro mode and Normal everywhere else.

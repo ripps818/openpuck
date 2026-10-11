@@ -1,6 +1,7 @@
 #include "mode_switch_pro.h"
 #include "triton.h"
 #include "gamepad_util.h"
+#include "remap.h"
 #include "config.h"
 #include "storage.h"
 #include "haptics.h"
@@ -87,50 +88,6 @@ static const uint8_t SWPRO_HID_DESC[] = {
 #define JC_BTN_LEFT (1u << 19)
 #define JC_BTN_L (1u << 22)
 #define JC_BTN_ZL (1u << 23)
-static uint32_t codeToJc(uint8_t c, uint32_t fA, uint32_t fB, uint32_t fX,
-			 uint32_t fY)
-{
-	switch (c) {
-	case 1:
-		return fA;
-	case 2:
-		return fB;
-	case 3:
-		return fX;
-	case 4:
-		return fY;
-	case 5:
-		return JC_BTN_L;
-	case 6:
-		return JC_BTN_R;
-	case 7:
-		return JC_BTN_LSTICK;
-	case 8:
-		return JC_BTN_RSTICK;
-	case 9:
-		return JC_BTN_MINUS;
-	case 10:
-		return JC_BTN_PLUS;
-	case 11:
-		return JC_BTN_HOME;
-	case 18:
-		return JC_BTN_CAPTURE; // Capture / Screenshot (Switch-only target)
-	case 19:
-		return JC_BTN_ZL; // left trigger
-	case 20:
-		return JC_BTN_ZR; // right trigger
-	case 12:
-		return JC_BTN_UP;
-	case 13:
-		return JC_BTN_DOWN;
-	case 14:
-		return JC_BTN_LEFT;
-	case 15:
-		return JC_BTN_RIGHT;
-	default:
-		return 0;
-	}
-}
 // NSLOT Pro-Controller HIDs (one per bond slot) + per-slot handshake state (timer, report-mode gate,
 // subcommand-reply FIFO), per-slot reply queue indices, per-slot last-stream millis, per-slot MAC, and
 // per-slot user-cal SPI mirror.
@@ -491,19 +448,26 @@ static void jcInputPrefix(uint8_t slot, uint8_t *out)
 	uint32_t b = g_in[bond].buttons | padDpadButtons(g_in[bond]);
 	bool qamSelect = switchSelectShortcut(bond, b);
 	b = shortcutHostButtons(b);
-	uint32_t fA = g_abSwap ? JC_BTN_B : JC_BTN_A,
-		 fB = g_abSwap ? JC_BTN_A : JC_BTN_B;
-	uint32_t fX = g_abSwap ? JC_BTN_Y : JC_BTN_X,
-		 fY = g_abSwap ? JC_BTN_X : JC_BTN_Y;
+	// QAM + Select is the screenshot shortcut: QAM does not also act as its own mapping
+	if (qamSelect)
+		b &= ~(uint32_t)TB_QAM;
+	bool capture;
+	b = remapButtons(b, &capture);
+	if (qamSelect) {
+		const RemapTarget t =
+			remapTarget(g_swQamSelect, remapFacesSwapped(g_btnMap));
+		b |= t.tb;
+		capture |= t.capture;
+	}
 	uint32_t jc = 0;
 	if (b & TB_Y)
-		jc |= fY;
+		jc |= JC_BTN_Y;
 	if (b & TB_B)
-		jc |= fB;
+		jc |= JC_BTN_B;
 	if (b & TB_A)
-		jc |= fA;
+		jc |= JC_BTN_A;
 	if (b & TB_X)
-		jc |= fX;
+		jc |= JC_BTN_X;
 	if (b & TB_LB)
 		jc |= JC_BTN_L;
 	if (b & TB_RB)
@@ -530,18 +494,8 @@ static void jcInputPrefix(uint8_t slot, uint8_t *out)
 		jc |= JC_BTN_RIGHT;
 	if (b & TB_DLF)
 		jc |= JC_BTN_LEFT;
-	if (b & TB_L4)
-		jc |= codeToJc(g_back[0], fA, fB, fX, fY);
-	if (b & TB_R4)
-		jc |= codeToJc(g_back[1], fA, fB, fX, fY);
-	if (b & TB_L5)
-		jc |= codeToJc(g_back[2], fA, fB, fX, fY);
-	if (b & TB_R5)
-		jc |= codeToJc(g_back[3], fA, fB, fX, fY);
-	if (!qamSelect && (b & TB_QAM) && g_qamMap)
-		jc |= codeToJc(g_qamMap, fA, fB, fX, fY);
-	if (qamSelect)
-		jc |= codeToJc(g_swQamSelect, fA, fB, fX, fY);
+	if (capture)
+		jc |= JC_BTN_CAPTURE;
 	out[0] = g_jcTimer[slot]++;
 
 	// bat_con byte: [7:5]=capacity, bit4=charging, bit0=host_powered (see jcBatteryNibble). The controllers are

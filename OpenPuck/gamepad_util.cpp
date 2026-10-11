@@ -1,4 +1,5 @@
 #include "gamepad_util.h"
+#include "remap.h"
 #include "triton.h"
 #include "config.h"
 #include "haptics.h"
@@ -304,87 +305,9 @@ void steamPadsToTouch(uint32_t b, uint16_t touchH, int16_t lpx, int16_t lpy,
 	}
 }
 
-// Map g_back[] paddle code -> Steam button flags (same codes as codeToXB / codeToSwitch).
-static void psOrBackCode(uint32_t *b, uint8_t c)
-{
-	switch (c) {
-	case 1:
-		*b |= TB_A;
-		break;
-	case 2:
-		*b |= TB_B;
-		break;
-	case 3:
-		*b |= TB_X;
-		break;
-	case 4:
-		*b |= TB_Y;
-		break;
-	case 5:
-		*b |= TB_LB;
-		break;
-	case 6:
-		*b |= TB_RB;
-		break;
-	case 7:
-		*b |= TB_L3;
-		break;
-	case 8:
-		*b |= TB_R3;
-		break;
-	case 9:
-		*b |= TB_MENU;
-		break;
-	case 10:
-		*b |= TB_VIEW;
-		break;
-	case 11:
-		*b |= TB_STEAM;
-		break;
-	case 12:
-		*b |= TB_DUP;
-		break;
-	case 13:
-		*b |= TB_DDN;
-		break;
-	case 14:
-		*b |= TB_DLF;
-		break;
-	case 15:
-		*b |= TB_DRT;
-		break;
-	case 16:
-		*b |= TB_TOUCH;
-		break;
-	case 17:
-		*b |= TB_MUTE;
-		break;
-	case 19:
-		*b |= TB_L2; // left trigger (L2)
-		break;
-	case 20:
-		*b |= TB_R2; // right trigger (R2)
-		break;
-	default:
-		break;
-	}
-}
 uint32_t psButtonsFromSteam(uint32_t raw)
 {
-	uint32_t b = shortcutHostButtons(raw);
-	if (g_qamMap && (b & TB_QAM)) {
-		b &= ~(uint32_t)TB_QAM;
-		psOrBackCode(&b, g_qamMap);
-	}
-	if (b & TB_L4)
-		psOrBackCode(&b, g_back[0]);
-	if (b & TB_R4)
-		psOrBackCode(&b, g_back[1]);
-	if (b & TB_L5)
-		psOrBackCode(&b, g_back[2]);
-	if (b & TB_R5)
-		psOrBackCode(&b, g_back[3]);
-	return b;
+	return remapButtons(shortcutHostButtons(raw));
 }
 // DualSense / DS4 buttons[1]: L1..R3, Create(Share), Options(Start). The analog trigger values come from
 // the per-slot `g_in[slot]` (pass lt/rt explicitly so a single shoulder byte never leaks across slots).
@@ -422,24 +345,13 @@ uint8_t psHatNibble(uint32_t b)
 uint8_t psFaceNibble(uint32_t b)
 {
 	uint8_t f = 0;
-	if (g_abSwap) {
-		if (b & TB_A)
-			f |= 0x40;
-		if (b & TB_B)
-			f |= 0x20;
-		if (b & TB_X)
-			f |= 0x80;
-		if (b & TB_Y)
-			f |= 0x10;
-	} else {
-		if (b & TB_A)
-			f |= 0x20;
-		if (b & TB_B)
-			f |= 0x40;
-		if (b & TB_X)
-			f |= 0x10;
-		if (b & TB_Y)
-			f |= 0x80;
-	}
+	if (b & TB_A)
+		f |= 0x20;
+	if (b & TB_B)
+		f |= 0x40;
+	if (b & TB_X)
+		f |= 0x10;
+	if (b & TB_Y)
+		f |= 0x80;
 	return f;
 }
