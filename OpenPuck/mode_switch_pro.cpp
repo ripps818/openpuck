@@ -452,9 +452,10 @@ static void jcInputPrefix(uint8_t slot, uint8_t *out)
 	if (qamSelect)
 		b &= ~(uint32_t)TB_QAM;
 	bool capture;
-	b = remapButtons(b, REMAP_SWAP_TARGETS, &capture);
+	b = remapButtons(b, &capture);
 	if (qamSelect) {
-		const RemapTarget t = remapTarget(g_swQamSelect, g_abSwap);
+		const RemapTarget t =
+			remapTarget(g_swQamSelect, remapFacesSwapped(g_btnMap));
 		b |= t.tb;
 		capture |= t.capture;
 	}

@@ -291,8 +291,7 @@ static Adafruit_USBD_HID
 // ===================== report 0x45 -> XInput + mouse =====================
 static void rfXboxGamepad(uint8_t slot, const uint8_t *r)
 {
-	uint32_t b =
-		remapButtons(shortcutHostButtons(btnsOf(r)), REMAP_XBOX360);
+	uint32_t b = remapButtons(shortcutHostButtons(btnsOf(r)));
 	uint16_t btn = 0;
 	if (b & TB_DUP)
 		btn |= XB_DUP;

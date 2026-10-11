@@ -1,8 +1,8 @@
 #include "remap.h"
-#include "config.h"
+#include <string.h>
 
-// Button code -> TB_* flag. 0 none, 1-4 A/B/X/Y, 5-8 LB/RB/L3/R3, 9-10 Select/Start side, 11 Steam, 12-15 D-pad
-// up/down/left/right, 16 PS touchpad click, 17 PS mute, 18 Switch Capture, 19/20 LT/RT.
+// Button code -> TB_* flag (the codes are listed in remap.h). Capture has no flag, and a code that is not a button
+// (none, reserved, a macro slot) stands for nothing.
 static uint32_t codeToTb(uint8_t c)
 {
 	switch (c) {
@@ -49,6 +49,10 @@ static uint32_t codeToTb(uint8_t c)
 		return TB_L2; // left trigger (LT / L2 / ZL)
 	case 20:
 		return TB_R2; // right trigger (RT / R2 / ZR)
+	case 21:
+		return TB_LPADC;
+	case 22:
+		return TB_RPADC;
 	default:
 		return 0;
 	}
@@ -78,30 +82,56 @@ RemapTarget remapTarget(uint8_t code, bool swap)
 	return { codeToTb(code), code == REMAP_CODE_CAPTURE };
 }
 
-uint32_t remapButtons(uint32_t b, RemapStyle style, bool *capture)
+ButtonMap g_btnMap;
+
+static const uint32_t SOURCE_TB[RS_COUNT] = {
+	TB_A,	 TB_B,	  TB_X,	    TB_Y,   TB_LB,    TB_RB,	TB_L3,	TB_R3,
+	TB_MENU, TB_VIEW, TB_STEAM, TB_DUP, TB_DDN,   TB_DLF,	TB_DRT, TB_L4,
+	TB_R4,	 TB_L5,	  TB_R5,    TB_QAM, TB_LPADC, TB_RPADC, TB_L2,	TB_R2
+};
+
+void remapDefaultMap(ButtonMap *m)
 {
-	static const uint32_t FACE[4] = { TB_A, TB_B, TB_X, TB_Y };
-	static const uint32_t PADDLE[4] = { TB_L4, TB_R4, TB_L5, TB_R5 };
-	const uint32_t sources = TB_A | TB_B | TB_X | TB_Y | TB_L4 | TB_R4 |
-				 TB_L5 | TB_R5 | TB_QAM;
-	// each target is read from the original word, so a swap of two buttons can't cascade
-	uint32_t out = b & ~sources;
+	// a source acts as itself: its code is the one codeToTb() turns back into its own flag
+	static const uint8_t SELF[RS_COUNT] = { 1, 2,  3,  4,  5,  6,  7,  8,
+						9, 10, 11, 12, 13, 14, 15, 5,
+						6, 7,  8,  0,  21, 22, 19, 20 };
+	memcpy(m->target, SELF, sizeof m->target);
+}
+
+void remapLegacyMap(ButtonMap *m, const uint8_t back[4], uint8_t qam, bool swap,
+		    bool paddlesFollowSwap)
+{
+	remapDefaultMap(m);
+	for (uint8_t i = 0; i < 4; i++)
+		m->target[RS_A + i] = swap ? swapCode((uint8_t)(i + 1)) :
+					     (uint8_t)(i + 1);
+	for (uint8_t i = 0; i < 4; i++)
+		m->target[RS_L4 + i] =
+			swap && paddlesFollowSwap ? swapCode(back[i]) : back[i];
+	m->target[RS_QAM] = swap ? swapCode(qam) : qam;
+}
+
+bool remapFacesSwapped(const ButtonMap &m)
+{
+	return m.target[RS_A] == 2 && m.target[RS_B] == 1 &&
+	       m.target[RS_X] == 4 && m.target[RS_Y] == 3;
+}
+
+uint32_t remapButtons(uint32_t b, bool *capture)
+{
+	// every target is read from the original word, so two buttons trading places can't cascade
+	uint32_t sources = 0, out = 0;
 	bool cap = false;
-	auto press = [&](uint8_t code, bool swap) {
-		const RemapTarget t = remapTarget(code, swap);
+	for (uint8_t i = 0; i < RS_COUNT; i++) {
+		sources |= SOURCE_TB[i];
+		if (!(b & SOURCE_TB[i]))
+			continue;
+		const RemapTarget t = remapTarget(g_btnMap.target[i], false);
 		out |= t.tb;
 		cap |= t.capture;
-	};
-	const bool swap = g_abSwap;
-	for (uint8_t i = 0; i < 4; i++)
-		if (b & FACE[i])
-			press((uint8_t)(i + 1), swap);
-	for (uint8_t i = 0; i < 4; i++)
-		if (b & PADDLE[i])
-			press(g_back[i], swap && style == REMAP_SWAP_TARGETS);
-	if (b & TB_QAM)
-		press(g_qamMap, swap && style != REMAP_ABSOLUTE);
+	}
 	if (capture)
 		*capture = cap;
-	return out;
+	return (b & ~sources) | out;
 }

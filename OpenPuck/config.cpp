@@ -1,6 +1,7 @@
 #include "config.h"
 #include "storage.h"
 #include "triton.h"
+#include "remap.h"
 #include "radio.h"
 #include "rf_link.h" // g_rxWin (poll RX window persisted here)
 #include "haptics.h" // g_hapticBlockOn, g_hapticBlockMs
@@ -108,6 +109,7 @@ void applyActiveType()
 		g_rumbleStyle = RUMBLE_STYLE_NORMAL;
 		g_ledBright = 0;
 		g_padStick[0] = g_padStick[1] = PS_OFF;
+		remapDefaultMap(&g_btnMap);
 		return;
 	}
 	const TypeCfg &t = g_type[g_etype];
@@ -124,6 +126,9 @@ void applyActiveType()
 	g_ledBright = t.ledBright;
 	g_padStick[0] = g_padStickCfg[g_etype][0];
 	g_padStick[1] = g_padStickCfg[g_etype][1];
+	// the Xbox types take a paddle target as an absolute button; every other type applies the swap to it
+	remapLegacyMap(&g_btnMap, g_back, g_qamMap, g_abSwap,
+		       g_etype != ET_XBOX);
 }
 // poll rate defaults to POLL_US_DEFAULT (250 Hz), matching the real Valve puck (see config.h). The
 // delivered report rate equals the poll rate (fresh IMU in every reply). Live-adjustable via console

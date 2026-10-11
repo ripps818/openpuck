@@ -536,8 +536,7 @@ XboxOgController g_xboxOgCtl;
 
 static void xboxOgBuildReport(XboxOgInputReport &report, const uint8_t *raw)
 {
-	uint32_t buttons =
-		remapButtons(shortcutHostButtons(btnsOf(raw)), REMAP_ABSOLUTE);
+	uint32_t buttons = remapButtons(shortcutHostButtons(btnsOf(raw)));
 
 	xboxOgNeutralReport(report);
 	if (buttons & TB_DUP)

@@ -453,11 +453,11 @@ driver matches). Dynamic-mount, STREAM-style. **Registers a set-report callback.
 beyond callers'.
 
 ### `remap.cpp` / `remap.h` — button remapping (called from loop task and usbd task)
-`remapButtons(b, style, &capture)`: replaces A/B/X/Y, L4/R4/L5/R5 and QAM in the shortcut-masked
-TB_* word with their configured targets (`g_abSwap`, `g_back[]`, `g_qamMap`); every emulated mode
-calls it and turns the result into its own report bits. `remapTarget(code, swap)` is the one
-code -> TB_* table. Switch Capture has no TB_* bit and comes back as `capture`. `RemapStyle`
-keeps each mode's A/B-swap behaviour for paddle/QAM targets. Reads globals only, no state.
+`remapButtons(b, &capture)`: replaces each of the 24 sources (`RemapSource`) in the shortcut-masked
+TB_* word with its target code from the live `g_btnMap`; every emulated mode calls it and turns the
+result into its own report bits. `remapTarget(code, swap)` is the one code -> TB_* table. Switch
+Capture has no TB_* bit and comes back as `capture`. `applyActiveType()` builds `g_btnMap` from the
+type's paddle / QAM / swap settings (`remapLegacyMap`). Target codes from 128 are reserved for macros.
 
 ---
 

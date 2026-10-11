@@ -39,8 +39,8 @@ static unsigned long g_swLastMs[NSLOT] = { 0 };
 static void switchBuildHoripad(uint8_t slot, uint8_t out[8])
 {
 	bool capture;
-	uint32_t b = remapButtons(shortcutHostButtons(g_in[slot].buttons),
-				  REMAP_SWAP_TARGETS, &capture);
+	uint32_t b =
+		remapButtons(shortcutHostButtons(g_in[slot].buttons), &capture);
 	uint16_t btn = 0;
 	if (b & TB_Y)
 		btn |= 0x01;

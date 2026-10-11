@@ -29,6 +29,7 @@ head = r'''
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#include <cassert>
 #include "triton.h"
 #include "config.h"
 #include "gamepad_util.h"
@@ -168,11 +169,13 @@ static void runDs4(uint32_t raw)
 	hidGyroBuild(0, 0, out);
 	printf("hat+face=%02x shoulders=%02x misc=%02x", out[4], out[5], out[6] & 0x0F);
 }
-static const struct { const char *name; Run run; } BUILDERS[] = {
-	{ "xbox", runXbox }, { "hori", runHori }, { "switchpro", runJc }, { "xboxog", runOg },
-	{ "ps3", runPs3 },   { "ps5", runPs5 },   { "ds4", runDs4 },
+static const struct { const char *name; Run run; bool follow; } BUILDERS[] = {
+	{ "xbox", runXbox, false }, { "hori", runHori, true }, { "switchpro", runJc, true },
+	{ "xboxog", runOg, false }, { "ps3", runPs3, true },   { "ps5", runPs5, true },
+	{ "ds4", runDs4, true },
 };
 
+static bool follow; // the Xbox types keep paddle targets absolute under the swap
 static void cfg(int swap, int code, uint8_t flags)
 {
 	g_abSwap = (uint8_t)swap;
@@ -181,6 +184,7 @@ static void cfg(int swap, int code, uint8_t flags)
 		g_back[i] = (uint8_t)((code + i) % 21);
 	g_qamMap = (uint8_t)code;
 	g_shortcutFlags = flags;
+	remapLegacyMap(&g_btnMap, g_back, g_qamMap, g_abSwap, follow);
 }
 static void line(const char *b, int swap, int code, uint8_t flags, uint32_t raw, Run run)
 {
@@ -188,9 +192,74 @@ static void line(const char *b, int swap, int code, uint8_t flags, uint32_t raw,
 	run(raw);
 	printf("\n");
 }
+// the map itself: identity by default, any source to any target, and the codes reserved for later
+static void selfTest()
+{
+	ButtonMap m;
+	remapDefaultMap(&m);
+	g_btnMap = m;
+	for (int s = 0; s < NSRC; s++) {
+		uint32_t want = SRC[s].mask;
+		if (SRC[s].mask == TB_L4)
+			want = TB_LB; // the paddles start as LB, RB, L3, R3
+		else if (SRC[s].mask == TB_R4)
+			want = TB_RB;
+		else if (SRC[s].mask == TB_L5)
+			want = TB_L3;
+		else if (SRC[s].mask == TB_R5)
+			want = TB_R3;
+		else if (SRC[s].mask == TB_QAM)
+			want = 0;
+		assert(remapButtons(SRC[s].mask) == want);
+	}
+	// bits that are not sources pass through untouched
+	assert(remapButtons(TB_LPADT | TB_RPADT | TB_TOUCH | TB_MUTE) == (TB_LPADT | TB_RPADT | TB_TOUCH | TB_MUTE));
+	// any source to any target, including the new pad-click and trigger-click targets
+	m.target[RS_LB] = 1; // A
+	m.target[RS_A] = 0; // disabled
+	m.target[RS_LPADC] = 6; // RB
+	m.target[RS_DUP] = 20; // right trigger
+	m.target[RS_R2] = 22; // right pad click
+	m.target[RS_SELECT] = 21; // left pad click
+	g_btnMap = m;
+	assert(remapButtons(TB_LB) == TB_A && remapButtons(TB_A) == 0 && remapButtons(TB_LPADC) == TB_RB);
+	assert(remapButtons(TB_DUP) == TB_R2 && remapButtons(TB_R2) == TB_RPADC && remapButtons(TB_MENU) == TB_LPADC);
+	// two sources to one target combine; two buttons trading places do not cascade
+	m.target[RS_B] = 1;
+	m.target[RS_A] = 2;
+	g_btnMap = m;
+	assert(remapButtons(TB_A | TB_B | TB_LB) == (TB_A | TB_B));
+	assert(remapButtons(TB_A) == TB_B && remapButtons(TB_B) == TB_A);
+	// Capture has no flag; it comes back beside the word
+	bool cap = false;
+	m.target[RS_STEAM] = REMAP_CODE_CAPTURE;
+	g_btnMap = m;
+	assert(remapButtons(TB_STEAM, &cap) == 0 && cap);
+	assert(remapButtons(TB_X, &cap) == TB_X && !cap);
+	// reserved and macro codes act as none
+	m.target[RS_X] = 23;
+	m.target[RS_Y] = REMAP_CODE_MACRO_BASE;
+	m.target[RS_RB] = 255;
+	g_btnMap = m;
+	assert(remapButtons(TB_X | TB_Y | TB_RB) == 0);
+	// the swap is a map: exchanged in pairs, and the paddle targets follow it unless the type is Xbox
+	const uint8_t back[4] = { 1, 2, 3, 5 };
+	remapLegacyMap(&m, back, 4, true, true);
+	assert(remapFacesSwapped(m) && m.target[RS_A] == 2 && m.target[RS_Y] == 3);
+	assert(m.target[RS_L4] == 2 && m.target[RS_R4] == 1 && m.target[RS_L5] == 4 && m.target[RS_R5] == 5);
+	assert(m.target[RS_QAM] == 3);
+	remapLegacyMap(&m, back, 4, true, false);
+	assert(m.target[RS_L4] == 1 && m.target[RS_R4] == 2 && m.target[RS_QAM] == 3);
+	remapLegacyMap(&m, back, 4, false, true);
+	assert(!remapFacesSwapped(m) && m.target[RS_A] == 1 && m.target[RS_QAM] == 4);
+	remapDefaultMap(&m);
+	assert(!remapFacesSwapped(m));
+}
 int main()
 {
+	selfTest();
 	for (const auto &bd : BUILDERS) {
+		follow = bd.follow;
 		// single source pressed alone, every code and swap setting
 		printf("#%s single\n", bd.name);
 		for (int swap = 0; swap < 2; swap++)
@@ -224,6 +293,7 @@ int main()
 	// the DualSense also folds Create into a touchpad click when asked
 	printf("#ps5 createtouch\n");
 	g_createAsTouch = 1;
+	follow = true;
 	for (int swap = 0; swap < 2; swap++)
 		for (int code = 0; code < 21; code++)
 			for (int s = 0; s < NSRC; s++) {
