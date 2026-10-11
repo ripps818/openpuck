@@ -59,7 +59,8 @@ function onOp(a){
 }
 // status v30 blob (JS indices): p[209] = each type's active profile, two bits per type
 let p=Array(210).fill(0);p[0]=30;p[193]=8;p[51]=100;
-const s=Array(55).fill(0);s[0]=1;s[46]=57;
+// shortcut flags: bit0 Quick Access is the modifier, 3 feedback, 4 Quick Access + Select, 5 shortcuts on
+const s=Array(55).fill(0);s[0]=1;s[46]=24;
 const frame=(mk,a)=>({status:'ok',data:new DataView(new Uint8Array([mk,a.length,...a]).buffer)});
 S.dev={serialNumber:'test',
   transferOut:async(ep,b)=>{const a=Array.from(b);writes.push(a);last=a;if(a[0]>=0x2C&&a[0]<=0x34){ops.push(a);onOp(a);}else if(a[0]>=0x13&&a[0]<=0x1A)onOp(a);return {status:'ok'};},
@@ -108,16 +109,33 @@ assert.deepEqual(labels(3).slice(0,4),['Cross','Circle','Square','Triangle']);
 assert.deepEqual(labels(0).slice(0,4),['A','B','X','Y']);
 assert.deepEqual(labels(0).slice(15,24),['L4','R4','L5','R5','QAM','Left trackpad click','Right trackpad click','LT (full pull)','RT (full pull)']);
 for(const et of [2,3]){
-  assert.equal(rec(et).nintendo.textContent,'Swap Cross/Circle and Square/Triangle');
+  assert.equal(rec(et).nintendo.textContent,'Apply Nintendo layout');
+  assert(/^Swap Cross and Circle, and Square and Triangle/.test(rec(et).nintendo.title)&&!/\bA and B\b.*\bX and Y\b\. Only/.test(rec(et).nintendo.title.replace(/\(.*?\)/,'')),rec(et).nintendo.title);
   const names=[...rec(et).sources[0].options].map(o=>o.textContent);
   assert(!names.some(n=>/^[ABXY]$/.test(n)),names.join());assert(names.includes('Cross')&&names.includes('Touchpad Click'));
 }
-assert.equal(rec(0).nintendo.textContent,'Apply Nintendo layout');assert.equal(rec(1).nintendo.textContent,'Apply Nintendo layout');
+assert.equal(rec(0).nintendo.textContent,'Apply Nintendo layout');assert.equal(rec(1).nintendo.textContent,'Apply Nintendo layout');assert(/^Swap A and B, and X and Y/.test(rec(0).nintendo.title));
 // targets a type does not have are not offered: Capture is Switch-only
 const has=(et,c)=>[...rec(et).sources[0].options].some(o=>+o.value===c);
 assert(has(1,18)&&!has(0,18)&&!has(2,18));assert(has(3,17)&&!has(2,17));
 // every source shows its stored target
 assert.deepEqual(rec(0).sources.map(sel=>+sel.value),DEF);
+
+// Quick Access is not mappable while it is the shortcut modifier of the enabled mode shortcuts
+{const qam=()=>rec(0).sources[19],bare=()=>[...qam().options].map(o=>o.textContent).join();
+ const btn=()=>qam().parentElement.querySelector('.gsel-btn');
+ assert(!qam().disabled&&!btn().disabled);assert.equal(qam().value,'0');
+ s[46]=57;await apply();
+ assert(qam().disabled&&btn().disabled);assert.equal(btn().textContent,'Shortcut modifier');assert.equal(bare(),'Shortcut modifier');
+ assert(/shortcut modifier/.test(qam().closest('.row').title));
+ {const n=ops.length;btn().click();await settle();assert.equal(ops.length,n);} // nothing to pick
+ // the other rows are untouched, and the stored target survives for later
+ assert.equal(rec(0).sources[0].value,'1');
+ for(const f of [56,32,25,24]){s[46]=f;await apply();const res=(f&33)===33;assert.equal(qam().disabled,res,'flags '+f);assert.equal(btn().textContent!=='Shortcut modifier',!res,'flags '+f);}
+ assert.equal(qam().value,'0');assert(qam().options.length>5);
+ // changed on another tab's type too, and while a profile other than the one in use is shown
+ s[46]=57;await apply();for(let et=0;et<4;et++)assert(rec(et).sources[19].disabled,'type '+et);
+ s[46]=24;await apply();for(let et=0;et<4;et++)assert(!rec(et).sources[19].disabled,'type '+et);}
 
 // edits address the profile being edited, not the active one
 setTab(0);rec(0).tabs[1].click();

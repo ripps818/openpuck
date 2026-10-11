@@ -58,6 +58,37 @@ function showValue(sel, v){
 }
 const dropExtras = sel => { for(const o of [...sel.options]) if(o.dataset.extra) o.remove(); };
 
+// Quick Access as the shortcut modifier is hidden from the host (and so cannot act as anything) while the Mode
+// shortcuts are on, so its row says so rather than offering a choice that does nothing. The firmware's
+// shortcutHostButtons() applies the same rule: the SHORTCUT_QAM and SHORTCUT_ENABLED flags (bits 0 and 5).
+const SRC_QAM = 19;
+const qamReserved = () => !!(S.lastSw && S.lastSw[46] !== undefined && (S.lastSw[46] & 33) === 33);
+let wasReserved = null;
+// the stored target is kept, so the row comes back as it was when the modifier changes
+function qamRow(sel, stored, def){
+  const row = sel.closest(".row"), res = [...sel.options].some(o => o.dataset.reserved);
+  if(qamReserved()){
+    // the one entry left says why; the other targets come back with fillTargets
+    if(!res){
+      sel.textContent = "";
+      const o = document.createElement("option"); o.value = "-1"; o.textContent = "Shortcut modifier"; o.dataset.reserved = "1"; sel.appendChild(o);
+    }
+    sel.value = "-1"; sel.disabled = true;
+    row.title = "Quick Access is the shortcut modifier, so it can't be mapped. Choose another modifier in Mode shortcuts to map it.";
+    return;
+  }
+  if(res) fillTargets(sel, def);
+  sel.disabled = false; row.removeAttribute("title");
+  if(stored !== undefined){ dropExtras(sel); showValue(sel, stored); }
+}
+// the Mode shortcuts settings arrive in the 0xAE frame: redraw the QAM rows when they change who owns it
+export function syncReservedQam(){
+  const now = qamReserved();
+  if(now === wasReserved) return;
+  wasReserved = now;
+  S.profiles.forEach((st, et) => { if(st && st.maps) renderProfiles(et); });
+}
+
 // ---- the exchange: one op, answered with the type's 0xB0 frame ----
 // A frame is [1][type][active][profiles][sources], then each profile's targets and its two pad settings, then
 // (when present) the gesture [enabled][prev][next]. The counts come from the frame, so a firmware that grows
@@ -112,7 +143,9 @@ export function profilesNoteBlob(p){
 }
 // The Lizard profile in use rides the 0xAE frame (byte 47 of its payload), which is read on every poll too.
 export function profilesNoteSw(s){
-  if(!profilesCapable() || !s || s.length <= 47) return;
+  if(!profilesCapable()) return;
+  syncReservedQam();
+  if(!s || s.length <= 47) return;
   const have = S.profiles[LZ_TYPE];
   if(!have || have.active !== s[47]) S.profileLoadDue.add(LZ_TYPE);
 }
@@ -127,7 +160,7 @@ export function buildProfileCards(sec, et, def){
   const card = cls => { const c = document.createElement("div"); c.className = "card prof-card " + (cls || ""); sec.appendChild(c); return c; };
   const head = (c, text) => { const h = document.createElement("div"); h.className = "card-head"; const t = document.createElement("h2"); t.textContent = text; h.appendChild(t); c.appendChild(h); return t; };
   const ps = def.key === "DS4" || def.key === "DS5";
-  const rec = {sources: [], cards: []};
+  const rec = {sources: [], cards: [], def};
 
   // the three profiles: which one is edited, and which one the puck is using
   const cA = card("span hide"); rec.cards.push(cA);
@@ -149,8 +182,10 @@ export function buildProfileCards(sec, et, def){
     if(from === to || !confirm("Replace profile " + (to + 1) + " with a copy of profile " + (from + 1) + "?")) return;
     return profileOp([0x32, et, from, to]);
   });
-  rec.nintendo = btn(ps ? "Swap Cross/Circle and Square/Triangle" : "Apply Nintendo layout",
-    ps ? "Exchange which button acts as Cross and Circle, and as Square and Triangle" : "Exchange A and B, and X and Y",
+  rec.nintendo = btn("Apply Nintendo layout",
+    (ps ? "Swap Cross and Circle, and Square and Triangle, as the buttons are laid out on a Nintendo controller (A and B, X and Y trade places). "
+          : "Swap A and B, and X and Y, as on a Nintendo controller. ") +
+    "Only the four face-button entries of this profile change; apply it again to swap them back.",
     () => profileOp([0x2E, et, sel0(et)]));
   rec.reset = btn("Reset this profile", "Put this profile's mapping back to the factory one", () => {
     if(!confirm("Reset profile " + (sel0(et) + 1) + " of the " + def.name + " controller type to its factory mapping?\n\nIts button map and trackpad settings are replaced. The other profiles stay as they are.")) return;
@@ -290,6 +325,7 @@ export function renderProfiles(et){
   const map = st.maps[sel];
   rec.sources.forEach((s, i) => {
     if(!s || held(s)) return;
+    if(i === SRC_QAM){ qamRow(s, i < map.length ? map[i] : undefined, rec.def); return; }
     dropExtras(s);
     if(i < map.length) showValue(s, map[i]);
   });

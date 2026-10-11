@@ -3,6 +3,7 @@
 #include <Adafruit_LittleFS.h>
 #include <InternalFileSystem.h>
 #include <string.h>
+using namespace Adafruit_LittleFS_Namespace;
 
 #define BM_FILE "/btnmap.bin"
 #define BM_TMP "/btnmap.tmp"
