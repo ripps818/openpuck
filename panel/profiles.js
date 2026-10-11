@@ -36,6 +36,8 @@ const PAD_TARGETS = {21:["Left pad click","padClickL"], 22:["Right pad click","p
 const GESTURE_SOURCES = [4,5,6,7,8,9];
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
+// the four face buttons exchanged in pairs (A<->B, X<->Y), the Nintendo layout
+const isSwapped = map => [2, 1, 4, 3].every((c, i) => map[i] === c);
 const nameOf = (def, i) => { const s = SOURCES[i]; return s.name || (def.labels[s.own] + (s.suffix || "")); };
 const glyphOf = (def, i) => { const s = SOURCES[i]; return s.glyph || BTN_GLYPH[def.labels[s.own]]; };
 const sel0 = et => (S.profileSel[et] | 0);
@@ -185,7 +187,14 @@ export function buildProfileCards(sec, et, def){
     if(from === to || !confirm("Replace profile " + (to + 1) + " with a copy of profile " + (from + 1) + "?")) return;
     return profileOp([0x32, et, from, to]);
   });
-  rec.nintendo = btn("Apply Nintendo layout", "", () => profileOp([0x2E, et, sel0(et)]));
+  // Reverting writes the four entries rather than sending op 0x2E again, which only reverts on firmware that
+  // toggles: the entries work on every protocol-30 build.
+  rec.nintendo = btn("Apply Nintendo layout", "", async () => {
+    const sel = sel0(et), st = S.profiles[et];
+    if(!st || !isSwapped(st.maps[sel])) return profileOp([0x2E, et, sel]);
+    for(let i = 0; i < 4; i++) if(!await profileOp([0x2D, et, sel, i, i + 1])) return false;
+    return true;
+  });
   rec.ps = ps;
   rec.reset = btn("Reset this profile", "Put this profile's mapping back to the factory one", () => {
     if(!confirm("Reset profile " + (sel0(et) + 1) + " of the " + def.name + " controller type to its factory mapping?\n\nIts button map and trackpad settings are replaced. The other profiles stay as they are.")) return;
@@ -323,7 +332,7 @@ export function renderProfiles(et){
   }
   const map = st.maps[sel];
   // one op does both: it reverts when the four face buttons are already exchanged
-  const swapped = [2, 1, 4, 3].every((c, i) => map[i] === c);
+  const swapped = isSwapped(map);
   rec.nintendo.textContent = swapped ? "Revert Nintendo layout" : "Apply Nintendo layout";
   const faces = rec.ps ? "Cross and Circle, and Square and Triangle (A and B, X and Y trade places)" : "A and B, and X and Y";
   rec.nintendo.title = swapped ?

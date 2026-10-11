@@ -160,7 +160,8 @@ assert.deepEqual(rec(0).sources.slice(0,4).map(sel=>+sel.value),[2,1,4,3]);
 // the button follows the state: with the face buttons exchanged it reverts them
 assert.equal(rec(0).nintendo.textContent,'Revert Nintendo layout');assert(/^Put the four face buttons back/.test(rec(0).nintendo.title));
 assert.equal(rec(1).nintendo.textContent,'Apply Nintendo layout'); // another type's profile is not swapped
-assert.deepEqual(await opsOf(()=>rec(0).nintendo.click()),[[0x2E,0,1]]);
+// reverting writes the four entries, so it works on firmware that does not toggle op 0x2E
+assert.deepEqual(await opsOf(()=>rec(0).nintendo.click()),[[0x2D,0,1,0,1],[0x2D,0,1,1,2],[0x2D,0,1,2,3],[0x2D,0,1,3,4]]);
 assert.deepEqual(rec(0).sources.slice(0,4).map(sel=>+sel.value),[1,2,3,4]);assert.equal(rec(0).nintendo.textContent,'Apply Nintendo layout');
 assert.equal(rec(0).sources[15].value,'1'); // nothing else moved
 assert.deepEqual(await opsOf(()=>rec(0).nintendo.click()),[[0x2E,0,1]]);assert.deepEqual(rec(0).sources.slice(0,4).map(sel=>+sel.value),[2,1,4,3]);

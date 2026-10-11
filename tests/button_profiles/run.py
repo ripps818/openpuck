@@ -189,6 +189,14 @@ int main()
 	assert(btnmapToggleNintendo(ET_DS4, 1) && remapFacesSwapped(g_profile[ET_DS4][1].map));
 	assert(btnmapToggleNintendo(ET_DS4, 1) && !remapFacesSwapped(g_profile[ET_DS4][1].map));
 	assert(btnmapToggleNintendo(ET_DS4, 1)); // swapped again, as the lines after expect
+	// the Switch type starts exchanged (its default has the swap on): the same op reverts it, QAM stays on Capture
+	assert(btnmapResetProfile(ET_SWITCH, 0) && remapFacesSwapped(g_profile[ET_SWITCH][0].map));
+	assert(g_type[ET_SWITCH].abSwap == 1);
+	assert(btnmapToggleNintendo(ET_SWITCH, 0) && !remapFacesSwapped(g_profile[ET_SWITCH][0].map));
+	assert(g_type[ET_SWITCH].abSwap == 0 && g_profile[ET_SWITCH][0].map.target[RS_QAM] == 18);
+	for (int i = 0; i < 4; i++)
+		assert(g_profile[ET_SWITCH][0].map.target[RS_A + i] == i + 1);
+	assert(btnmapToggleNintendo(ET_SWITCH, 0) && g_type[ET_SWITCH].abSwap == 1);
 	// copy, reset (to the type's defaults, not to identity: the Switch type starts swapped with QAM on Capture)
 	assert(btnmapCopyProfile(ET_DS4, 1, 2) && same(g_profile[ET_DS4][2], g_profile[ET_DS4][1]));
 	assert(!btnmapCopyProfile(ET_DS4, 1, 3) && !btnmapCopyProfile(ET_DS4, 3, 1));
