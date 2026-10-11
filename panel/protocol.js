@@ -5,6 +5,7 @@ import { applyDeviceProfile, applyDongleStatus } from './dongle.js';
 import { loadFlightTrail, onWedge, renderHangLog, trailAdd, updateStabUI } from './diag.js';
 import { checkUpdateNotice, loadReleases } from './firmware.js';
 import { lzV2Load } from './lizard.js';
+import { profilesDrain } from './profiles.js';
 
 let ifNum=0;
 
@@ -89,6 +90,8 @@ function onGone(){
   window._wedgeEp=false; window._wedgePeak=0; // re-arm the live wedge logger for the next wedge episode
   window._lastBlobTs=0; window._hbLostEp=false; // re-arm the heartbeat watchdog (don't fire on a stale pre-reset timestamp)
   S.polling=false; S.dev=null; S.tabInited=false; pendingInRead=null; // re-default the config tab to the mode on next connect
+  // the next device may be a different puck: its profiles are read afresh
+  S.profiles=S.profiles.map(()=>null); S.profileSel=[]; S.profileLoadDue.clear(); S.gesture=null;
   const preSel=$("#ledPreset"); if(preSel) preSel.value="default";
   checkUpdateNotice(); // no device = no notice
   $("#connState").textContent="reconnecting…"; $("#connState").className="pill dn";
@@ -197,6 +200,7 @@ export async function setField(field,value){
 export async function startPolling(){
   S.polling=true; await refresh();
   while(S.polling && S.dev){
+    if(S.profileLoadDue.size) await profilesDrain();
     await new Promise(r=>setTimeout(r,600)); await refresh();
     if(S.lizardLoadDue){ S.lizardLoadDue=false; await lzV2Load(); }
     if(window._autoFlight){ window._autoFlight=false; await loadFlightTrail(); }

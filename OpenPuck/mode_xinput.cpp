@@ -12,6 +12,7 @@
 #include "mode_xinput.h"
 #include "triton.h"
 #include "gamepad_util.h"
+#include "remap.h"
 #include "config.h"
 #include "haptics.h"
 #include "bonds.h"
@@ -288,51 +289,9 @@ static Adafruit_USBD_HID
 	g_mouse; // Xbox-mode mouse interface (right trackpad, slot 0 only)
 
 // ===================== report 0x45 -> XInput + mouse =====================
-// button code (g_back[], g_abSwap targets) -> legacy XInput bit. 0=none 1=A 2=B 3=X 4=Y 5=LB 6=RB 7=L3 8=R3 9=Back 10=Start 11=Guide 12=Dup 13=Ddown 14=Dleft 15=Dright
-static uint16_t codeToXB(uint8_t c)
-{
-	switch (c) {
-	case 1:
-		return XB_A;
-	case 2:
-		return XB_B;
-	case 3:
-		return XB_X;
-	case 4:
-		return XB_Y;
-	case 5:
-		return XB_LB;
-	case 6:
-		return XB_RB;
-	case 7:
-		return XB_L3;
-	case 8:
-		return XB_R3;
-	case 9:
-		return XB_BACK;
-	case 10:
-		return XB_START;
-	case 11:
-		return XB_GUIDE;
-	case 12:
-		return XB_DUP;
-	case 13:
-		return XB_DDOWN;
-	case 14:
-		return XB_DLEFT;
-	case 15:
-		return XB_DRIGHT;
-	default:
-		return 0;
-	}
-}
 static void rfXboxGamepad(uint8_t slot, const uint8_t *r)
 {
-	uint32_t b = shortcutHostButtons(btnsOf(r));
-	if (g_qamMap && (b & TB_QAM)) {
-		b &= ~(uint32_t)TB_QAM;
-		b |= tritonFromCode(g_qamMap);
-	}
+	uint32_t b = remapButtons(shortcutHostButtons(btnsOf(r)));
 	uint16_t btn = 0;
 	if (b & TB_DUP)
 		btn |= XB_DUP;
@@ -356,46 +315,23 @@ static void rfXboxGamepad(uint8_t slot, const uint8_t *r)
 		btn |= XB_L3;
 	if (b & TB_R3)
 		btn |= XB_R3;
-	// face buttons, with optional A/B + X/Y swap (Nintendo layout)
-	uint16_t fA = g_abSwap ? XB_B : XB_A, fB = g_abSwap ? XB_A : XB_B,
-		 fX = g_abSwap ? XB_Y : XB_X, fY = g_abSwap ? XB_X : XB_Y;
 	if (b & TB_A)
-		btn |= fA;
+		btn |= XB_A;
 	if (b & TB_B)
-		btn |= fB;
+		btn |= XB_B;
 	if (b & TB_X)
-		btn |= fX;
+		btn |= XB_X;
 	if (b & TB_Y)
-		btn |= fY;
-	// back paddles -> configurable mapping (default L4->LB, R4->RB, L5->L3, R5->R3)
-	if (b & TB_L4)
-		btn |= codeToXB(g_back[0]);
-	if (b & TB_R4)
-		btn |= codeToXB(g_back[1]);
-	if (b & TB_L5)
-		btn |= codeToXB(g_back[2]);
-	if (b & TB_R5)
-		btn |= codeToXB(g_back[3]);
+		btn |= XB_Y;
 	// triggers u16 (half-scale) -> full-range u8
 	uint8_t lt = trigShape(trigU8(u16off(r, 4))),
 		rt = trigShape(trigU8(u16off(r, 6)));
-	// Trigger remaps (codes 19=LT, 20=RT): XInput triggers are analog bytes, not buttons, so a back paddle /
-	// QAM mapped to a trigger pulls it full. QAM arrives as TB_L2/TB_R2 (folded into b via tritonFromCode);
-	// back paddles are matched by their configured code.
+	// XInput triggers are analog bytes, not buttons, so a paddle / QAM remapped to a trigger (it arrives as
+	// TB_L2 / TB_R2) pulls it full.
 	if (b & TB_L2)
 		lt = 0xFF;
 	if (b & TB_R2)
 		rt = 0xFF;
-	const uint8_t bc[4] = { g_back[0], g_back[1], g_back[2], g_back[3] };
-	const uint32_t bm[4] = { TB_L4, TB_R4, TB_L5, TB_R5 };
-	for (int i = 0; i < 4; i++) {
-		if (!(b & bm[i]))
-			continue;
-		if (bc[i] == 19)
-			lt = 0xFF;
-		else if (bc[i] == 20)
-			rt = 0xFF;
-	}
 	// Raw-report offsets, not slotSticks(): this mode already decodes 0x45 in place and never
 	// touches g_in. 16/18 = left pad X/Y, 22/24 = right pad X/Y (same pair rfXboxMouse reads).
 	int16_t lx = (int16_t)s16off(r, 8), ly = (int16_t)s16off(r, 10),
@@ -406,17 +342,18 @@ static void rfXboxGamepad(uint8_t slot, const uint8_t *r)
 	xinputSend(slot, btn, lt, rt, lx, ly, rx, ry);
 }
 // Right pad -> mouse on a second HID-mouse interface alongside the XInput gamepad. Same glide model as Lizard's
-// right pad; RPad click = left button, LPad click = right. SINGLE shared mouse: the desktop can only consume
+// right pad. The buttons are the mapped ones: target 22 (the right pad click, by default) is the left button and
+// 21 (the left pad click) the right, so any source can click. SINGLE shared mouse: the desktop can only consume
 // one mouse. Slot 0's right-pad drives it; other slots' right-pad input is intentionally ignored here.
 static void rfXboxMouse(const uint8_t *r)
 {
-	uint32_t b = shortcutHostButtons(btnsOf(r));
+	uint32_t b = remapButtons(shortcutHostButtons(btnsOf(r)));
 	static int prx = 0, pry = 0;
 	static bool prt = false;
 	static float vx = 0, vy = 0, rmx = 0, rmy = 0;
 	static uint8_t pmb = 0;
-	// The right pad drives a stick now, so it must not also glide the mouse -- treat it as untouched and let
-	// the residual velocity decay away instead of stopping dead.
+	// The right pad drives a stick now (or is disabled), so it must not also glide the mouse -- treat it as
+	// untouched and let the residual velocity decay away instead of stopping dead.
 	bool rtouch = (g_padStick[1] == PS_OFF) && (b & TB_RPADT);
 	int rx = s16off(r, 22), ry = s16off(r, 24);
 	if (rtouch) {
@@ -449,10 +386,7 @@ static void rfXboxMouse(const uint8_t *r)
 		vx = 0;
 	if (vy > -1 && vy < 1)
 		vy = 0; // friction = glide/decay
-	uint8_t mb = ((b & TB_RPADC) ? 1 : 0) |
-		     ((b & TB_LPADC) ?
-			      2 :
-			      0); // RPad click = left, LPad click = right
+	uint8_t mb = ((b & TB_RPADC) ? 1 : 0) | ((b & TB_LPADC) ? 2 : 0);
 	if (dx || dy || mb != pmb) {
 		pmb = mb;
 		hid_mouse_report_t m;

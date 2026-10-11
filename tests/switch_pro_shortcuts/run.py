@@ -11,6 +11,7 @@ head='''#include <stdint.h>
 #define NSLOT 4
 #define MODE_SW_PRO 4
 uint8_t g_usbMode=MODE_SW_PRO,g_shortcutFlags=63;
+uint32_t g_gestureMask=0;
 uint8_t g_rumbleStyle=8;
 uint16_t g_hdPadScale=100,g_rumbleScale=200;
 int confirmations=0;uint8_t confirmationSlot=0;
@@ -81,6 +82,10 @@ body='''int main(){
  swDpadClickFeedback(3,0);swDpadClickFeedback(3,TB_RPADT|TB_RPADC);assert(pulses==2 && emittedSide==HSIDE_RPAD);
  swDpadClickFeedback(3,0);swDpadClickFeedback(3,TB_LPADT|TB_LPADC|TB_RPADT|TB_RPADC);assert(pulses==3 && emittedSide==HSIDE_PADS);
  swDpadClickFeedback(3,0);g_swDpadHaptics=0;swDpadClickFeedback(3,TB_LPADT|TB_LPADC);assert(pulses==3);
+ // a disabled pad (5, past the D-pad modes) is neither a D-pad nor a click pulse
+ g_swDpadHaptics=1;g_padStick[0]=g_padStick[1]=5;in.buttons=TB_LPADT|TB_LPADC|TB_RPADT|TB_RPADC;in.lpx=20000;in.rpx=20000;assert(!padDpadButtons(in));
+ swDpadClickFeedback(3,0);swDpadClickFeedback(3,TB_LPADT|TB_LPADC|TB_RPADT|TB_RPADC);assert(pulses==3);
+ g_padStick[0]=3;g_padStick[1]=4;
  g_swDpadHaptics=1;swDpadClickFeedback(3,TB_LPADT|TB_LPADC);assert(pulses==3);
  swDpadClickFeedback(3,0);blocked=true;swDpadClickFeedback(3,TB_LPADT|TB_LPADC);assert(pulses==3);
  blocked=false;swDpadClickFeedback(3,0);swDpadClickFeedback(3,TB_LPADT|TB_LPADC);assert(pulses==4);

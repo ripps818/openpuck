@@ -3,6 +3,7 @@
 #include "radio.h"
 #include "bonds.h"
 #include "config.h"
+#include "btnmap.h"
 #include "triton.h"
 #include "haptics.h"
 #include "steam_commands.h"
@@ -4284,6 +4285,19 @@ uint8_t rfConnTx(uint8_t ch, uint8_t s1, const uint8_t *payload, uint8_t plen,
 						chCnt[g_curSlot] =
 							(want != 0xFF) ? 1 : 0;
 					}
+				}
+				// Modifier + the configured previous / next button steps the mapping profile of the running
+				// type; the controller that did it buzzes the profile number, whatever the feedback setting.
+				{
+					const uint8_t profile = btnmapGesture(
+						g_curSlot,
+						g_in[g_curSlot].buttons,
+						millis(),
+						USBDevice.suspended());
+					if (profile)
+						hapticShortcutFeedback(
+							g_curSlot, profile,
+							true);
 				}
 				// compact stream for rf_controller_ui.py -- NON-BLOCKING: skip if CDC TX is backed up (a blocking
 				// Serial.print stalls the RF+USB loop -> jaggy input). One line/frame using the last record.

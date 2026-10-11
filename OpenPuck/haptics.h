@@ -239,7 +239,9 @@ void hapticSwitchPitch(uint8_t slot, uint16_t ll, uint16_t lh, uint16_t rl,
 		       uint16_t rh, uint16_t lf, uint16_t hf, uint16_t rf,
 		       uint16_t rhf);
 
-void hapticShortcutFeedback(uint8_t slot, uint8_t pulses);
+// pulses 1-3 on the controller's pads. force plays it even when the shortcut feedback setting is off: the
+// profile switch has no other way to say which profile it landed on.
+void hapticShortcutFeedback(uint8_t slot, uint8_t pulses, bool force = false);
 bool hapticShortcutFeedbackActive(uint8_t slot);
 // queue + flush the pending host/test/stop relay inside the poll cadence (called from rf_link).
 // rfConnFlushRelay's s1 must carry a PID distinct from the GET poll that follows it. g_relayPid

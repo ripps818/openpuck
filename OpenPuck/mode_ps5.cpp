@@ -259,11 +259,9 @@ static ps5_setcb_t const PS5_SETCB[NSLOT] = { ps5Set0, ps5Set1, ps5Set2,
 static void ps5Build(uint8_t usbSlot, uint8_t slot, uint8_t out[63])
 {
 	uint32_t b = psButtonsFromSteam(g_in[slot].buttons);
-	if (g_createAsTouch && (b & TB_MENU))
-		b = (b & ~(uint32_t)TB_MENU) | TB_TOUCH;
 	padClickEdge(slot, b & (TB_LPADC | TB_RPADC));
 	// A pad mapped to a stick must NOT also report as a touchpad contact -- the host would read the same
-	// finger twice (stick deflection AND a cursor drag).
+	// finger twice (stick deflection AND a cursor drag). A disabled pad reports none either.
 	bool lTouch = !g_touchpadDisabled && g_padStick[0] == PS_OFF &&
 		      ((b & TB_LPADT) || (b & TB_LPADC)),
 	     rTouch = !g_touchpadDisabled && g_padStick[1] == PS_OFF &&

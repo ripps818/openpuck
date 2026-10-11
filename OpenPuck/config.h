@@ -174,22 +174,27 @@ struct TypeCfg {
 	uint8_t rumble;
 };
 extern TypeCfg g_type[ET_COUNT];
+// what g_type starts as, and what a mapping profile resets to
+extern const TypeCfg g_typeDefault[ET_COUNT];
 // Per-type grip rumble strength (percent). g_rumbleScale is the active type's live copy (applyActiveType); an
 // edit to it is kept with rumbleStoreActive(). The rumble style is not a setting: applyActiveType picks HD
 // Emulation in Switch Pro mode and Normal everywhere else.
 extern uint16_t g_typeRumbleScale[ET_COUNT];
 void rumbleStoreActive();
 
-// Trackpad -> analog stick mapping, per emulated type: {left pad, right pad}, values PS_OFF/PS_LEFT/PS_RIGHT.
-// While the mapped pad is touched its coordinates drive that stick; releasing it re-centers the stick (the
-// physical stick still drives it whenever the pad is untouched). Kept OUTSIDE TypeCfg so the on-flash Cfg
-// layout only grows in its tail -- an existing cfg.bin still loads and keeps every other setting.
+// What touching a trackpad does, per emulated type: {left pad, right pad}. PS_OFF is the mode's own use of the
+// pad (the touchpad, the Xbox right pad's mouse, nothing in the Switch modes); PS_DISABLED ignores the touch
+// altogether. While a pad mapped to a stick is touched its coordinates drive that stick; releasing it
+// re-centers the stick (the physical stick still drives it whenever the pad is untouched). The pad's CLICK is
+// its own button in the profile's map, not part of this. Kept OUTSIDE TypeCfg so the on-flash Cfg layout only
+// grows in its tail -- an existing cfg.bin still loads and keeps every other setting.
 #define PS_OFF 0
 #define PS_LEFT 1
 #define PS_RIGHT 2
 #define PS_DPAD_TOUCH 3
 #define PS_DPAD_CLICK 4
-#define PS_MAX 4
+#define PS_DISABLED 5
+#define PS_MAX 5
 extern uint8_t g_padStickCfg[ET_COUNT][2];
 extern uint8_t
 	g_etype; // etypeForMode(g_usbMode), resolved at boot (ET_NONE for puck modes)
@@ -231,7 +236,8 @@ extern uint16_t g_audioSpeaker;
 // Peaks above it are rounded off toward full scale; 100 leaves only the hard clip at full scale.
 #define HAPTIC_LIMIT_KNEE_DEFAULT 70u
 extern uint8_t g_hapticLimitKnee;
-// DualSense modes: 1 = the Create button presses the touchpad click instead
+// 1 = the active DualSense profile maps Create to the touchpad click. A view of that profile (btnmap.cpp), kept
+// for cfg.bin, the status blob and older panels; the map itself does the work.
 extern uint8_t g_createAsTouch;
 // Analog trigger response for the emulated modes (Steam mode relays raw input): travel at or below
 // g_trigInner % reads 0, travel at or past g_trigOuter % reads full, linear between. 0/100 = raw. A lower

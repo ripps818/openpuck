@@ -20,6 +20,7 @@ uint8_t g_shortcutFlags=63;
 uint8_t g_rumbleStyle=8,g_usbMode=4,g_rumble=1;
 uint16_t g_rumbleScale=100,g_hdPadScale=100;
 bool hapticShortcutFeedbackActive(uint8_t slot);
+void hapticShortcutFeedback(uint8_t slot,uint8_t pulses,bool force=false);
 bool g_hapticRelay=true;
 uint32_t now=0;
 unsigned long millis(){return now;}
@@ -161,6 +162,10 @@ test = '''int main(){
  for(int i=0;i<4;i++){packet[1+i]=(burst>>(8*i))&255;packet[5+i]=packet[1+i];}
  jcRumble(0,packet,9);hapticHdTask();assert(messages.empty());
  // Confirmation uses both pads, never grips, and exact finite 250 ms tones.
+ // With the confirmation setting off a shortcut stays silent, but the profile switch forces its pulses.
+ g_shortcutFlags=63&~8;reset();hapticShortcutFeedback(0,3);messages.clear();hapticShortcutFeedbackTask();assert(messages.empty());
+ reset();hapticShortcutFeedback(0,3,true);messages.clear();hapticShortcutFeedbackTask();assert(messages.size()==2);
+ g_shortcutFlags=63;
  reset();hapticShortcutFeedback(0,3);messages.clear();hapticShortcutFeedbackTask();
  assert(messages.size()==2);
  for(auto &m:messages)assert(m.rid==0x83 && word(m,4)==250 && int8_t(m.p[1])==-18 && word(m,2)==160);

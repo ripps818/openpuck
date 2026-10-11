@@ -266,19 +266,10 @@ static void ds3Build(uint8_t slot, uint8_t out[48])
 		 ((b & TB_DUP) ? 0x10 : 0) | ((b & TB_DRT) ? 0x20 : 0) |
 		 ((b & TB_DDN) ? 0x40 : 0) | ((b & TB_DLF) ? 0x80 : 0);
 
-	// out[2] (rd[3]): L2 R2 L1 R1 Triangle Circle Cross Square. g_abSwap swaps the A/B + X/Y face pair.
-	uint8_t tri, cir, crs, sqr;
-	if (g_abSwap) {
-		tri = (b & TB_A) ? 0x10 : 0;
-		cir = (b & TB_B) ? 0x20 : 0;
-		crs = (b & TB_X) ? 0x40 : 0;
-		sqr = (b & TB_Y) ? 0x80 : 0;
-	} else {
-		tri = (b & TB_Y) ? 0x10 : 0;
-		cir = (b & TB_B) ? 0x20 : 0;
-		crs = (b & TB_A) ? 0x40 : 0;
-		sqr = (b & TB_X) ? 0x80 : 0;
-	}
+	// out[2] (rd[3]): L2 R2 L1 R1 Triangle Circle Cross Square. Xbox equivalents: A = Cross, B = Circle,
+	// X = Square, Y = Triangle.
+	uint8_t tri = (b & TB_Y) ? 0x10 : 0, cir = (b & TB_B) ? 0x20 : 0,
+		crs = (b & TB_A) ? 0x40 : 0, sqr = (b & TB_X) ? 0x80 : 0;
 	out[2] = (l2 ? 0x01 : 0) | (r2 ? 0x02 : 0) | ((b & TB_LB) ? 0x04 : 0) |
 		 ((b & TB_RB) ? 0x08 : 0) | tri | cir | crs | sqr;
 

@@ -146,66 +146,104 @@ void defaultLizardMap(LizardMap &m)
 	addKey(KM_LALT, 0, 0x200u /*TB_RB*/, 0);
 }
 
-void saveLizardMap(const LizardMap &m)
+static const char *const LZ_FILES[LZ_PROFILES] = { LZ_FILE, "/lizard_map2.bin",
+						   "/lizard_map3.bin" };
+
+void saveLizardProfile(uint8_t profile, const LizardMap &m)
 {
+	if (profile >= LZ_PROFILES)
+		return;
 	uint8_t data[3 + LZ_MAX_BINDINGS * sizeof(LizardBinding)];
 	data[0] = LZ_MAGIC;
 	data[1] = LZ_VERSION;
 	data[2] = m.count;
 	size_t length = m.count * sizeof(LizardBinding);
 	memcpy(data + 3, m.bindings, length);
-	storageWriteFile(LZ_FILE, "/lizard.tmp", data, 3 + length);
+	storageWriteFile(LZ_FILES[profile], "/lizard.tmp", data, 3 + length);
 }
 
-void loadLizardMap(LizardMap &m)
+void saveLizardMap(const LizardMap &m)
 {
+	saveLizardProfile(0, m);
+}
+
+// False when the file is missing, not ours or empty. *migrated is set for a version-1 file.
+static bool lzRead(const char *path, LizardMap &m, bool *migrated)
+{
+	m.count = 0;
+	File f(InternalFS);
+	if (!f.open(path, FILE_O_READ))
+		return false;
+	uint8_t hdr[3] = { 0, 0, 0 };
+	if (f.read(hdr, 3) == 3 && hdr[0] == LZ_MAGIC &&
+	    hdr[2] <= LZ_MAX_BINDINGS) {
+		uint8_t cnt = hdr[2];
+		if (hdr[1] == LZ_VERSION) {
+			int got = f.read((uint8_t *)m.bindings,
+					 cnt * sizeof(LizardBinding));
+			if (got == (int)(cnt * sizeof(LizardBinding)))
+				m.count = cnt;
+		} else if (hdr[1] == 1u) {
+			static LizardBindingV1 old[LZ_MAX_BINDINGS];
+			int got = f.read((uint8_t *)old,
+					 cnt * sizeof(LizardBindingV1));
+			if (got == (int)(cnt * sizeof(LizardBindingV1))) {
+				for (uint8_t i = 0; i < cnt; i++) {
+					LizardBinding &b = m.bindings[i];
+					b.outType = old[i].outType;
+					memcpy(b.outData, old[i].outData,
+					       sizeof b.outData);
+					b.trigMask = lizardMaskFromV1(
+						old[i].trigMask);
+					b.holdMask = lizardMaskFromV1(
+						old[i].holdMask);
+				}
+				m.count = cnt;
+				*migrated = true;
+			}
+		}
+	}
+	f.close();
+	return m.count != 0;
+}
+
+void loadLizardProfile(uint8_t profile, LizardMap &m)
+{
+	if (profile >= LZ_PROFILES)
+		profile = 0;
 	if (g_storageState == 0) {
 		defaultLizardMap(m);
 		return;
 	}
 	bool migrated = false;
-	File f(InternalFS);
-	if (f.open(LZ_FILE, FILE_O_READ)) {
-		uint8_t hdr[3] = { 0, 0, 0 };
-		if (f.read(hdr, 3) == 3 && hdr[0] == LZ_MAGIC &&
-		    hdr[2] <= LZ_MAX_BINDINGS) {
-			uint8_t cnt = hdr[2];
-			m.count = 0;
-			if (hdr[1] == LZ_VERSION) {
-				int got = f.read((uint8_t *)m.bindings,
-						 cnt * sizeof(LizardBinding));
-				if (got == (int)(cnt * sizeof(LizardBinding)))
-					m.count = cnt;
-			} else if (hdr[1] == 1u) {
-				static LizardBindingV1 old[LZ_MAX_BINDINGS];
-				int got = f.read((uint8_t *)old,
-						 cnt * sizeof(LizardBindingV1));
-				if (got ==
-				    (int)(cnt * sizeof(LizardBindingV1))) {
-					for (uint8_t i = 0; i < cnt; i++) {
-						LizardBinding &b =
-							m.bindings[i];
-						b.outType = old[i].outType;
-						memcpy(b.outData,
-						       old[i].outData,
-						       sizeof b.outData);
-						b.trigMask = lizardMaskFromV1(
-							old[i].trigMask);
-						b.holdMask = lizardMaskFromV1(
-							old[i].holdMask);
-					}
-					m.count = cnt;
-					migrated = true;
-				}
-			}
-		}
-		f.close();
+	if (lzRead(LZ_FILES[profile], m, &migrated)) {
+		if (migrated)
+			saveLizardProfile(profile, m);
+		return;
 	}
-	// If nothing loaded, install + persist defaults
-	if (m.count == 0) {
+	// nothing usable: profile 0 gets the defaults, the others a copy of profile 0, and either is persisted
+	if (profile)
+		loadLizardProfile(0, m);
+	else
 		defaultLizardMap(m);
-		saveLizardMap(m);
-	} else if (migrated) {
-		saveLizardMap(m);
+	saveLizardProfile(profile, m);
+}
+
+void loadLizardMap(LizardMap &m)
+{
+	loadLizardProfile(0, m);
+}
+
+void seedLizardProfiles(LizardMap &m)
+{
+	if (g_storageState == 0)
+		return;
+	for (uint8_t p = 1; p < LZ_PROFILES; p++) {
+		File f(InternalFS);
+		const bool have = f.open(LZ_FILES[p], FILE_O_READ);
+		if (have)
+			f.close();
+		else
+			loadLizardProfile(p, m);
 	}
 }

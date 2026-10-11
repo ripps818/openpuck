@@ -43,7 +43,7 @@
 #define TB_R2 0x800000u
 #define TB_L2 0x8000000u
 
-// Virtual PS targets, settable ONLY via a back-paddle/QAM remap (psOrBackCode / tritonFromCode), never by the
+// Virtual PS targets, settable ONLY via a back-paddle/QAM remap (remapTarget in remap.cpp), never by the
 // controller itself. They live on bits 30/31 -- the only bits the SC2 0x45 report does NOT use (see PROTOCOL.md
 // §8.1; bits 0..29 are all real). They originally aliased 0x00100000 (right stick touch) and 0x01000000 (left
 // stick touch), so merely RESTING a thumb on a capacitive stick fired the DualSense trackpad-click / mute.
@@ -61,21 +61,35 @@
 #define SHORTCUT_ENABLED 32u
 extern uint8_t g_shortcutFlags;
 
-static inline bool shortcutHeld(uint32_t buttons)
+// The modifier is held, whether or not the mode shortcuts are switched on: the profile switch uses it too.
+static inline bool shortcutModifierHeld(uint32_t buttons)
 {
 	uint32_t mask = (g_shortcutFlags & SHORTCUT_QAM) ? TB_QAM : CHORD_BACK4;
-	return (g_shortcutFlags & SHORTCUT_ENABLED) && (buttons & mask) == mask;
+	return (buttons & mask) == mask;
 }
+
+static inline bool shortcutHeld(uint32_t buttons)
+{
+	return (g_shortcutFlags & SHORTCUT_ENABLED) &&
+	       shortcutModifierHeld(buttons);
+}
+
+// The two buttons that switch the mapping profile while the modifier is held (btnmap.cpp); 0 when the profile
+// switch is off or the running mode has no profiles.
+extern uint32_t g_gestureMask;
 
 static inline uint32_t shortcutHostButtons(uint32_t buttons)
 {
-	if (shortcutHeld(buttons)) {
+	const bool modifier = shortcutModifierHeld(buttons);
+	if (modifier && (g_shortcutFlags & SHORTCUT_ENABLED)) {
 		uint32_t mask = (g_shortcutFlags & SHORTCUT_QAM) ? TB_QAM :
 								   CHORD_BACK4;
 		// Pad clicks belong to the modifier + click touchpad toggle.
 		buttons &= ~(mask | TB_A | TB_B | TB_X | TB_Y | TB_DUP |
 			     TB_DDN | TB_DLF | TB_DRT | TB_LPADC | TB_RPADC);
 	}
+	if (modifier)
+		buttons &= ~g_gestureMask;
 	return buttons;
 }
 

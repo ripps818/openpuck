@@ -284,6 +284,17 @@ The 28DE:1304 puck identity with four HID slot interfaces (interface N = bond sl
   `rfLizard()` walks it every input frame. `loadLizardMap`/`saveLizardMap`
   (`lizard_map.bin` via `storageWriteFile`), `defaultLizardMap`. Edited over WebUSB ops
   `0x11`-`0x15` (16-byte legacy records) and `0x17`-`0x1A` (24-byte).
+- Three Lizard profiles, one file each: `loadLizardProfile`/`saveLizardProfile(profile, m)`; profile 0 is
+  `lizard_map.bin` (what older firmware reads), 1 and 2 are `lizard_map2.bin` / `lizard_map3.bin`.
+  `seedLizardProfiles()` (setup) writes a missing one as a copy of profile 0, so the RF path only reads.
+  Which one is active is `g_lizardActive` in btnmap; in MODE_LIZARD `g_lizardMap` is that profile, loaded at
+  boot and on every switch. WebUSB `0x34` picks the profile the lizard ops edit (`webusbLizardMap()`).
+- Mouse move (`LZ_OUT_MOUSE_AXIS`) sources: the right trackpad (glide model), and the left or right stick
+  (`LZ_MSRC_LSTICK`/`LZ_MSRC_RSTICK`), driven as speed by `lizardStickAxis` (deadzone, squared curve, 5 px a
+  report at full deflection; both sticks add up). The gyro is offered by the editor but not driven yet.
+- Scroll wheel (`LZ_OUT_SCROLL`) sources: the left trackpad, and the left or right stick (up scrolls up), also
+  through `lizardStickAxis` at `LZ_STICK_SCROLL_NOTCHES` (0.12 notch a report at full deflection). The stick
+  carry `ssc` is separate from the pad's `sacc`, so a pad scroll's reset when no finger is down does not eat it.
 
 ## 8. XInput personality — `mode_xinput.cpp` / `mode_xinput.h`  (`g_xboxCtl`)
 
@@ -297,7 +308,7 @@ boot mouse for the right pad.
   **calls `hapticSteamRumble(lo, hi, slot)` directly from the usbd task**, then re-arms
   the 32-byte OUT xfer. No HID feature/get/set callbacks in this mode.
 - **loop-task code**: `onReport45` → `rfXboxGamepad(slot, rep)` (+ `rfXboxMouse` for slot
-  0); `xinputSend` fills `S.inBuf` (**20 bytes** filled of the 32-byte buffer) and
+  0, which reads the mapped buttons: target 22 is the mouse's left button, 21 the right); `xinputSend` fills `S.inBuf` (**20 bytes** filled of the 32-byte buffer) and
   `usbd_edpt_xfer(0, epIn, r, 20)`; `task()` is the stuck-rumble watchdog (2.5 s →
   `hapticSteamRumble(0,0,s)`).
 - **Buffers**: `XiSlot.inBuf[32]`, `XiSlot.outBuf[32]`; XInput report = 20 bytes;
@@ -448,9 +459,33 @@ driver matches). Dynamic-mount, STREAM-style. **Registers a set-report callback.
 
 ### `gamepad_util.cpp` / `gamepad_util.h` — shared report-builders (called from loop task)
 `swStick`, `psNeutralCalib` (writes through `buf[33]`), trackpad→touch mappers
-(`touchPackPads` writes 8 bytes = two 4-byte points), `psButtonsFromSteam` (back-paddle/
-QAM/chord remap), `psShouldersByte`, `psHatNibble`, `psFaceNibble`, `tritonFromCode`.
-Reads `g_qamMap`/`g_abSwap`/`g_back[]`. Pure transforms, no buffers beyond callers'.
+(`touchPackPads` writes 8 bytes = two 4-byte points), `psButtonsFromSteam` (chord guard +
+`remapButtons`), `psShouldersByte`, `psHatNibble`, `psFaceNibble`. Pure transforms, no buffers
+beyond callers'.
+
+### `remap.cpp` / `remap.h` — button remapping (called from loop task and usbd task)
+`remapButtons(b, &capture)`: replaces each of the 24 sources (`RemapSource`) in the shortcut-masked
+TB_* word with its target code from the live `g_btnMap`; every emulated mode calls it and turns the
+result into its own report bits. `remapTarget(code, swap)` is the one code -> TB_* table. Switch
+Capture has no TB_* bit and comes back as `capture`. `applyActiveType()` builds `g_btnMap` from the
+active profile (`btnmapActiveMap`). Target codes from 128 are reserved for macros.
+
+### `btnmap.cpp` / `btnmap.h` — stored mapping profiles (loop task; USB handlers and the RF path only mark it dirty)
+`g_profile[type][3]` (a `ButtonMap` + the per-pad touch setting: off, a stick, a D-pad mode or `PS_DISABLED`) and `g_profileActive[type]`,
+persisted in `/btnmap.bin` (fixed layout, checked on load; anything else is rebuilt). `btnmapLoad()` runs
+after `loadCfg()`: no valid file -> every profile of a type starts as a copy of the older per-type settings
+(`g_type[]` paddles / QAM / swap, `g_padStickCfg[]`) and the file is written. The older settings stay as a
+view of the active profile (`g_type[]`, `g_padStickCfg[]`, and `g_createAsTouch` for the DualSense profile's
+Create entry being the touchpad click, so cfg.bin, the blob and older panels / backups still work; a cfg.bin
+that had `g_createAsTouch` on seeds the DualSense profiles once, when there is no `btnmap.bin`); the legacy WebUSB fields and the serial console edit the profile through `btnmapLegacySet` /
+`btnmapSetPadStick`. Writes: `btnmapTouch(holdMs)` marks it, `btnmapTask(now)` (loop) writes once the hold has
+passed, `saveCfg()` flushes at once. The profile switch lives here too: `btnmapGesture(slot, buttons, now,
+suspended)` (called from rf_link's per-report chord block) debounces modifier + the configured previous / next
+button (`g_gesture`, puck-wide, stored in the file's trailer), steps the running type's active profile, calls
+`applyActiveType()` and returns the number to buzz (`hapticShortcutFeedback(.., force=true)`). Its two buttons are
+`g_gestureMask`, which `shortcutHostButtons` hides from the host while the modifier is held. In MODE_LIZARD the
+gesture steps `g_lizardActive` instead (stored in the file's last byte, version 3), `btnmapLizardSelect` loads
+that profile into `g_lizardMap`, and `lizardButtons()` (mode_lizard.cpp) hides the two buttons.
 
 ---
 
