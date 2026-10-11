@@ -1,19 +1,32 @@
 # OpenPuck: expanded button mapping + multiple profiles
 
 Fork of safijari/openpuck (AGPL-3.0), planned against main @ 5f17c1d.
-Status: planning only, no firmware or panel code changed yet.
+Status: phases 0-5 done on `feat/button-mapping` (see Phases). Questions answered 2026-10-10 (see Decisions).
 
 ## Decisions (2026-10-10)
 
 1. Profiles are per emulated TYPE; the single-HID "game" variants share profiles with their composite
    counterparts (PS5 + PS5_GAME, DS4_GAME + HIDGYRO + PS3, Xbox + Xbox OG, HORI + Switch Pro).
-2. Lizard gets profiles too. Steam / DInput / SInput stay out (host binds them). (Read "yes" as answering
-   "should Lizard get profiles"; confirm.)
+2. Lizard gets profiles too (confirmed 2026-10-10). Steam / DInput / SInput stay out (host binds them).
 3. Borrow from the upstream profile PRs and credit their authors (see Credit).
 4. **3 profiles per type.**
-5. Switch gesture: modifier + LB (previous) / RB (next), with haptic pulses = profile number, always on.
+5. Switch gesture: modifier + a "previous" and a "next" button (default LB / RB), with haptic pulses = profile
+   number. Configurable on the mapping page (2026-10-10): an enable toggle (default on) plus a choice of the two
+   buttons. The setting is puck-wide, not per profile, and works even when the Mode shortcuts master switch is
+   off (it needs its own modifier check; the modifier itself still follows `SHORTCUT_QAM`). The panel only offers
+   buttons that no mode shortcut uses (not A/B/X/Y, D-pad, pad clicks); the chosen two are masked from the host
+   while the modifier is held.
 6. (Why the fork dropped the Switch profiles: unknown. Moot.)
-7. **A/B swap is part of the profile**, so e.g. a Switch Pro profile can turn swap on or off.
+7. **A/B swap is no longer a flag.** It becomes a one-shot "Apply Nintendo layout" button that overwrites the
+   four face-button entries (A<->B, X<->Y) of the profile being edited (2026-10-10). Revised the same day: while
+   the four are exchanged the button reads "Revert Nintendo layout" and the same op (0x2E) puts them back, so it
+   is a toggle with no flag behind it (the state is the map). Firmware drops `g_abSwap` from the builders; the
+   map is the only source of truth, which removes the Xbox swap inconsistency below.
+8. Profiles 2-3 are seeded as copies of profile 1 (confirmed 2026-10-10).
+9. **On-controller learn mode is wanted** (2026-10-10), entered with modifier + Steam. It does not add any
+   first-layer buttons: layer 1 stays at profile prev/next. Flow, each step confirmed by a rumble: modifier +
+   Steam (enter) -> press the button to remap (source) -> press the button it should act as (target, saved to the
+   active profile). Details in "Learn mode" below.
 
 ## Where things stand today
 
@@ -37,13 +50,24 @@ Status: planning only, no firmware or panel code changed yet.
 - Fork history: 54a4562 ported upstream #303's 7 Switch Pro profiles; ef7177b removed them. cfg.bin still has
   `reservedProfiles[37]`; WebUSB fields 190-229 are answered but ignored. Don't reuse those fields.
 
-## Latent inconsistency (fix as part of the shared layer)
+## Removing the swap flag (replaces the old "swap rule" problem)
 
-Under A/B swap, paddle/QAM codes mean different things per mode (read from code, not hardware-tested):
-Xbox paddles = absolute host button (swap ignored) but Xbox QAM goes through swap; Xbox OG ignores swap for
-both; Switch HORI/Pro and PS apply swap after the code. Rule going forward: remap output is Steam-position
-TB_* bits and swap applies afterward. Visible change only for Xbox-type users with swap on. Note in release
-notes. (Assumed OK; swap-per-profile makes the rule matter more.)
+Today `g_abSwap` is applied in every builder, and paddle/QAM codes mean different things per mode (read from
+code, not hardware-tested): Xbox paddles = absolute host button (swap ignored) but Xbox QAM goes through swap;
+Xbox OG ignores swap for both; Switch HORI/Pro and PS apply swap after the code. With the flag gone, targets
+are literal Steam-position codes and the map does the swapping.
+- Phase 1 must not change behaviour: the live map is built per mode from `TypeCfg` (identity + paddles + QAM +
+  swapped face entries when `abSwap` is set), translating paddle/QAM targets through the swap only where that
+  mode does so today. The characterization test (phase 0) proves it.
+- Phase 2 migration bakes that translation into the stored maps (e.g. a Switch paddle on A with swap on stores
+  B), so the per-mode quirk table can be deleted.
+- Found in phase 1: PS3's swap was not an A/B + X/Y exchange (swap on gave A->Triangle, B->Circle, X->Cross,
+  Y->Square). Fixed after phase 1 (Xbox equivalents A = Cross, B = Circle, X = Square, Y = Triangle; swap now
+  exchanges the pairs like every other mode), so PS3 users who had swap on see a corrective change: mention it in
+  the release notes. `tests/button_map` golden updated for the ps3 swap=1 lines only.
+- Old panels and backups keep working: legacy swap fields 21 and `40 + et*9 + 5` write the Nintendo preset
+  (value 1) or restore those four entries to identity (value 0) on the active profile. The status blob's swap
+  bytes (p[7], per-type q[5]) report "the four entries are currently swapped".
 
 ## Upstream notes and credit
 
@@ -109,17 +133,19 @@ Diverge:
   Targets a mode can't express are ignored; the panel filters by type.
 
 ### 2. Profiles (3 per type)
-- Name: "mapping profile". A profile = `{map[NSRC], abSwap, padStick[2]}`. Rumble, LED, pad haptics and grip
+- Name: "mapping profile". A profile = `{map[NSRC], padStick[2]}`. Rumble, LED, pad haptics and grip
   strength stay per type.
 - Storage: new `/btnmap.bin` (magic, version, per type: active index + 3 profiles) via `storageWriteFile`,
   deferred save as above. About 4 x 3 x 28 B, ~350 B.
-- Live mirrors `g_back/g_qamMap/g_abSwap/g_padStick` stay, fed from the active profile. Legacy WebUSB fields
+- Live mirrors `g_back/g_qamMap/g_padStick` stay, fed from the active profile (`g_abSwap` is gone, see above). Legacy WebUSB fields
   (4, 5-8, 21, 40 + et*9 + k) edit the active profile of that type. `TypeCfg` bytes stay on disk for downgrade.
 - Migration: no `btnmap.bin` -> profile 1 of each type from current `TypeCfg` + `g_padStickCfg` + swap;
   profiles 2-3 copies of it.
-- Switching: modifier (per `SHORTCUT_QAM`) + LB/RB = prev/next, edge-triggered with latch, 40 ms stable, not
-  while suspended, 1-3 pulses always (ignores `SHORTCUT_FEEDBACK`). Add LB/RB to the `shortcutHostButtons`
-  mask while the modifier is held. Applies to the whole puck (all slots) at first; per-slot is a later question.
+- Switching: modifier (per `SHORTCUT_QAM`) + the configured prev/next buttons (default LB/RB), edge-triggered
+  with latch, 40 ms stable, not while suspended, 1-3 pulses always (ignores `SHORTCUT_FEEDBACK`). The gesture
+  settings (enabled, prev code, next code) are puck-wide, 3 bytes in the `btnmap.bin` header. Add the chosen
+  buttons to the `shortcutHostButtons` mask while the modifier is held. Applies to the whole puck (all slots)
+  at first; per-slot is a later question.
 - The RF path can't write flash: set a dirty flag + deadline, write from loop.
 
 ### 3. Lizard profiles
@@ -128,12 +154,45 @@ Diverge:
 - Applies to MODE_LIZARD only (the saved map is live only there). Gesture and LB/RB masking must be added in
   `mode_lizard.cpp` since it bypasses `shortcutHostButtons`. WebUSB lizard ops need a profile index.
 
+### 3b. Learn mode (phase 6)
+- Entry: modifier (per `SHORTCUT_QAM`) + Steam, same debounce as the gesture (40 ms stable, once per hold,
+  re-arms on release, ignored while suspended). Works for the four emulated types only; in Steam, Lizard,
+  DInput and SInput modes it does nothing (Lizard bindings are a different, mask-based map).
+- Steps, each with its own forced rumble (bypasses `SHORTCUT_FEEDBACK` and the rumble-off toggle, via the same
+  path as the profile pulses): 1) entered, 2) source captured (the next remappable button pressed), 3) target
+  saved. Steam is masked from the host while the modifier is held, so entering does not leak Guide, and the
+  Steam + Y shutdown check must ignore the chord while the modifier is held.
+- While active: no input reaches the host, mode shortcuts and the profile gesture are suspended, 30 s idle
+  timeout (distinct rumble), modifier + Steam again cancels. The target is the physical button pressed, read
+  as its Steam-position code, so "press A to make it act as A" needs no menu.
+- Clearing (2026-10-10): at the source step, **holding a button for about 1 s** gives a long rumble and resets
+  that button's mapping to its default (identity for the physical buttons, today's defaults for the paddles
+  and QAM; not "disabled", which stays panel-only). Learn mode stays active for the next source, so several
+  buttons can be reset in a row. Because a tap and a hold must be told apart, a source is captured on
+  **release** (held under the threshold), and the reset fires at the threshold without waiting for release,
+  after which that release is ignored. The target step captures on press and has no hold behaviour.
+- Buttons still held when learn mode starts (the modifier and Steam) are ignored until they are released, so
+  entering never captures itself.
+- Writes `map[source] = target` into the active profile through the same deferred save as the panel, so the
+  panel shows the change on its next read.
+- Rumble vocabulary (to settle in phase 6; must stay distinct from the 1-3 pulses that mean "profile N"):
+  entry, source captured, saved, reset (the long one), timeout.
+
 ### 4. WebUSB + panel
-- New op/frame pair: read a type's profiles, write one map entry, set swap/padStick, select active, copy,
-  reset. Op/frame numbers to be picked from docs/PROTOCOL.md (not yet checked). Status blob unchanged unless
-  one spare nibble for "active profile" fits.
+- New op/frame pair: read a type's profiles, write one map entry, apply the Nintendo preset, set padStick,
+  select active, copy, reset, set the gesture. Free numbers (checked against PROTOCOL.md at 5f17c1d): ops
+  `0x2C` and up, but the range check in `webusbPoll` (`op > 0x2B`) must be extended; device-to-host frames
+  `0xB0` and up (`0xA5`-`0xAF` are taken). Status blob unchanged unless one spare nibble for "active profile"
+  fits.
+- This is the protocol bump: v29 shipped as `ripps-5f17c1dc`, so the first new op bumps to 30 (one bump for the
+  whole feature). Update the version comment and the panel's `p[0]>=N` gate.
+- PlayStation types (DS4, DS5, which cover PS3 too) never show A/B/X/Y (2026-10-10): face sources and targets
+  carry the PlayStation symbols (Cross, Circle, Square, Triangle = codes 1-4, the glyphs the panel already has),
+  and the Nintendo preset button on those types is worded as exchanging the symbols (Cross <-> Circle,
+  Square <-> Triangle). The data and the ops are the same for every type; this is labels only.
 - `panel/types.js`: button grid (glyph + `glyphSelect`; icons exist for every pad button), a 3-slot profile
-  strip per type and for Lizard (active marker, copy-from, reset), swap toggle moves into the profile.
+  strip per type and for Lizard (active marker, copy-from, reset), the swap toggle becomes an "Apply Nintendo layout"
+  button, and a gesture card (enable + prev/next dropdowns).
   Keep the reset-to-defaults confirm, reworded. `panel/backup.js` exports/imports profiles and still imports
   old backups. Docs: PROTOCOL.md, CODE_MAP.md, CONTROLLER_FEATURES.md, README.
 
@@ -141,24 +200,65 @@ Diverge:
 
 0. Characterization test: record each builder's output for every source x code x swap setting, pattern
    `tests/lizard_map/run.py` (host-compiled with mocks). Add the README acknowledgement.
-1. Shared remap layer over the existing 5 sources. Only intended change: the Xbox swap rule.
-2. All sources + swap per profile + `btnmap.bin` + migration + WebUSB ops (one profile live).
-3. 3 profiles + on-controller switching + feedback.
+   **Done**: `tests/button_map/run.py` + `golden.txt` (22 digest groups over 7 builders; `--dump` to diff two versions of
+   the code, `--update` only for an intended change). README acknowledgement added.
+1. Shared remap layer over the existing 5 sources, `g_abSwap` folded into the live map. No behaviour change.
+   **Done** (`OpenPuck/remap.{h,cpp}`; `tests/button_map` digests unchanged). The live map is computed per call from
+   `g_abSwap` / `g_back[]` / `g_qamMap` (no cached copy to go stale); `RemapStyle` carries each mode's swap
+   quirk. The five code tables are gone; Switch Capture travels as a `capture` flag since no TB_* bit is free.
+2. (in steps) 2a: map-based remap core, 24 sources, live map built from the legacy settings (**done**: only
+   the Xbox OG swap + QAM corner changed, see `tests/button_map`); 2b (**done**: `btnmap.{h,cpp}`, `tests/button_profiles`): profile store, `btnmap.bin`, migration,
+   legacy fields edit the active profile; 2c (**done**): WebUSB ops `0x2C`-`0x32`, the `0xB0` frame, protocol
+   v30, PROTOCOL.md. Select / copy / reset / per-profile pad -> stick are already in the ops, so phase 3 only
+   adds the on-controller gesture.
+   All sources + Nintendo preset + `btnmap.bin` + migration (bakes the swap translation) + WebUSB ops (one
+   profile live).
+3. 3 profiles + on-controller switching (configurable gesture) + feedback.
+   **Done**: `btnmapGesture` (rf_link per-report block), `g_gestureMask` hiding the two buttons in `shortcutHostButtons`,
+   forced rumble (`hapticShortcutFeedback(.., true)`), op `0x33` and the gesture trailer of the `0xB0` frame,
+   `btnmap.bin` version 2 (version 1 still reads). A change made on the controller is written 3 s after the last
+   one (loop context): the page erase can still cost one short input hitch in play, 3 s after the last switch.
 4. Panel UI, backup/import, docs.
+   **Done**: `panel/profiles.js` (profile strip, 24-source grid, Nintendo / PlayStation swap button, copy,
+   reset, gesture card), shown from status v30 with the older paddle / QAM / swap controls hidden
+   (`.prof-legacy` -> `.prof-off`). Status blob byte 211 carries each type's active profile (2 bits each), so
+   the panel reloads a type only when that changes. Reset to defaults resets all three profiles. Backup version 3
+   carries the profiles and the gesture; restore sends only the entries that differ. `modeSwitchReboot` flushes a
+   pending `btnmap.bin` write. Test: `tests/button_profiles/panel.cjs`. Rendered in headless Chromium against a fake puck (2026-10-10); not yet tried on a real puck (needs a v30 CI build flashed).
 5. Lizard profiles.
-6. Optional: learn mode (tap source, tap target), analog sources (trigger->button, stick/trigger swap),
-   profile names, per-slot profiles.
+   **Done**: one file per profile (`lizard_map.bin` = profile 1, `lizard_map2.bin` / `lizard_map3.bin` seeded at
+   boot as copies), RAM unchanged (only the active map is live; others are read on a switch). Active index in
+   `btnmap.bin` version 3; type 4 in ops `0x2C`/`0x2F`/`0x30`/`0x32`, op `0x34` picks the profile the lizard ops
+   edit (default: the active one), `0xAE` payload byte 47 reports the active one. Gesture works in MODE_LIZARD;
+   `lizardButtons()` masks the two switch buttons. Panel strip on the Lizard tab, backup carries all three maps.
+   A switch in Lizard mode reads the profile's file on the RF path (a LittleFS read, no write).
+6. On-controller learn mode (decision 9); needs the remap layer, the gesture masking and the forced feedback
+   path from phases 2-3, and the panel from phase 4 to show the result.
+7. Optional: analog sources (trigger->button, stick/trigger swap), profile names, per-slot profiles.
+
+## Macros (later, not built)
+
+Planned for later (2026-10-10): a source, or a combination of sources, can be bound to a macro. Nothing is
+built; the design keeps room for it:
+- A target byte is a button code below 128 and a macro slot from 128 (`REMAP_CODE_MACRO_BASE`), so a source
+  can already be stored as bound to one. A code a mode does not know acts as none and is kept when stored.
+- A combination is a second table, read before the per-source one, that consumes its member sources; it is a
+  new, length-prefixed section of the stored profile and of the WebUSB profile frame, so older firmware and
+  panels skip it.
+- Macros themselves (a table of timed steps) are a separate store and a loop-context player; the RF path only
+  sets a request flag, as with the profile gesture.
 
 ## Constraints
 
 - AGENTS.md: kernel-style clang-format 18, 80 cols, "why" comments only; `make check` is the CI gate.
-- Planned without hardware access: firmware changes can only be host-tested until flashed. `make build` (Arduino/nRF
-  toolchain) availability in the authoring environment is unchecked.
+- Planned without hardware access: firmware changes can only be host-tested until flashed. `arduino-cli` is not in
+  the lbx-claude box, so `make build` only runs in CI (`pr-check.yml`).
+- `TB_VIEW` / `TB_MENU` are named backwards from the physical buttons (triton.h); keep source names and panel
+  glyphs ("view" = Back/Minus/Create) consistent when building the source table.
 - cfg.bin changes tail-append only; flash writes loop-context only.
 
 ## Still open
 
-1. Confirm Decision 2 reading (Lizard gets profiles; Steam/DInput/SInput stay out).
-2. Profiles 2-3 seeded as copies of profile 1 (default), or #309-style presets?
-3. Learn mode (phase 6): wanted at all?
-4. Phases 0-1 start on this branch (`feat/button-mapping`) once the items above are settled.
+1. Phases 0-1 start on this branch (`feat/button-mapping`).
+2. Phase 6 details to settle with hardware: the hold threshold (about 1 s), the 30 s timeout, and the rumble
+   patterns.
