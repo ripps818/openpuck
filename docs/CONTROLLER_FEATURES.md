@@ -1,10 +1,10 @@
-# Switch Pro trackpad D-pad, shortcuts and HD rumble
+# Switch Pro trackpad D-pad, shortcuts, HD rumble and mapping profiles
 
 ## Trackpads
 
 Switch Pro trackpad mapping includes D-pad on touch and D-pad while clicked, including diagonals. Trackpad D-pad click feedback has a separate enable control. These and the other Switch Pro-only settings (Quick Access + Minus target, gyro mapping) are on the Switch tab of Button mapping in the configurator.
 
-The Switch Pro back-button profiles from the upstream PR were removed from this fork; the back paddles use the Switch tab's normal mapping.
+The Switch Pro back-button profiles from the upstream PR were removed from this fork. Every emulated type now has mapping profiles of its own (below).
 
 ## Rumble
 
@@ -40,7 +40,22 @@ Quick Access retains its normal per-type mapping when it is not reserved as the 
 
 The upstream PR's D-pad haptic shortcuts (cycling rumble styles and strength steps) were removed from this fork, along with its rumble presets and strength steps.
 
+## Mapping profiles
+
+Each emulated controller type (Xbox, Switch, DS4, DS5) has three mapping profiles, and one of them is in use. A profile sets what each of 24 buttons acts as: the face buttons, bumpers, stick clicks, the Select- and Start-side buttons, Steam, the D-pad, the four back buttons, Quick Access, both trackpad clicks and each trigger's full-pull click. It also holds the two trackpad-to-stick settings. A button can act as nothing, as any button the emulated controller has, or as a trackpad click. The PlayStation tabs name the face buttons Cross, Circle, Square and Triangle.
+
+In the configurator, each type's Button mapping tab edits one profile at a time: choose it in the profile strip, change its buttons, then **Use this profile** to put it in use. A dot marks the profile in use. **Copy over this profile** replaces the profile being edited with another one, and **Reset this profile** returns it to the factory mapping. **Reset to defaults** in the header resets all three profiles and puts profile 1 in use.
+
+**Apply Nintendo layout** (on the PlayStation tabs, **Swap Cross/Circle and Square/Triangle**) exchanges what the four face buttons act as in the profile being edited. It changes only those four entries, and applying it again swaps them back. It replaces the old A/B + X/Y swap switch.
+
+To switch profiles on the controller, hold the shortcut modifier (Quick Access or all four back buttons, as set in Mode shortcuts) and press the previous or next profile button, LB and RB by default. The controller buzzes the new profile's number, even when shortcut confirmation pulses are off. While the modifier is held, those two buttons do not reach the game. This works whether or not mode shortcuts are on. The **Switch profiles from the controller** card turns it off or picks other buttons (LB, RB, L3, R3, Select or Start); it is one setting for every type. The new profile is saved 3 seconds after the last switch, so stepping through several writes flash once.
+
+The profiles build on Froggerdog's Switch Pro back-button profiles ([pull request #303](https://github.com/safijari/openpuck/pull/303)) and cadenabelcannon-ctrl's on-controller paddle profiles and profile-switch gesture ([pull request #309](https://github.com/safijari/openpuck/pull/309)).
+
 ## Upgrade and legacy behavior
+
+The first boot with profiles builds `btnmap.bin` from the existing settings: all three profiles of a type start as copies of its back-button, Quick Access, swap and trackpad-to-stick settings. An A/B swap that was on carries over as swapped face-button entries. Older configurators, backups and the serial console keep working through those older settings, which now read and edit the profile in use. Backups from this configurator carry every profile and the profile-switch buttons (backup version 3). Restoring one sends only the entries that differ, and firmware without profiles restores its single mapping from the older settings.
+
 
 Configuration fields are appended after the fork's extension bytes, so an existing cfg.bin keeps every setting and the new fields start at their defaults. Bytes of removed settings (profiles, rumble presets, strength steps, per-type rumble style) stay in the layout as reserved space.
 
@@ -57,8 +72,11 @@ python3 tests/final_webusb/run.py
 python3 tests/shortcut_modes/run.py
 python3 tests/storage/run.py
 python3 tests/lizard_map/run.py
+python3 tests/button_map/run.py
+python3 tests/button_profiles/run.py
 npm install --prefix /tmp/openpuck-ui-tests jsdom@26
 NODE_PATH=/tmp/openpuck-ui-tests/node_modules node tests/switch_pro_shortcuts/configurator.cjs
+NODE_PATH=/tmp/openpuck-ui-tests/node_modules node tests/button_profiles/panel.cjs
 make check
 make build
 ```

@@ -5,6 +5,7 @@ import { CHORD_DPAD_FIELD } from './status.js';
 import { PAD_STICK_FIELD0, TYPE_DEFS } from './types.js';
 import { LZ_MAX, lizardCapable, readLizard } from './lizard.js';
 import { modalDone, modalOpen, modalStage } from './firmware.js';
+import { profilesCapable, profilesLoad } from './profiles.js';
 
 // ---- Backup / clone ----
 // A backup file is { magic, version, bonds[4], config{} }. bonds come from the 0x09 export (0xA7 frame); the
@@ -46,7 +47,13 @@ export function buildBackup(p, bp){
   // map snapshot would be empty, which would incorrectly clear bindings on restore.
   if(S.lizardLoaded && lizardCapable() && !S.lizardBusy)
     cfg.lizardMap=S.lizardBindings.map(b=>({outType:b.outType,od:b.od.slice(),trig:b.trig>>>0,hold:b.hold>>>0}));
-  return { magic:"openpuck-backup", version:(cfg.lizardMap?2:1), bonds, config:cfg };
+  // version 3: the mapping profiles (status v30+), read by exportBackup just before. The per-type back / qam /
+  // abSwap / padStick keys above still describe the active profile, for a panel or puck without profiles.
+  if(p[0]>=30 && S.profiles.slice(0,TYPE_DEFS.length).every(Boolean) && S.gesture){
+    cfg.profiles=S.profiles.slice(0,TYPE_DEFS.length).map(t=>({active:t.active, maps:t.maps.map(m=>m.slice()), pads:t.pads.map(x=>x.slice())}));
+    cfg.profileGesture={...S.gesture};
+  }
+  return { magic:"openpuck-backup", version:(cfg.profiles?3:cfg.lizardMap?2:1), bonds, config:cfg };
 }
 function downloadBackup(obj){
   const ts=new Date().toISOString().slice(0,19).replace(/[:T]/g,"-");
@@ -65,6 +72,7 @@ export async function exportBackup(){
     let bp=null;
     for(let t=0; t<8 && !bp; t++) bp=await readFrame(0xA7, 2+4*24);
     if(!bp){ log("export: no bond data (firmware too old for 0x09 export — reflash)"); return; }
+    if(profilesCapable()) for(let et=0;et<TYPE_DEFS.length;et++) if(!await profilesLoad(et)){ log("export: could not read the mapping profiles — retry"); return; }
     const backup=buildBackup(S.lastP, bp);
     downloadBackup(backup);
     const n=backup.bonds.filter(b=>b.used).length;
@@ -93,6 +101,13 @@ export async function importBackup(file){
      (hc.shortcutFlags!==undefined && !isInt(hc.shortcutFlags,0,63))){
     log("import: invalid Switch Pro / HD rumble / shortcut settings");return;
   }
+  const byte=v=>isInt(v,0,255);
+  if(hc.profiles!==undefined && !(Array.isArray(hc.profiles) && hc.profiles.length<=TYPE_DEFS.length && hc.profiles.every(t=>t && isInt(t.active,0,2) &&
+       Array.isArray(t.maps) && t.maps.length===3 && t.maps.every(m=>Array.isArray(m) && m.every(byte)) &&
+       Array.isArray(t.pads) && t.pads.length===3 && t.pads.every(x=>Array.isArray(x) && x.length===2 && x.every(byte)))) ||
+     (hc.profileGesture!==undefined && !(hc.profileGesture && [hc.profileGesture.enabled,hc.profileGesture.prev,hc.profileGesture.next].every(byte)))){
+    log("import: invalid mapping profiles");return;
+  }
   const bondedN=obj.bonds.filter(b=>b.used).length;
   if(!confirm("Restore this backup onto the CONNECTED puck (serial "+(S.dev.serialNumber||"?")+")?\n\nMake sure this is the TARGET puck, not the one you exported from — the panel only talks to the puck you last connected.\n\nThis OVERWRITES its "+bondedN+" controller pairing(s) and ALL settings, then reboots it.\n\nResult: any controller paired to the original puck will connect to this one with no re-pairing.")) return;
   log("importing onto puck "+(S.dev.serialNumber||"?"));
@@ -109,7 +124,10 @@ export async function importBackup(file){
   const ledN=(c.ledMode!==undefined?1:0)+(c.ledPinA!==undefined?1:0)+(c.ledPinB!==undefined?1:0)+(c.ledPolarity!==undefined?1:0);
   const baseN=6 + (Array.isArray(c.chordD)?4:0) + (c.swGyroLegacy!==undefined?1:0) + (c.emulateSteamMachine!==undefined?1:0) + ledN;
   const padStickN=Array.isArray(c.types)?c.types.slice(0,typeN).filter(t=>Array.isArray(t.padStick)).length*2:0;
-  const total=baseN + typeN*9 + padStickN + lizardN + 4 + 1 + (c.swDpadHaptics!==undefined?1:0) + (c.rumbleScale!==undefined?1:0) + (c.hdPadScale!==undefined?1:0) + (c.swQamSelect!==undefined?1:0) + (c.shortcutFlags!==undefined?1:0);
+  // mapping profiles go through their own ops when both the backup and this puck have them; the per-type
+  // mapping fields would only reach the active profile, so they are skipped then
+  const profN=(Array.isArray(c.profiles) && profilesCapable())?c.profiles.length:0;
+  const total=baseN + typeN*9 + padStickN + profN*4 + (profN && c.profileGesture?1:0) + lizardN + 4 + 1 + (c.swDpadHaptics!==undefined?1:0) + (c.rumbleScale!==undefined?1:0) + (c.hdPadScale!==undefined?1:0) + (c.swQamSelect!==undefined?1:0) + (c.shortcutFlags!==undefined?1:0);
   let step=0, stage="";
   const tick=()=>modalStage(stage, Math.min(99,Math.floor(step*100/total)));
   try{
@@ -150,12 +168,15 @@ export async function importBackup(file){
     // c.types is absent in some very old backups created before per-type paddle/haptic config
     // was added to the panel export; guard so a missing field never crashes the import mid-flight.
     if(typeN){
-      for(let et=0; et<typeN; et++){ const t=c.types[et];
-        for(let k=0;k<4;k++) await sf(40+et*9+k, t.back[k]);
-        await sf(40+et*9+4, t.qam); await sf(40+et*9+5, t.abSwap?1:0);
+      for(let et=0; et<typeN; et++){ const t=c.types[et], mapped=et<profN;
+        if(mapped) step+=6+(Array.isArray(t.padStick)?2:0);
+        else{
+          for(let k=0;k<4;k++) await sf(40+et*9+k, t.back[k]);
+          await sf(40+et*9+4, t.qam); await sf(40+et*9+5, t.abSwap?1:0);
+        }
         await sf(40+et*9+6, t.pad===2?2:(t.pad?1:0)); await sf(40+et*9+7, t.led);
         await sf(40+et*9+8, t.rumble!==undefined?t.rumble:1);
-        if(Array.isArray(t.padStick)){ await sf(PAD_STICK_FIELD0+et*2, t.padStick[0]); await sf(PAD_STICK_FIELD0+et*2+1, t.padStick[1]); }
+        if(!mapped && Array.isArray(t.padStick)){ await sf(PAD_STICK_FIELD0+et*2, t.padStick[0]); await sf(PAD_STICK_FIELD0+et*2+1, t.padStick[1]); }
         if(typeRumble && t.rumbleScale!==undefined) await sf(108+et, t.rumbleScale/2); }
       log("settings replayed ("+(baseN+typeN*9)+" fields)");
     } else { log("settings replayed ("+baseN+" fields — no per-type config in this backup)"); }
@@ -165,6 +186,28 @@ export async function importBackup(file){
     if(c.hdPadScale!==undefined) await sf(231,c.hdPadScale/2);
     if(c.swQamSelect!==undefined)await sf(239,c.swQamSelect);
     if(c.shortcutFlags!==undefined)await sf(240,c.shortcutFlags);
+    if(profN){
+      stage="Restoring mapping profiles"; tick();
+      // Each op answers with the type's 0xB0 frame. Only what differs from the puck is sent: a full restore is
+      // 3 x 24 entries per type, one round trip each.
+      const op=async bytes=>{ await send(bytes); return readFrame(0xB0, 5, 256); };
+      let n=0;
+      for(let et=0; et<profN; et++){ const t=c.profiles[et];
+        const cur=await op([0x2C, et]);
+        if(!cur || cur[3]!==3){ throw new Error("the puck did not send its mapping profiles"); }
+        const ns=cur[4], per=ns+2;
+        for(let i=0;i<3;i++){
+          const b=5+i*per;
+          for(let src=0; src<Math.min(ns,t.maps[i].length); src++) if(cur[b+src]!==t.maps[i][src]){ await op([0x2D, et, i, src, t.maps[i][src]]); n++; }
+          for(let pad=0;pad<2;pad++) if(cur[b+ns+pad]!==t.pads[i][pad]){ await op([0x31, et, i, pad, t.pads[i][pad]]); n++; }
+          step++; tick();
+        }
+        if(cur[2]!==t.active){ await op([0x30, et, t.active]); n++; }
+        step++; tick();
+      }
+      if(c.profileGesture){ const g=c.profileGesture; await op([0x33, 0, g.enabled?1:0, g.prev, g.next]); n++; step++; tick(); }
+      log("mapping profiles restored ("+profN+" controller types, "+n+" changes)");
+    }
     // restore the lizard map if the backup includes it (version 2+) and the puck speaks v16+.
     // pre-lizard-map backups simply lack c.lizardMap; skip silently so they still import cleanly.
     if(lizardN){

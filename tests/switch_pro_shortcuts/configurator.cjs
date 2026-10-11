@@ -50,17 +50,19 @@ const click=$('#swClickFeedback');click.value='0';assert.deepEqual(await change(
 const capture=$('#qamSelect');capture.value='0';assert.deepEqual(await change(capture),[2,239,0]);
 // v25: grip strength per type in Button mapping (no style row); the global strength row hides.
 const secs=[...$('#typeCfgs').children];
+// the mapping profile cards (status v30+) are covered by tests/button_profiles/panel.cjs; this test reads the rest
+const own=(sec,q)=>[...sec.querySelectorAll(q)].filter(e=>!e.closest('.prof-card'));
 // Back-button and QAM labels are the glyph (full name on hover) plus the short name.
-{const labs=[...secs[0].querySelectorAll('.row label')];
+{const labs=own(secs[0],'.row label');
  assert.deepEqual(labs.slice(0,4).map(l=>l.textContent.trim()+'|'+l.querySelector('.ic').title),['L4|L4 (back upper-left)','R4|R4 (back upper-right)','L5|L5 (back lower-left)','R5|R5 (back lower-right)']);
  assert.equal(labs[4].querySelector('.ic').dataset.ic,'qam');assert.equal(labs[4].textContent.trim(),'QAM');
  // the trackpad mapping rows are labelled by the left / right pad glyph plus the word
- assert.deepEqual([...secs[0].querySelectorAll('.row label .ic[data-ic^=pad]')].map(e=>e.title+'|'+e.nextSibling.textContent),['Left trackpad| Trackpad','Right trackpad| Trackpad']);
+ assert.deepEqual(own(secs[0],'.row label .ic[data-ic^=pad]').map(e=>e.title+'|'+e.nextSibling.textContent),['Left trackpad| Trackpad','Right trackpad| Trackpad']);
  // the A/B swap and Create toggles are labelled with their glyphs too
- const swapLab=labs.find(l=>l.querySelector('.ic[data-ic=A]')),createLab=[...secs[3].querySelectorAll('.row label')].find(l=>l.querySelector('.ic[data-ic=padClick]'));
+ const swapLab=labs.find(l=>l.querySelector('.ic[data-ic=A]')),createLab=own(secs[3],'.row label').find(l=>l.querySelector('.ic[data-ic=padClick]'));
  assert.deepEqual([...swapLab.querySelectorAll('.ic')].map(e=>e.dataset.ic),['A','B','X','Y']);assert(swapLab.textContent.endsWith(' swap'));
  assert.deepEqual([...createLab.querySelectorAll('.ic')].map(e=>e.dataset.ic),['view','padClick']);assert(/Create = .*touchpad click$/.test(createLab.textContent));}
-const typeRow=(et,label)=>[...secs[et].querySelectorAll('.row')].find(r=>r.querySelector('label') && r.querySelector('label').textContent===label);
+const typeRow=(et,label)=>own(secs[et],'.row').find(r=>r.querySelector('label') && r.querySelector('label').textContent===label);
 const scl=et=>typeRow(et,'Grip rumble strength').querySelector('select');
 for(let et=0;et<4;et++)assert(!typeRow(et,'Rumble style'));
 assert(scl(1).parentElement.classList.contains('hide'));assert(!$('#rumbleScale').parentElement.classList.contains('hide'));
@@ -109,18 +111,18 @@ assert(document.querySelectorAll('.modebtn').length>=11);assert($('#lizardList')
  p[1]=0;await apply();assert.equal(hg().dataset.ic,'sysSteam');}
 // The remap lists draw a dropdown over each (hidden) select so every target's glyph shows beside its name.
 {const gsel=sel=>sel.parentElement,btnOf=sel=>gsel(sel).querySelector('.gsel-btn'),listOf=sel=>gsel(sel).querySelector('.gsel-list');
- const sels=[...document.querySelectorAll('.gsel > select')];
+ const sels=[...document.querySelectorAll('.gsel > select')].filter(e=>!e.closest('.prof-card'));
  // per profile: four back buttons, QAM and the two trackpad-to-stick pickers; plus the Switch QAM + View picker
  assert.equal(sels.length,4*7+1);
  for(const sel of sels){assert(sel.hidden);assert(listOf(sel).classList.contains('hide'));}
  // every target on every controller has a glyph (only the none / default entry has none), by the right name
- const g=et=>Object.fromEntries([...secs[et].querySelector('select').options].map(o=>[o.textContent,o.dataset.glyph||'']));
+ const g=et=>Object.fromEntries([...own(secs[et],'select')[0].options].map(o=>[o.textContent,o.dataset.glyph||'']));
  for(let et=0;et<4;et++)for(const [name,gl] of Object.entries(g(et)))if(!/^(— none —|Default)/.test(name))assert(gl,et+' '+name);
  assert.deepEqual(['A','LB','Back','Start','D-pad Up','Guide','LT'].map(n=>g(0)[n]),['A','LB','view','menu','up','guide','LT']);
  assert.deepEqual(['Minus','ZL','L','L-Stick','Capture / Screenshot'].map(n=>g(1)[n]),['minus','ZL','swL','L3','capture']);
  assert.deepEqual(['Cross','Touchpad Click','Options','PS','Mute','R2'].map(n=>g(3)[n]),['cross','padClick','menu','ps','mute','R2']);
  // picking from the list writes the same field the plain select did, and the button shows the choice
- const l4=secs[0].querySelector('select'),b=btnOf(l4),list=listOf(l4),txt=()=>b.querySelector('.gsel-txt').textContent;
+ const l4=own(secs[0],'select')[0],b=btnOf(l4),list=listOf(l4),txt=()=>b.querySelector('.gsel-txt').textContent;
  b.click();assert(!list.classList.contains('hide'));assert.equal(b.getAttribute('aria-expanded'),'true');
  const rows=[...list.children];assert.equal(rows.length,l4.options.length);
  assert(rows.every((r,i)=>!!r.querySelector('.gsel-ic .ic')===!!l4.options[i].dataset.glyph));
