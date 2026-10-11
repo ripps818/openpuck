@@ -210,6 +210,7 @@ I have tested this software fairly extensively but I have limited resources. Ple
 - Massive thanks to [u/Careful_Tune4744](https://www.reddit.com/user/Careful_Tune4744/) for latency testing as well as testing and giving feedback on the Switch Pro mode
 - Thanks to Lawstorant from a mutual discord server for constructive criticism of the repo's state
 - Everyone that participated in [issue #17](https://github.com/safijari/openpuck/issues/72) or reported/tested stability issues on various boards
+- Froggerdog for [pull request #303](https://github.com/safijari/openpuck/pull/303) (Switch Pro back-button profiles) and cadenabelcannon-ctrl for [pull request #309](https://github.com/safijari/openpuck/pull/309) (on-controller paddle profiles and the profile-switch gesture): this fork's button mapping profiles build on their designs
 
 # * On LLM Use
 Upstream's author ([safijari](https://github.com/safijari)) wrote this about the original project:
