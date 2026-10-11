@@ -471,7 +471,7 @@ Capture has no TB_* bit and comes back as `capture`. `applyActiveType()` builds 
 active profile (`btnmapActiveMap`). Target codes from 128 are reserved for macros.
 
 ### `btnmap.cpp` / `btnmap.h` — stored mapping profiles (loop task; USB handlers and the RF path only mark it dirty)
-`g_profile[type][3]` (a `ButtonMap` + the trackpad -> stick setting) and `g_profileActive[type]`,
+`g_profile[type][3]` (a `ButtonMap` + the per-pad touch setting: off, a stick, a D-pad mode or `PS_DISABLED`) and `g_profileActive[type]`,
 persisted in `/btnmap.bin` (fixed layout, checked on load; anything else is rebuilt). `btnmapLoad()` runs
 after `loadCfg()`: no valid file -> every profile of a type starts as a copy of the older per-type settings
 (`g_type[]` paddles / QAM / swap, `g_padStickCfg[]`) and the file is written. The older settings stay as a

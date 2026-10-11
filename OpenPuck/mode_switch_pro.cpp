@@ -996,10 +996,13 @@ static void swDpadClickFeedback(uint8_t bond, uint32_t buttons)
 	held[bond] = clicks;
 	if (!g_swDpadHaptics || shortcutHeld(buttons) || haptic82Blocked(bond))
 		return;
+	// PS_DISABLED comes after the D-pad modes, so it is not a range test
 	bool left = (pressed & TB_LPADC) && (buttons & TB_LPADT) &&
-		    g_padStick[0] >= PS_DPAD_TOUCH;
+		    (g_padStick[0] == PS_DPAD_TOUCH ||
+		     g_padStick[0] == PS_DPAD_CLICK);
 	bool right = (pressed & TB_RPADC) && (buttons & TB_RPADT) &&
-		     g_padStick[1] >= PS_DPAD_TOUCH;
+		     (g_padStick[1] == PS_DPAD_TOUCH ||
+		      g_padStick[1] == PS_DPAD_CLICK);
 	if (left || right) {
 		const uint8_t pulse[3] = { hsidePads(left, right), 2, 0xF7 };
 		// ahead of any queued HD-rumble frames, which would delay the click by their length

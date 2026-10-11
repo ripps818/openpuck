@@ -352,8 +352,8 @@ static void rfXboxMouse(const uint8_t *r)
 	static bool prt = false;
 	static float vx = 0, vy = 0, rmx = 0, rmy = 0;
 	static uint8_t pmb = 0;
-	// The right pad drives a stick now, so it must not also glide the mouse -- treat it as untouched and let
-	// the residual velocity decay away instead of stopping dead.
+	// The right pad drives a stick now (or is disabled), so it must not also glide the mouse -- treat it as
+	// untouched and let the residual velocity decay away instead of stopping dead.
 	bool rtouch = (g_padStick[1] == PS_OFF) && (b & TB_RPADT);
 	int rx = s16off(r, 22), ry = s16off(r, 24);
 	if (rtouch) {

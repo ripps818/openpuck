@@ -236,6 +236,9 @@ int main()
 	assert(btnmapSetProfilePadStick(ET_DS4, 2, 0, PS_RIGHT) && g_profile[ET_DS4][2].padStick[0] == PS_RIGHT);
 	assert(g_padStickCfg[ET_DS4][0] == 0); // the view follows the active profile
 	assert(!btnmapSetProfilePadStick(ET_DS4, 2, 2, PS_LEFT) && !btnmapSetProfilePadStick(ET_DS4, 2, 0, PS_MAX + 1));
+	// a disabled pad is a stored value like the others, and survives a reboot below
+	assert(PS_DISABLED == PS_MAX && btnmapSetProfilePadStick(ET_DS4, 2, 1, PS_DISABLED));
+	assert(g_profile[ET_DS4][2].padStick[1] == PS_DISABLED);
 	assert(btnmapResetProfile(ET_SWITCH, 2) && remapFacesSwapped(g_profile[ET_SWITCH][2].map));
 	assert(g_profile[ET_SWITCH][2].map.target[RS_QAM] == 18 && g_profile[ET_SWITCH][2].map.target[RS_L4] == 5);
 	assert(btnmapResetProfile(ET_DS4, 2) && !remapFacesSwapped(g_profile[ET_DS4][2].map) &&

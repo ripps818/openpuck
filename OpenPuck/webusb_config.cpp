@@ -1542,7 +1542,7 @@ void webusbPoll()
 					break;
 
 				// 80..87: per-type trackpad->stick mapping, field = 80 + et*2 + pad
-				// (pad 0 = left, 1 = right; value PS_OFF/PS_LEFT/PS_RIGHT).
+				// (pad 0 = left, 1 = right; value PS_OFF..PS_DISABLED, see config.h).
 				// Must stay clear of the per-type cfg range 40..40+ET_COUNT*9-1
 				// (40..75), which is claimed before this switch runs.
 				case 80:

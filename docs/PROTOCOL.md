@@ -689,11 +689,14 @@ Status blob payload:
 
 Later fields are appended (the version byte says how far the payload goes). From version 20 the tail carries
 the per-emulated-type trackpad-to-stick mapping at payload bytes 187..194 — two bytes per type
-(`{left pad, right pad}`), each `0` off / `1` left stick / `2` right stick. Set with
+(`{left pad, right pad}`), each `0` off / `1` left stick / `2` right stick (`3` / `4` the Switch Pro D-pad on
+touch / on click, from version 23; `5` disabled, from version 30). Set with
 `0x02 <80 + type*2 + pad> <value>`. Fields 40..75 are the per-type config block, so the mapping starts at 80.
 A mapped pad **blends** with its stick: while the pad is touched each axis reports whichever of the two
 sources is deflected further from center (signed); an untouched pad contributes nothing and the physical
-stick passes straight through. A mapped pad also stops reporting as a touchpad contact / mouse.
+stick passes straight through. A mapped pad also stops reporting as a touchpad contact / mouse. A disabled pad
+(`5`) drives nothing and reports no touchpad contact or mouse motion; its click is still the pad-click entry of
+the profile's map, which is a separate setting.
 
 From version 22, the status blob payload includes status LED configuration at payload bytes 194..199
 (`p[196..201]`): `[194]` primary LED mode (`0` connection status, `1` heartbeat, `2` wake only, `3` off/stealth,

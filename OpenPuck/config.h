@@ -182,16 +182,19 @@ extern const TypeCfg g_typeDefault[ET_COUNT];
 extern uint16_t g_typeRumbleScale[ET_COUNT];
 void rumbleStoreActive();
 
-// Trackpad -> analog stick mapping, per emulated type: {left pad, right pad}, values PS_OFF/PS_LEFT/PS_RIGHT.
-// While the mapped pad is touched its coordinates drive that stick; releasing it re-centers the stick (the
-// physical stick still drives it whenever the pad is untouched). Kept OUTSIDE TypeCfg so the on-flash Cfg
-// layout only grows in its tail -- an existing cfg.bin still loads and keeps every other setting.
+// What touching a trackpad does, per emulated type: {left pad, right pad}. PS_OFF is the mode's own use of the
+// pad (the touchpad, the Xbox right pad's mouse, nothing in the Switch modes); PS_DISABLED ignores the touch
+// altogether. While a pad mapped to a stick is touched its coordinates drive that stick; releasing it
+// re-centers the stick (the physical stick still drives it whenever the pad is untouched). The pad's CLICK is
+// its own button in the profile's map, not part of this. Kept OUTSIDE TypeCfg so the on-flash Cfg layout only
+// grows in its tail -- an existing cfg.bin still loads and keeps every other setting.
 #define PS_OFF 0
 #define PS_LEFT 1
 #define PS_RIGHT 2
 #define PS_DPAD_TOUCH 3
 #define PS_DPAD_CLICK 4
-#define PS_MAX 4
+#define PS_DISABLED 5
+#define PS_MAX 5
 extern uint8_t g_padStickCfg[ET_COUNT][2];
 extern uint8_t
 	g_etype; // etypeForMode(g_usbMode), resolved at boot (ET_NONE for puck modes)

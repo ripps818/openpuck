@@ -53,7 +53,8 @@ void padStickBlend(uint32_t, int16_t, int16_t, int16_t, int16_t, int16_t *, int1
 void padClickEdge(uint8_t, uint32_t) {}
 void psImuPack(uint8_t *, const PuckInput &) {}
 void steamPadsToTouch(uint32_t, uint16_t, int16_t, int16_t, int16_t, int16_t, uint16_t *a, uint16_t *b, uint16_t *c, uint16_t *d) { *a = *b = *c = *d = 0; }
-void touchPackPadsStateful(uint8_t, uint8_t *, bool, bool, uint16_t, uint16_t, uint16_t, uint16_t) {}
+static bool packLeft, packRight; // the touch contacts a PlayStation builder packs
+void touchPackPadsStateful(uint8_t, uint8_t *, bool l, bool r, uint16_t, uint16_t, uint16_t, uint16_t) { packLeft = l; packRight = r; }
 uint32_t micros() { return 0; }
 #define PS5_TOUCH_H 1
 #define DS4_TOUCH_H 1
@@ -67,7 +68,14 @@ struct hid_mouse_report_t { uint8_t buttons; int8_t x, y, wheel, pan; };
 Adafruit_USBD_HID g_mouse;
 int g_mDiv = 40, g_mFric = 90;
 static uint8_t mouseButtons;
-void usbTxHid(Adafruit_USBD_HID *, uint8_t, const void *d, size_t) { mouseButtons = ((const hid_mouse_report_t *)d)->buttons; }
+static int mouseDx, mouseDy;
+void usbTxHid(Adafruit_USBD_HID *, uint8_t, const void *d, size_t)
+{
+	const hid_mouse_report_t *m = (const hid_mouse_report_t *)d;
+	mouseButtons = m->buttons;
+	mouseDx += m->x;
+	mouseDy += m->y;
+}
 
 // the Xbox mode hands its result to the USB endpoint; capture it instead
 static uint16_t xbBtn;
@@ -309,10 +317,67 @@ static void mouseTest()
 	g_btnMap = m;
 	assert(mouseFor(TB_LPADC) == 0xFF);
 }
+// what touching a pad does: only a pad left at PS_OFF is a touchpad contact (PlayStation) or moves the pointer
+// (Xbox right pad); a pad that is disabled or drives a stick is neither
+static void putRight(int x, int y)
+{
+	rep[22] = (uint8_t)x;
+	rep[23] = (uint8_t)(x >> 8);
+	rep[24] = (uint8_t)y;
+	rep[25] = (uint8_t)(y >> 8);
+}
+static void padTest()
+{
+	g_shortcutFlags = 0;
+	remapDefaultMap(&g_btnMap);
+	const uint8_t modes[][2] = { { PS_OFF, PS_OFF }, { PS_DISABLED, PS_OFF }, { PS_OFF, PS_DISABLED },
+				     { PS_LEFT, PS_RIGHT }, { PS_DISABLED, PS_DISABLED } };
+	for (const auto &m : modes)
+		for (int ds4 = 0; ds4 < 2; ds4++) {
+			g_padStick[0] = m[0];
+			g_padStick[1] = m[1];
+			packLeft = packRight = false;
+			load(TB_LPADT | TB_RPADT);
+			if (ds4)
+				hidGyroBuild(0, 0, out);
+			else
+				ps5Build(0, 0, out);
+			assert(packLeft == (m[0] == PS_OFF) && packRight == (m[1] == PS_OFF));
+		}
+	// a disabled pad's click is its own entry of the map: it still presses the touchpad until that is changed
+	g_padStick[0] = PS_DISABLED;
+	g_padStick[1] = PS_OFF;
+	packLeft = false;
+	load(TB_LPADC);
+	ps5Build(0, 0, out);
+	assert(!packLeft && (out[9] & 0x02));
+	g_btnMap.target[RS_LPADC] = 0;
+	load(TB_LPADC);
+	ps5Build(0, 0, out);
+	assert(!(out[9] & 0x02));
+	remapDefaultMap(&g_btnMap);
+	// the pointer follows the right pad only while it is left at Off (the last case: nothing glides on after it)
+	g_padStick[0] = PS_OFF;
+	const uint8_t xm[] = { PS_DISABLED, PS_LEFT, PS_RIGHT, PS_OFF };
+	for (uint8_t v : xm) {
+		g_padStick[1] = v;
+		mouseDx = mouseDy = 0;
+		for (int step = 0; step < 4; step++) {
+			load(TB_RPADT);
+			putRight(step * 4000, step * 4000);
+			rfXboxMouse(rep);
+		}
+		load(0);
+		rfXboxMouse(rep);
+		assert((v == PS_OFF) == (mouseDx != 0 || mouseDy != 0));
+	}
+	g_padStick[0] = g_padStick[1] = PS_OFF;
+}
 int main()
 {
 	selfTest();
 	mouseTest();
+	padTest();
 	for (const auto &bd : BUILDERS) {
 		follow = bd.follow;
 		// single source pressed alone, every code and swap setting
