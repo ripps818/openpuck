@@ -232,6 +232,22 @@ Diverge:
    edit (default: the active one), `0xAE` payload byte 47 reports the active one. Gesture works in MODE_LIZARD;
    `lizardButtons()` masks the two switch buttons. Panel strip on the Lizard tab, backup carries all three maps.
    A switch in Lizard mode reads the profile's file on the RF path (a LittleFS read, no write).
+   Also on this branch (2026-10-10, from hardware testing): the left and right sticks drive Mouse move, and
+   Scroll wheel takes the left trackpad or either stick as its source (`lizardStickAxis`, tests/lizard_stick).
+   Trackpads and Create (2026-10-11, from the user's testing): the DualSense "Create = touchpad click" switch is a
+   preset button on the DS4/DS5 profile card (one entry, `RS_SELECT` = target 16, reverts with the same button);
+   `g_createAsTouch` is now a view of the active DS5 profile's entry (seeded once from an old cfg.bin that had it
+   on; no `btnmap.bin` version bump, so a test puck that already has the file re-applies the preset by hand). The
+   pad-click targets (21/22) are offered per type: touchpad halves on DS4/DS5, "Mouse right/left click" on Xbox,
+   none on Switch (stored 21/22 there read as none), and the Xbox mouse (`rfXboxMouse`) now reads the mapped word
+   so remapping a pad click stops its mouse click. The Trackpads card has a column per pad (Touch + Click) with
+   haptics, the Switch click feedback / HD strength and the Xbox pointer speed folded in; the two pad-click rows
+   left the button map. Not looked at in a real browser.
+   Per-pad Disabled (2026-10-11): `PS_DISABLED` (5, `PS_MAX` 5) on the Touch picker of the PlayStation pads and the
+   Xbox right pad (Off already means nothing elsewhere); needs status v30. It ignores the touch only, the pad
+   click stays its own map entry. The Switch Pro click feedback tested `>= PS_DPAD_TOUCH` and the backup import
+   `>= 3`; both now name the two D-pad values. The profile-switch card also moved below Mapping profile, full
+   width, with Previous and Next side by side.
 6. On-controller learn mode (decision 9); needs the remap layer, the gesture masking and the forced feedback
    path from phases 2-3, and the panel from phase 4 to show the result.
 7. Optional: analog sources (trigger->button, stick/trigger swap), profile names, per-slot profiles.
