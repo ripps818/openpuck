@@ -342,11 +342,12 @@ static void rfXboxGamepad(uint8_t slot, const uint8_t *r)
 	xinputSend(slot, btn, lt, rt, lx, ly, rx, ry);
 }
 // Right pad -> mouse on a second HID-mouse interface alongside the XInput gamepad. Same glide model as Lizard's
-// right pad; RPad click = left button, LPad click = right. SINGLE shared mouse: the desktop can only consume
+// right pad. The buttons are the mapped ones: target 22 (the right pad click, by default) is the left button and
+// 21 (the left pad click) the right, so any source can click. SINGLE shared mouse: the desktop can only consume
 // one mouse. Slot 0's right-pad drives it; other slots' right-pad input is intentionally ignored here.
 static void rfXboxMouse(const uint8_t *r)
 {
-	uint32_t b = shortcutHostButtons(btnsOf(r));
+	uint32_t b = remapButtons(shortcutHostButtons(btnsOf(r)));
 	static int prx = 0, pry = 0;
 	static bool prt = false;
 	static float vx = 0, vy = 0, rmx = 0, rmy = 0;
@@ -385,10 +386,7 @@ static void rfXboxMouse(const uint8_t *r)
 		vx = 0;
 	if (vy > -1 && vy < 1)
 		vy = 0; // friction = glide/decay
-	uint8_t mb = ((b & TB_RPADC) ? 1 : 0) |
-		     ((b & TB_LPADC) ?
-			      2 :
-			      0); // RPad click = left, LPad click = right
+	uint8_t mb = ((b & TB_RPADC) ? 1 : 0) | ((b & TB_LPADC) ? 2 : 0);
 	if (dx || dy || mb != pmb) {
 		pmb = mb;
 		hid_mouse_report_t m;

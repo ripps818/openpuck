@@ -56,6 +56,8 @@ static void bmMirrorLegacy()
 		g_padStickCfg[et][0] = p.padStick[0];
 		g_padStickCfg[et][1] = p.padStick[1];
 	}
+	g_createAsTouch = btnmapActive(ET_DS5).map.target[RS_SELECT] ==
+			  REMAP_CODE_TOUCHPAD;
 }
 
 // Not A/B/X/Y, the D-pad or the pad clicks (mode shortcuts), not Steam (shutdown chord, learn mode) and not a
@@ -97,6 +99,9 @@ static void bmFromLegacy()
 			       g_type[et].abSwap, bmPaddlesFollowSwap(et));
 		p.padStick[0] = g_padStickCfg[et][0];
 		p.padStick[1] = g_padStickCfg[et][1];
+		// the flag that came before the preset: the DualSense Create button was the touchpad click
+		if (et == ET_DS5 && g_createAsTouch)
+			p.map.target[RS_SELECT] = REMAP_CODE_TOUCHPAD;
 		for (uint8_t i = 1; i < BM_PROFILES; i++)
 			g_profile[et][i] = p;
 		g_profileActive[et] = 0;
@@ -211,13 +216,18 @@ bool btnmapActiveMap(uint8_t et, ButtonMap *m)
 
 void btnmapLegacySet(uint8_t et, uint8_t k, uint8_t v)
 {
-	if (!g_bmReady || et >= ET_COUNT || k > 5)
+	if (!g_bmReady || et >= ET_COUNT || k > 6)
 		return;
 	ButtonMap &m = btnmapActive(et).map;
 	const bool follow = bmPaddlesFollowSwap(et),
 		   swap = remapFacesSwapped(m);
 	// a paddle or QAM edit touches only that entry, so entries set some other way are kept
-	if (k < 4) {
+	if (k == 6) {
+		// the Create-as-touchpad-click toggle: only the DualSense type had it
+		if (et != ET_DS5)
+			return;
+		m.target[RS_SELECT] = v ? REMAP_CODE_TOUCHPAD : 9;
+	} else if (k < 4) {
 		m.target[RS_L4 + k] = swap && follow ? remapSwapCode(v) : v;
 	} else if (k == 4) {
 		m.target[RS_QAM] = swap ? remapSwapCode(v) : v;

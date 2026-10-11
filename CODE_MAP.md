@@ -308,7 +308,7 @@ boot mouse for the right pad.
   **calls `hapticSteamRumble(lo, hi, slot)` directly from the usbd task**, then re-arms
   the 32-byte OUT xfer. No HID feature/get/set callbacks in this mode.
 - **loop-task code**: `onReport45` → `rfXboxGamepad(slot, rep)` (+ `rfXboxMouse` for slot
-  0); `xinputSend` fills `S.inBuf` (**20 bytes** filled of the 32-byte buffer) and
+  0, which reads the mapped buttons: target 22 is the mouse's left button, 21 the right); `xinputSend` fills `S.inBuf` (**20 bytes** filled of the 32-byte buffer) and
   `usbd_edpt_xfer(0, epIn, r, 20)`; `task()` is the stuck-rumble watchdog (2.5 s →
   `hapticSteamRumble(0,0,s)`).
 - **Buffers**: `XiSlot.inBuf[32]`, `XiSlot.outBuf[32]`; XInput report = 20 bytes;
@@ -475,8 +475,9 @@ active profile (`btnmapActiveMap`). Target codes from 128 are reserved for macro
 persisted in `/btnmap.bin` (fixed layout, checked on load; anything else is rebuilt). `btnmapLoad()` runs
 after `loadCfg()`: no valid file -> every profile of a type starts as a copy of the older per-type settings
 (`g_type[]` paddles / QAM / swap, `g_padStickCfg[]`) and the file is written. The older settings stay as a
-view of the active profile (`g_type[]`, `g_padStickCfg[]`, so cfg.bin, the blob and older panels / backups
-still work); the legacy WebUSB fields and the serial console edit the profile through `btnmapLegacySet` /
+view of the active profile (`g_type[]`, `g_padStickCfg[]`, and `g_createAsTouch` for the DualSense profile's
+Create entry being the touchpad click, so cfg.bin, the blob and older panels / backups still work; a cfg.bin
+that had `g_createAsTouch` on seeds the DualSense profiles once, when there is no `btnmap.bin`); the legacy WebUSB fields and the serial console edit the profile through `btnmapLegacySet` /
 `btnmapSetPadStick`. Writes: `btnmapTouch(holdMs)` marks it, `btnmapTask(now)` (loop) writes once the hold has
 passed, `saveCfg()` flushes at once. The profile switch lives here too: `btnmapGesture(slot, buttons, now,
 suspended)` (called from rf_link's per-report chord block) debounces modifier + the configured previous / next

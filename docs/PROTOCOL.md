@@ -489,7 +489,10 @@ Messages:
     Per-type grip strength (blob version >= 25): `108`-`111` as percent/2 for emulated types 0-3 (Xbox,
     Switch, DS4, DS5); `104`-`107` (a per-type rumble style during development) are ignored. Status blob
     `p[212..215]` (payload bytes 210..213) report all four. `p[210]` (Create as touchpad click, v29) and `p[211]`
-    (active mapping profiles, v30) are zero on older firmware, as `p[209]` is before v27.
+    (active mapping profiles, v30) are zero on older firmware, as `p[209]` is before v27. With profiles, field
+    `116` (Create as touchpad click) sets or clears target `16` on the Create entry (source `8`) of the active
+    DualSense profile, and `p[210]` reports whether that entry is `16`; the panel's **Create = touchpad click**
+    button writes that entry directly.
     Controller speaker (blob version >= 26): `114` DualSense speaker volume as percent/2, 0 = off (default),
     up to 200%. Status blob `p[208]` (payload byte 206). See DUALSENSE_HAPTICS.md §7.
     Grip limiter (blob version >= 27): `115` soft-limit knee of the grip PCM stream, percent of full scale,
@@ -584,7 +587,10 @@ Messages:
     mute, `18` Switch Capture, `19` / `20` LT / RT, `21` / `22` left / right trackpad click. `23`-`127` are
     reserved and `128`-`255` are reserved for macro slots; a code the running mode cannot express acts as none,
     and is kept as stored. Targets are the buttons a source *acts as*: with the Nintendo layout, source A holds
-    target `2`.
+    target `2`. The trackpad-click targets do something only where the mode has a pointer: the PlayStation modes
+    press the touchpad on that half (`16` presses it with no position), Xbox 360 mode clicks its mouse (`22` the
+    left button, `21` the right; the mouse reads the mapped buttons, so any source can click) and every other
+    mode ignores them. A panel offers them on those types only.
 
     The older per-type fields (`4`-`8`, `21`, `40`-`75`) keep working and edit the **active** profile: paddle
     and QAM codes are read and written as the user chose them, and the swap field sets or clears the Nintendo

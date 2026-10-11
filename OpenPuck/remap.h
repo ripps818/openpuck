@@ -46,6 +46,11 @@ enum RemapSource : uint8_t {
 // 11 Steam, 12-15 D-pad up/down/left/right, 16 PS touchpad click, 17 PS mute, 18 Switch Capture, 19/20 LT/RT,
 // 21/22 left/right trackpad click. 23-127 are reserved and 128-255 are macro slots; a code a mode does not know
 // acts as none, and is kept as it is when a map is stored.
+//
+// The trackpad clicks mean something only where the mode has a pointer for them: the PlayStation modes press
+// the touchpad on that half (16 presses it with no position), Xbox 360 mode clicks its mouse (21 the right
+// button, 22 the left) and the other modes ignore them.
+#define REMAP_CODE_TOUCHPAD 16
 #define REMAP_CODE_CAPTURE 18
 #define REMAP_CODE_MAX 22
 #define REMAP_CODE_MACRO_BASE 128

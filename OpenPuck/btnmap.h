@@ -41,7 +41,8 @@ bool btnmapActiveMap(uint8_t et, ButtonMap *m);
 MapProfile &btnmapActive(uint8_t et);
 
 // Edits through the older per-type settings, applied to the active profile: k 0-3 paddle (L4, R4, L5, R5),
-// 4 QAM, 5 swap. Changing the swap also re-reads the paddle / QAM codes through it, as the old setting did.
+// 4 QAM, 5 swap, 6 Create as the touchpad click (DualSense only). Changing the swap also re-reads the paddle /
+// QAM codes through it, as the old setting did.
 // The caller refreshes the live map (applyActiveType) when et is the running type.
 void btnmapLegacySet(uint8_t et, uint8_t k, uint8_t v);
 void btnmapSetPadStick(uint8_t et, uint8_t pad, uint8_t v);

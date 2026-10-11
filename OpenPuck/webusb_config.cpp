@@ -382,8 +382,8 @@ static void webusbSendBlob()
 	p[205] = g_audioHapticStyle;
 	p[206] = g_trigInner;
 	p[207] = g_trigOuter;
-	// p[208]: controller speaker volume (v26). p[209]: grip soft-limit knee (v27). p[210]: Create-as-touchpad-click
-	// (v29). p[211]: the active mapping profile of each type, two bits each (Xbox in the low bits), so the panel
+	// p[208]: controller speaker volume (v26). p[209]: grip soft-limit knee (v27). p[210]: the active DualSense
+	// profile has Create as the touchpad click (v29). p[211]: the active mapping profile of each type, two bits each (Xbox in the low bits), so the panel
 	// notices a profile switched on the controller (v30)
 	p[208] = (uint8_t)(g_audioSpeaker / 2);
 	p[209] = g_hapticLimitKnee;
@@ -1662,9 +1662,12 @@ void webusbPoll()
 						g_hapticLimitKnee = v;
 					break;
 
-				// Create button acts as the DualSense touchpad click. Protocol v29.
+				// Create button acts as the DualSense touchpad click (protocol v29): now the Create entry of
+				// the active DualSense profile.
 				case 116:
-					g_createAsTouch = v ? 1 : 0;
+					btnmapLegacySet(ET_DS5, 6, v ? 1 : 0);
+					if (g_etype == ET_DS5)
+						applyActiveType();
 					break;
 
 				// Trigger deadzone / full-press point, percent (protocol v24). The pair stays ordered:

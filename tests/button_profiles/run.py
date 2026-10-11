@@ -28,6 +28,7 @@ const TypeCfg g_typeDefault[ET_COUNT] = {
 	{ { 5, 6, 7, 8 }, 0, 0, 1, 0, 1 },
 };
 uint8_t g_padStickCfg[ET_COUNT][2];
+uint8_t g_createAsTouch;
 uint8_t g_etype = ET_NONE, g_shortcutFlags = SHORTCUT_ENABLED, g_usbMode = MODE_STEAM;
 int applied = 0;
 void applyActiveType() { ++applied; btnmapUpdateGestureMask(); }
@@ -40,6 +41,7 @@ static void defaults()
 		g_type[et] = TypeCfg{ { 5, 6, 7, 8 }, 0, 0, 1, 0, 1 };
 		g_padStickCfg[et][0] = g_padStickCfg[et][1] = 0;
 	}
+	g_createAsTouch = 0;
 	g_type[ET_SWITCH].qamMap = 18;
 	g_type[ET_SWITCH].abSwap = 1;
 }
@@ -91,6 +93,26 @@ int main()
 	btnmapLoad();
 	assert(!memcmp(before, g_profile, sizeof before));
 
+	// the toggle that came before the Create preset: a cfg.bin that had it on seeds every DualSense profile
+	defaults();
+	forget();
+	files.clear();
+	g_createAsTouch = 1;
+	btnmapLoad();
+	for (int i = 0; i < BM_PROFILES; i++)
+		assert(g_profile[ET_DS5][i].map.target[RS_SELECT] == REMAP_CODE_TOUCHPAD &&
+		       g_profile[ET_DS4][i].map.target[RS_SELECT] == 9);
+	assert(g_createAsTouch == 1);
+	// from then on the flag only mirrors the active profile: one without it turns it off, and a stale cfg.bin byte
+	// does not put it back once the profiles exist
+	g_profile[ET_DS5][1].map.target[RS_SELECT] = 9;
+	assert(btnmapSelect(ET_DS5, 1) && g_createAsTouch == 0);
+	btnmapFlush();
+	g_createAsTouch = 1;
+	forget();
+	btnmapLoad();
+	assert(g_createAsTouch == 0 && g_profile[ET_DS5][0].map.target[RS_SELECT] == REMAP_CODE_TOUCHPAD);
+
 	// edits through the older settings change the active profile only, and keep what was set another way
 	defaults();
 	forget();
@@ -110,10 +132,21 @@ int main()
 	btnmapLegacySet(ET_DS5, 5, 0); // swap off again
 	assert(!remapFacesSwapped(g_profile[ET_DS5][0].map) && g_profile[ET_DS5][0].map.target[RS_L4] == 3);
 	assert(g_profile[ET_DS5][0].map.target[RS_QAM] == 2 && g_type[ET_DS5].abSwap == 0);
+	// Create as the touchpad click is one entry of the active DualSense profile; no other type had the toggle
+	btnmapLegacySet(ET_DS5, 6, 1);
+	assert(g_profile[ET_DS5][0].map.target[RS_SELECT] == REMAP_CODE_TOUCHPAD && g_createAsTouch == 1);
+	assert(g_profile[ET_DS5][1].map.target[RS_SELECT] == 9);
+	btnmapLegacySet(ET_DS4, 6, 1);
+	assert(g_profile[ET_DS4][0].map.target[RS_SELECT] == 9);
+	assert(btnmapSetEntry(ET_DS5, 1, RS_SELECT, REMAP_CODE_TOUCHPAD) && g_createAsTouch == 1); // not the active one
+	btnmapLegacySet(ET_DS5, 6, 0);
+	assert(g_profile[ET_DS5][0].map.target[RS_SELECT] == 9 && g_createAsTouch == 0);
+	assert(btnmapSetEntry(ET_DS5, 0, RS_SELECT, REMAP_CODE_TOUCHPAD) && g_createAsTouch == 1);
+	assert(btnmapSetEntry(ET_DS5, 0, RS_SELECT, 9) && g_createAsTouch == 0);
 	// out of range edits do nothing
 	const MapProfile keep = g_profile[ET_DS5][0];
 	btnmapLegacySet(ET_COUNT, 0, 1);
-	btnmapLegacySet(ET_DS5, 6, 1);
+	btnmapLegacySet(ET_DS5, 7, 1);
 	assert(same(keep, g_profile[ET_DS5][0]));
 	btnmapSetPadStick(ET_DS5, 0, PS_MAX + 1);
 	btnmapSetPadStick(ET_DS5, 2, PS_LEFT);

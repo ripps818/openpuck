@@ -39,7 +39,7 @@ head = r'''
 // ---- globals the builders read ----
 PuckInput g_in[NSLOT];
 uint8_t g_abSwap, g_back[4], g_qamMap, g_shortcutFlags, g_swQamSelect = 18, g_padStick[2];
-uint8_t g_trigInner = 0, g_trigOuter = 100, g_createAsTouch, g_swGyroLegacy;
+uint8_t g_trigInner = 0, g_trigOuter = 100, g_swGyroLegacy;
 bool g_touchpadDisabled;
 uint32_t g_gestureMask;
 volatile uint8_t g_battery[NSLOT], g_batteryState[NSLOT];
@@ -61,6 +61,14 @@ uint32_t micros() { return 0; }
 #define DS4_STATUS_USB 0
 #define SW_ACCEL_DIV 4
 
+// the Xbox mouse: its HID interface is a stand-in that keeps the buttons of the last report
+struct Adafruit_USBD_HID { bool ready() { return true; } };
+struct hid_mouse_report_t { uint8_t buttons; int8_t x, y, wheel, pan; };
+Adafruit_USBD_HID g_mouse;
+int g_mDiv = 40, g_mFric = 90;
+static uint8_t mouseButtons;
+void usbTxHid(Adafruit_USBD_HID *, uint8_t, const void *d, size_t) { mouseButtons = ((const hid_mouse_report_t *)d)->buttons; }
+
 // the Xbox mode hands its result to the USB endpoint; capture it instead
 static uint16_t xbBtn;
 static uint8_t xbLt, xbRt;
@@ -79,6 +87,7 @@ slices = [
     # Xbox 360
     cut(xi, 'enum {\n\tXB_DUP', '// ===================== XInput custom TinyUSB class driver'),
     cut(xi, 'static void rfXboxGamepad(', '// Right pad -> mouse on a second HID-mouse interface'),
+    cut(xi, 'static void rfXboxMouse(', '// ===================== IController'),
     # Switch HORIPAD
     cut(hori, '// HORIPAD/Switch button bits', '// Dynamic-mount mode: begin() is unused'),
     # Switch Pro
@@ -270,9 +279,40 @@ static void selfTest()
 	remapDefaultMap(&m);
 	assert(!remapFacesSwapped(m));
 }
+// the Xbox mouse buttons come from the map: target 22 is the left button and 21 the right
+static uint8_t mouseFor(uint32_t raw)
+{
+	load(raw);
+	mouseButtons = 0xFF;
+	rfXboxMouse(rep);
+	uint8_t pressed = mouseButtons;
+	load(0); // release, so the next press is a change again
+	rfXboxMouse(rep);
+	return pressed;
+}
+static void mouseTest()
+{
+	g_shortcutFlags = 0;
+	ButtonMap m;
+	remapDefaultMap(&m);
+	g_btnMap = m;
+	assert(mouseFor(TB_RPADC) == 1 && mouseFor(TB_LPADC) == 2 && mouseFor(TB_RPADC | TB_LPADC) == 3);
+	assert(mouseFor(TB_A) == 0xFF); // no report at all: nothing changed
+	// a pad click that acts as something else no longer clicks, and any button can
+	m.target[RS_RPADC] = 1; // A
+	m.target[RS_LB] = 22;
+	m.target[RS_DUP] = 21;
+	g_btnMap = m;
+	assert(mouseFor(TB_RPADC) == 0xFF && mouseFor(TB_LB) == 1 && mouseFor(TB_DUP) == 2);
+	assert(mouseFor(TB_LB | TB_DUP) == 3 && mouseFor(TB_LPADC) == 2);
+	m.target[RS_LPADC] = 0;
+	g_btnMap = m;
+	assert(mouseFor(TB_LPADC) == 0xFF);
+}
 int main()
 {
 	selfTest();
+	mouseTest();
 	for (const auto &bd : BUILDERS) {
 		follow = bd.follow;
 		// single source pressed alone, every code and swap setting
@@ -305,14 +345,14 @@ int main()
 						line(bd.name, swap, code, fl[m], mods[m] | SRC[s].mask, bd.run);
 					}
 	}
-	// the DualSense also folds Create into a touchpad click when asked
+	// the DualSense preset that makes Create the touchpad click is one map entry
 	printf("#ps5 createtouch\n");
-	g_createAsTouch = 1;
 	follow = true;
 	for (int swap = 0; swap < 2; swap++)
 		for (int code = 0; code < 21; code++)
 			for (int s = 0; s < NSRC; s++) {
 				cfg(swap, code, SHORTCUT_ENABLED);
+				g_btnMap.target[RS_SELECT] = REMAP_CODE_TOUCHPAD;
 				line("ps5", swap, code, SHORTCUT_ENABLED, SRC[s].mask, runPs5);
 			}
 	return 0;

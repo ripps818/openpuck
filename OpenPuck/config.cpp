@@ -182,8 +182,8 @@ struct Cfg {
 	// per-type grip strength (pct/2); 0xFF (older file) -> the legacy global value above. The byte before
 	// each was a per-type rumble style, now automatic.
 	uint8_t reservedTypeRumbleStyle[ET_COUNT], typeRumbleScale2[ET_COUNT];
-	// Create button acts as touchpad click. 0xFF (older file) -> off. Not an ext byte: ext[0] holds the startup
-	// RF channel, and sharing it makes the puck boot on channel 1.
+	// g_createAsTouch. 0xFF (older file) -> off. Read once, to seed the profiles of a puck that has none yet.
+	// Not an ext byte: ext[0] holds the startup RF channel, and sharing it makes the puck boot on channel 1.
 	uint8_t createAsTouch;
 	// Enabled RF recovery channels, g_rfChannelMask little-endian. The 0xFF
 	// fill of an older file sets bit 39, past the last candidate, so it loads
