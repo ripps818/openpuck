@@ -51,13 +51,16 @@
   .mapgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:14px;align-items:start;margin:0 0 16px}
   .mapgrid .card{margin:0}
   .mapgrid .card.span{grid-column:1/-1}
-  .prof-off{display:none}
+  /* !important: .row and .card set display later in this sheet */
+  .prof-off{display:none!important}
   .prof-strip{margin:0 0 10px}
   .prof-acts{gap:8px;margin:6px 0}
   .prof-acts select{max-width:200px}
-  .mapsrc{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:4px 22px}
+  .mapsrc{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:4px 28px}
   .mapsrc-group h3{font-size:12px;color:var(--mut);font-weight:600;margin:10px 0 2px}
   .mapsrc-group .row{margin:6px 0;justify-content:space-between;flex-wrap:nowrap}
+  .mapsrc-group label{white-space:nowrap}
+  .mapsrc-group .gsel{flex:0 1 180px;min-width:0}
   /* controller-input glyphs (panel/icons.js); the name is on hover */
   .ic{display:inline-flex;vertical-align:middle;line-height:0}
   .ic svg{height:18px;width:auto}
@@ -1645,7 +1648,7 @@ const GROUPS = [
   ["Menu buttons", [8,9,10]], ["D-pad", [11,12,13,14]], ["Back buttons", [15,16,17,18]], ["Quick Access and trackpads", [19,20,21]],
 ];
 // the targets a map can point at beyond the type's own labels: the trackpad clicks (21/22), "none" is 0
-const PAD_TARGETS = {21:["Left trackpad click","padClickL"], 22:["Right trackpad click","padClickR"]};
+const PAD_TARGETS = {21:["Left pad click","padClickL"], 22:["Right pad click","padClickR"]};
 // the buttons the profile switch may use: no shortcut or chord uses them (LB, RB, L3, R3, Select-side, Start-side)
 const GESTURE_SOURCES = [4,5,6,7,8,9];
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -2006,6 +2009,8 @@ function initTypes(){
         sel.addEventListener("change",()=>setField(40+et*9+4, +sel.value));
         rec.qam=sel; }
       const ab=toggle(gBtn,"","off"); ab.parentElement.classList.add("prof-legacy");
+      // only the DS5 has more in this card (Create = touchpad click); elsewhere the profiles replace all of it
+      if(def.key!=="DS5") gBtn.classList.add("prof-legacy");
       relabel(ab,iconEl("A"),iconEl("B"),plus(),iconEl("X"),iconEl("Y")," swap");
       // trackpad -> joystick mapping (one select per pad) + trackpad haptics
       const gPad=group("Trackpads");

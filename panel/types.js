@@ -159,6 +159,8 @@ export function initTypes(){
         sel.addEventListener("change",()=>setField(40+et*9+4, +sel.value));
         rec.qam=sel; }
       const ab=toggle(gBtn,"","off"); ab.parentElement.classList.add("prof-legacy");
+      // only the DS5 has more in this card (Create = touchpad click); elsewhere the profiles replace all of it
+      if(def.key!=="DS5") gBtn.classList.add("prof-legacy");
       relabel(ab,iconEl("A"),iconEl("B"),plus(),iconEl("X"),iconEl("Y")," swap");
       // trackpad -> joystick mapping (one select per pad) + trackpad haptics
       const gPad=group("Trackpads");

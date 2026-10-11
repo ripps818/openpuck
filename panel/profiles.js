@@ -27,7 +27,7 @@ const GROUPS = [
   ["Menu buttons", [8,9,10]], ["D-pad", [11,12,13,14]], ["Back buttons", [15,16,17,18]], ["Quick Access and trackpads", [19,20,21]],
 ];
 // the targets a map can point at beyond the type's own labels: the trackpad clicks (21/22), "none" is 0
-const PAD_TARGETS = {21:["Left trackpad click","padClickL"], 22:["Right trackpad click","padClickR"]};
+const PAD_TARGETS = {21:["Left pad click","padClickL"], 22:["Right pad click","padClickR"]};
 // the buttons the profile switch may use: no shortcut or chord uses them (LB, RB, L3, R3, Select-side, Start-side)
 const GESTURE_SOURCES = [4,5,6,7,8,9];
 const sleep = ms => new Promise(r => setTimeout(r, ms));

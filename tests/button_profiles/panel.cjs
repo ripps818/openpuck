@@ -54,7 +54,8 @@ const shown=el=>!el.classList.contains('hide');
 p[0]=29;await apply();
 assert.equal(cards(0).length,3);for(let et=0;et<4;et++)assert(cards(et).every(c=>!shown(c)));
 const legacyShown=el=>!el.classList.contains('prof-off');
-assert.equal(legacy().length,4*3);assert(legacy().every(legacyShown));
+// per type: the back-button card, the QAM row and the swap row; and the Buttons card, except on the DS5
+assert.equal(legacy().length,4*3+3);assert(legacy().every(legacyShown));
 assert.equal(S.profileLoadDue.size,0);
 
 // v30: the cards appear, the paddle / QAM / swap controls go, and every type is queued for a load
