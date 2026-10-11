@@ -120,12 +120,15 @@ static bool boardCommand(uint8_t op)
 //                [v25: p[208..211] zero (unused); p[212..215] per-type grip strength pct/2 (fields 108..111);
 //                 p[53] / p[195] report the active type's strength and the automatic rumble style]
 //                [v26: p[208] controller speaker volume pct/2 (field 114); v27: p[209] grip soft-limit knee %
-//                 (field 115); p[210..211] zero]
+//                 (field 115); v29: p[210] Create as touchpad click (field 116); v30: p[211] active mapping
+//                 profile per type, 2 bits each]
 #define WB_PAYLEN 214
 // The blob send is drop-on-full (never blocks loop), so the vendor TX FIFO MUST be able to hold a whole blob
 // -- otherwise tud_vendor_write_available() never reaches the frame size and EVERY frame is dropped (blank
 // panel / stale mappings). The Makefile sets -DCFG_TUD_VENDOR_TX_BUFSIZE=256; guard it here so a build without
 // that flag (or a future blob that outgrows the FIFO) fails loudly instead of shipping a dead panel.
+static_assert(ET_COUNT <= 4,
+	      "the active mapping profiles share one blob byte, two bits each");
 static_assert(CFG_TUD_VENDOR_TX_BUFSIZE >= 2 + WB_PAYLEN,
 	      "CFG_TUD_VENDOR_TX_BUFSIZE too small to hold a WebUSB blob in one "
 	      "write -- build via `make build` (sets 256), or raise the flag.");
@@ -380,10 +383,13 @@ static void webusbSendBlob()
 	p[206] = g_trigInner;
 	p[207] = g_trigOuter;
 	// p[208]: controller speaker volume (v26). p[209]: grip soft-limit knee (v27). p[210]: Create-as-touchpad-click
-	// (v29). p[211] (per-type rumble style) stays zero: the style follows the mode
+	// (v29). p[211]: the active mapping profile of each type, two bits each (Xbox in the low bits), so the panel
+	// notices a profile switched on the controller (v30)
 	p[208] = (uint8_t)(g_audioSpeaker / 2);
 	p[209] = g_hapticLimitKnee;
 	p[210] = g_createAsTouch;
+	p[211] = (uint8_t)(g_profileActive[0] | g_profileActive[1] << 2 |
+			   g_profileActive[2] << 4 | g_profileActive[3] << 6);
 	for (uint8_t et = 0; et < ET_COUNT; et++)
 		p[212 + et] = (uint8_t)(g_typeRumbleScale[et] / 2);
 	// CRITICAL: usb_web.write() SPINS (`while (remain && _connected) yield();`) until the IN FIFO drains or the

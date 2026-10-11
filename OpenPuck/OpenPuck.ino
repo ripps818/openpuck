@@ -132,6 +132,8 @@ void modeSwitchReboot(uint8_t mode)
 	if (modeValid(mode))
 		saveMode(
 			mode); // 0xFF / invalid => keep the current mode (bond-import reboot)
+	// a profile switch waits a few seconds before it is written; the reboot must not drop it
+	btnmapFlush();
 	if (USBDevice.mounted())
 		USBDevice.detach();
 

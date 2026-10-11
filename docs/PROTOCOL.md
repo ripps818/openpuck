@@ -488,7 +488,8 @@ Messages:
     shortcut presets / strength steps / slots and are ignored.
     Per-type grip strength (blob version >= 25): `108`-`111` as percent/2 for emulated types 0-3 (Xbox,
     Switch, DS4, DS5); `104`-`107` (a per-type rumble style during development) are ignored. Status blob
-    `p[212..215]` (payload bytes 210..213) report all four; `p[210..211]` are zero (`p[209]` before v27).
+    `p[212..215]` (payload bytes 210..213) report all four. `p[210]` (Create as touchpad click, v29) and `p[211]`
+    (active mapping profiles, v30) are zero on older firmware, as `p[209]` is before v27.
     Controller speaker (blob version >= 26): `114` DualSense speaker volume as percent/2, 0 = off (default),
     up to 200%. Status blob `p[208]` (payload byte 206). See DUALSENSE_HAPTICS.md §7.
     Grip limiter (blob version >= 27): `115` soft-limit knee of the grip PCM stream, percent of full scale,
@@ -585,7 +586,9 @@ Messages:
     and QAM codes are read and written as the user chose them, and the swap field sets or clears the Nintendo
     layout and re-reads the paddle / QAM codes through it, as it always did. The status blob's per-type bytes
     report the same view of the active profile, and its swap byte is set while the four face entries are
-    exchanged. A profile edited another way (a face button or paddle with a target the older fields cannot
+    exchanged. Blob byte `211` (firmware index; `209` in the payload the panel reads) holds the active profile
+    of each type, two bits each with the Xbox type in the lowest, so a profile switched on the controller
+    shows without asking. A profile edited another way (a face button or paddle with a target the older fields cannot
     express) keeps that entry when an older field changes a different one.
   - `0x20`–`0x24`: staged firmware update (begin/data/end/reboot/abort), acked with `0xAB` frames
   - `0x25 0x57 0x49 0x50 0x45`: **full board wipe** (`"WIPE"` magic, debug panel only). Erases the app
