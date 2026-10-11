@@ -367,5 +367,25 @@ assert.deepEqual(model[3].maps[2][0],4);assert.equal(model[3].active,2);assert.d
 {const bad=JSON.parse(JSON.stringify(b));bad.config.profiles[0].maps[0][3]=300;
  const n=writes.length;await importBackup({text:async()=>JSON.stringify(bad)});assert.equal(writes.length,n);}
 
+// Grip limiter and haptic style, per type from v30: JS p[214+et] and p[218+et], fields 120+et and 124+et. A blob too
+// short for them (an earlier v30 build) keeps the shared field 115 and the DualSense-only field 88.
+{const fieldsOf=async fn=>{const n=writes.length;await fn();await settle();return writes.slice(n).filter(x=>x[0]===2).map(x=>x.slice(1));};
+ const hidden=el=>el.closest('.row').parentElement.classList.contains('hide');
+ p[207]=80;p[203]=2;await apply();
+ assert.equal(typeEls[1].limiter.value,'80');assert.equal(typeEls[3].limiter.value,'80');assert(hidden(typeEls[1].hdStyle));assert.equal(typeEls[3].audioStyle.value,'2');
+ assert.deepEqual(await fieldsOf(()=>change(typeEls[1].limiter,'90')),[[115,90]]);
+ assert.deepEqual(await fieldsOf(()=>change(typeEls[3].audioStyle,'1')),[[88,1]]);
+ p.length=222;p.fill(0,210);[60,70,80,90].forEach((v,i)=>p[214+i]=v);[0,1,2,3].forEach((v,i)=>p[218+i]=v);await apply();
+ assert.equal(typeEls[1].limiter.value,'70');assert.equal(typeEls[3].limiter.value,'90');
+ assert(!hidden(typeEls[1].hdStyle));assert.equal(typeEls[1].hdStyle.value,'1');assert.equal(typeEls[3].audioStyle.value,'3');
+ assert.deepEqual(await fieldsOf(()=>change(typeEls[1].limiter,'50')),[[121,50]]);
+ assert.deepEqual(await fieldsOf(()=>change(typeEls[3].limiter,'100')),[[123,100]]);
+ assert.deepEqual(await fieldsOf(()=>change(typeEls[1].hdStyle,'2')),[[125,2]]);
+ assert.deepEqual(await fieldsOf(()=>change(typeEls[3].audioStyle,'0')),[[127,0]]);
+ // Reset to defaults writes each type's own pair, not the shared fields
+ for(const [et,lim,sty] of [[1,121,125],[3,123,127]]){
+  setTab(et);const f=await fieldsOf(()=>$reset());
+  assert.deepEqual([f.find(x=>x[0]===lim),f.find(x=>x[0]===sty)],[[lim,70],[sty,3]]);assert(!f.some(x=>x[0]===115||x[0]===88));}
+ p.length=210;await apply();}
 console.log('Mapping profile panel: visibility, loading, labels, edits, copy/reset, trackpads, gesture, reset to defaults and backup tests passed');cleanup();
 })().catch(e=>{cleanup();console.error(e);process.exitCode=1;});

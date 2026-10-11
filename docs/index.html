@@ -2466,9 +2466,8 @@ function typeResetFields(et){
   // firmware before protocol 30 has one limiter for both types, and the style only on the DualSense
   const perType=S.lastP && S.lastP[0]>=30;
   if(sw||ds5) f.push(perType ? [120+et,70,30] : [115,70,27]);
-  if(sw||ds5) f.push([124+et,3,30]);
-  if(ds5) f.push([31,1,0],[30,0,0],[114,0,26],[116,0,29]);
-  if(ds5 && !perType) f.push([88,3,22]);
+  if(sw) f.push([124+et,3,30]);
+  if(ds5) f.push([31,1,0],perType ? [124+et,3,30] : [88,3,22],[30,0,0],[114,0,26],[116,0,29]);
   if(sw){
     f.push([38,0,19]);
     // the 0xAE frame is absent on firmware that predates these controls
