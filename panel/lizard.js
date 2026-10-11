@@ -186,6 +186,8 @@ export function lzV2Render(){
 	S.lizardBindings.forEach((b,idx)=>{
 		if(!b.od) b.od=[0,0,0,0,0,0,0];
 		while(b.od.length<7) b.od.push(0);
+		// a binding switched over from another action carries that action's payload: no source it knows
+		if(b.outType===LZO.SCROLL&&!LZ_SCROLL_SRC.some(x=>x[0]===b.od[0])) b.od[0]=0;
 		const box=document.createElement("div"); box.className="lz-row";
 		const head=document.createElement("div"); head.className="lz-head";
 		const num=document.createElement("span"); num.className="lz-idx"; num.textContent="#"+(idx+1);
@@ -224,8 +226,6 @@ export function lzV2Render(){
 			fields.appendChild(lzField("Source",lzV2Select(LZ_AXIS_SRC,b.od[0],edit(v=>{b.od[0]=v;}))));
 			if(b.od[0]===2) fields.appendChild(lzField("Gyro active",lzV2Select(LZ_GYRO_ACT,b.od[1],edit(v=>{b.od[1]=v;}))));
 		}else if(b.outType===LZO.SCROLL){
-			// a binding switched over from another action carries that action's payload: no source it knows
-			if(!LZ_SCROLL_SRC.some(x=>x[0]===b.od[0])) b.od[0]=0;
 			fields.appendChild(lzField("Source",lzV2Select(LZ_SCROLL_SRC,b.od[0],edit(v=>{b.od[0]=v;}))));
 		}else if(b.outType===LZO.CONSUMER){
 			fields.appendChild(lzField("Media key",lzV2Select(LZ_CONSUMER,b.od[0],edit(v=>{b.od[0]=v;}))));

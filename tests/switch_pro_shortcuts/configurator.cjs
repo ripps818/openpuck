@@ -163,6 +163,15 @@ assert(document.querySelectorAll('.modebtn').length>=11);assert($('#lizardList')
  S.lizardBindings=[{outType:2,od:[2,0,0,0,0,0,0],trig:0x4000000,hold:0},{outType:5,od:[1,0,0,0,0,0,0],trig:0x1,hold:0},{outType:4,od:[0,0,0,0,0,0,0],trig:0,hold:0},{outType:3,od:[2,1,0,0,0,0,0],trig:0,hold:0}];lzV2Render();
  assert.deepEqual([...$('#lizardList').querySelectorAll('.lz-sum')].map(icons),[['padClickL','mouseR'],['A','volUp'],['padL','wheel'],['gyro','pointer','padR']].map(a=>a));
  assert.deepEqual(noGlyph(field('Mouse button').querySelector('select')),[]);
+ // a scroll binding takes its source from the left pad or either stick
+ S.lizardBindings=[{outType:4,od:[3,0,0,0,0,0,0],trig:0,hold:0}];lzV2Render();
+ assert.deepEqual(icons(sum()),['stickR','wheel']);
+ const scrollSrc=field('Source').querySelector('select');
+ assert.deepEqual([...scrollSrc.options].map(o=>o.value+'='+o.textContent),['0=Left trackpad','1=Left stick','3=Right stick']);
+ assert.deepEqual(noGlyph(scrollSrc),[]);assert.equal(scrollSrc.value,'3');
+ // a binding switched over from a keyboard chord carries modifier bits there: one that is no source (Alt) starts on the left pad
+ S.lizardBindings=[{outType:4,od:[0x04,4,0,0,0,0,0],trig:0,hold:0}];lzV2Render();
+ assert.equal(S.lizardBindings[0].od[0],0);assert.deepEqual(icons(sum()),['padL','wheel']);
  // picking an input from the list sets the binding and redraws
  S.lizardBindings=[{outType:1,od:[0,4,0,0,0,0,0],trig:0x20000,hold:0}];lzV2Render();
  field('When pressed').querySelector('.gsel-btn').click();

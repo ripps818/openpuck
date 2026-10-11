@@ -290,8 +290,11 @@ The 28DE:1304 puck identity with four HID slot interfaces (interface N = bond sl
   Which one is active is `g_lizardActive` in btnmap; in MODE_LIZARD `g_lizardMap` is that profile, loaded at
   boot and on every switch. WebUSB `0x34` picks the profile the lizard ops edit (`webusbLizardMap()`).
 - Mouse move (`LZ_OUT_MOUSE_AXIS`) sources: the right trackpad (glide model), and the left or right stick
-  (`LZ_MSRC_LSTICK`/`LZ_MSRC_RSTICK`), driven as speed by `lizardStickSpeed` (deadzone, squared curve, 5 px a
+  (`LZ_MSRC_LSTICK`/`LZ_MSRC_RSTICK`), driven as speed by `lizardStickAxis` (deadzone, squared curve, 5 px a
   report at full deflection; both sticks add up). The gyro is offered by the editor but not driven yet.
+- Scroll wheel (`LZ_OUT_SCROLL`) sources: the left trackpad, and the left or right stick (up scrolls up), also
+  through `lizardStickAxis` at `LZ_STICK_SCROLL_NOTCHES` (0.12 notch a report at full deflection). The stick
+  carry `ssc` is separate from the pad's `sacc`, so a pad scroll's reset when no finger is down does not eat it.
 
 ## 8. XInput personality — `mode_xinput.cpp` / `mode_xinput.h`  (`g_xboxCtl`)
 
