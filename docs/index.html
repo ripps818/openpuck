@@ -2085,8 +2085,11 @@ async function profileOp(bytes){
   S.fieldBusy = true;
   try{
     await send(bytes);
-    const p = await readFrame(0xB0, 5, 256);
-    return !!p && applyFrame(p);
+    let p = await readFrame(0xB0, 5, 256);
+    // a frame that never came leaves the page showing the old mapping: ask for the type's profiles again
+    if(!p && bytes[0] !== 0x2C){ log("profile op 0x" + bytes[0].toString(16) + ": no answer, reading the profiles again"); await send([0x2C, bytes[0] === 0x34 ? 4 : bytes[1]]); p = await readFrame(0xB0, 5, 256); }
+    if(!p){ log("profile op 0x" + bytes[0].toString(16) + ": the puck did not answer"); return false; }
+    return applyFrame(p);
   }catch(e){ log("profile op err: " + e.message); return false; }
   finally{ S.fieldBusy = false; }
 }
@@ -2146,11 +2149,8 @@ function buildProfileCards(sec, et, def){
     if(from === to || !confirm("Replace profile " + (to + 1) + " with a copy of profile " + (from + 1) + "?")) return;
     return profileOp([0x32, et, from, to]);
   });
-  rec.nintendo = btn("Apply Nintendo layout",
-    (ps ? "Swap Cross and Circle, and Square and Triangle, as the buttons are laid out on a Nintendo controller (A and B, X and Y trade places). "
-          : "Swap A and B, and X and Y, as on a Nintendo controller. ") +
-    "Only the four face-button entries of this profile change; apply it again to swap them back.",
-    () => profileOp([0x2E, et, sel0(et)]));
+  rec.nintendo = btn("Apply Nintendo layout", "", () => profileOp([0x2E, et, sel0(et)]));
+  rec.ps = ps;
   rec.reset = btn("Reset this profile", "Put this profile's mapping back to the factory one", () => {
     if(!confirm("Reset profile " + (sel0(et) + 1) + " of the " + def.name + " controller type to its factory mapping?\n\nIts button map and trackpad settings are replaced. The other profiles stay as they are.")) return;
     return profileOp([0x2F, et, sel0(et)]);
@@ -2285,8 +2285,15 @@ function renderProfiles(et){
     for(const i of from){ const o = document.createElement("option"); o.value = i; o.textContent = "Copy from profile " + (i + 1); rec.copyFrom.appendChild(o); }
     if(from.includes(keep)) rec.copyFrom.value = keep;
   }
-  rec.title.textContent = "Button map · profile " + (sel + 1) + (sel === st.active ? " (in use)" : "");
   const map = st.maps[sel];
+  // one op does both: it reverts when the four face buttons are already exchanged
+  const swapped = [2, 1, 4, 3].every((c, i) => map[i] === c);
+  rec.nintendo.textContent = swapped ? "Revert Nintendo layout" : "Apply Nintendo layout";
+  const faces = rec.ps ? "Cross and Circle, and Square and Triangle (A and B, X and Y trade places)" : "A and B, and X and Y";
+  rec.nintendo.title = swapped ?
+    "Put the four face buttons back as themselves. Only their four entries in this profile change." :
+    "Swap " + faces + ", as on a Nintendo controller. Only the four face-button entries of this profile change; press it again to revert.";
+  rec.title.textContent = "Button map · profile " + (sel + 1) + (sel === st.active ? " (in use)" : "");
   rec.sources.forEach((s, i) => {
     if(!s || held(s)) return;
     if(i === SRC_QAM){ qamRow(s, i < map.length ? map[i] : undefined, rec.def); return; }

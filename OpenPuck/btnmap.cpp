@@ -261,13 +261,15 @@ bool btnmapSetEntry(uint8_t et, uint8_t profile, uint8_t source, uint8_t target)
 	return true;
 }
 
-bool btnmapApplyNintendo(uint8_t et, uint8_t profile)
+bool btnmapToggleNintendo(uint8_t et, uint8_t profile)
 {
 	if (!bmValid(et, profile))
 		return false;
 	ButtonMap &m = g_profile[et][profile].map;
+	const bool revert = remapFacesSwapped(m);
 	for (uint8_t i = 0; i < 4; i++)
-		m.target[RS_A + i] = remapSwapCode((uint8_t)(i + 1));
+		m.target[RS_A + i] = revert ? (uint8_t)(i + 1) :
+					      remapSwapCode((uint8_t)(i + 1));
 	bmChanged(et, profile);
 	return true;
 }

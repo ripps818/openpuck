@@ -705,16 +705,23 @@ static void webusbSendMotion(uint8_t slot)
 	}
 }
 
-// All of a type's mapping profiles (see btnmapDump). Drop-on-full like the status blob: the panel asks again.
-static void webusbSendMapDump(uint8_t et)
+// All of a type's mapping profiles (see btnmapDump). False when the frame did not fit the TX FIFO (an unsolicited
+// status blob can be in it), so the caller keeps the request and tries again on the next SOF: the panel waits
+// for this frame to answer every profile op, and a dropped one leaves its page showing the old mapping.
+static bool webusbSendMapDump(uint8_t et)
 {
+	if (!usb_web.connected())
+		return true;
 	static uint8_t f[2 + BM_DUMP_LEN];
 	f[0] = 0xB0;
 	f[1] = (uint8_t)btnmapDump(et, f + 2);
-	if (f[1] && tud_vendor_write_available() >= 2u + f[1]) {
-		usb_web.write(f, (uint16_t)(2 + f[1]));
-		usb_web.flush();
-	}
+	if (!f[1])
+		return true;
+	if (tud_vendor_write_available() < 2u + f[1])
+		return false;
+	usb_web.write(f, (uint16_t)(2 + f[1]));
+	usb_web.flush();
+	return true;
 }
 
 static void webusbSofDrain(void)
@@ -756,8 +763,8 @@ static void webusbSofDrain(void)
 	}
 	if (g_mapDumpType != 0xFF) {
 		const uint8_t et = g_mapDumpType;
-		g_mapDumpType = 0xFF;
-		webusbSendMapDump(et);
+		if (webusbSendMapDump(et) && g_mapDumpType == et)
+			g_mapDumpType = 0xFF;
 	}
 	if (g_rfStatusRequest && webusbSendRfStatus())
 		g_rfStatusRequest = false;
@@ -1136,7 +1143,7 @@ void webusbPoll()
 							    buf[4]);
 					break;
 				case 0x2E:
-					ok = btnmapApplyNintendo(et, buf[2]);
+					ok = btnmapToggleNintendo(et, buf[2]);
 					break;
 				case 0x2F:
 					ok = lz ? btnmapLizardReset(

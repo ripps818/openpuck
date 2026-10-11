@@ -555,8 +555,9 @@ Messages:
     argument out of range changes nothing and shows as unchanged.
     - `0x2C <type>`: send the type's profiles.
     - `0x2D <type> <profile> <source> <target>`: set one map entry.
-    - `0x2E <type> <profile>`: apply the Nintendo layout, i.e. overwrite the four face-button entries (A, B, X,
-      Y) with the pairs exchanged. Nothing else in the profile changes.
+    - `0x2E <type> <profile>`: toggle the Nintendo layout, i.e. overwrite the four face-button entries (A, B,
+      X, Y) with the pairs exchanged, or, when they already are, with each button as itself. Nothing else in
+      the profile changes. A panel reads which of the two it will do from the profile it holds.
     - `0x2F <type> <profile>`: reset the profile to the type's defaults (the Switch type starts with the
       Nintendo layout and QAM on Capture).
     - `0x30 <type> <profile>`: make it the active profile.

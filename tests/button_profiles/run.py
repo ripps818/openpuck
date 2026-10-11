@@ -176,9 +176,19 @@ int main()
 	assert(same(p0, g_profile[ET_DS4][0]));
 	assert(btnmapSetEntry(ET_DS4, 0, RS_R4, 15) && g_type[ET_DS4].back[1] == 15); // the active one moves the view
 	// the Nintendo layout touches the four face entries and nothing else
-	assert(btnmapApplyNintendo(ET_DS4, 1) && remapFacesSwapped(g_profile[ET_DS4][1].map));
+	assert(btnmapToggleNintendo(ET_DS4, 1) && remapFacesSwapped(g_profile[ET_DS4][1].map));
 	assert(g_profile[ET_DS4][1].map.target[RS_LB] == 20 && g_profile[ET_DS4][1].map.target[RS_L4] == 5);
-	assert(!btnmapApplyNintendo(ET_DS4, 3));
+	assert(!btnmapToggleNintendo(ET_DS4, 3));
+	// the same op reverts it, and only when all four are exchanged: a half-swapped set is completed, not undone
+	assert(btnmapToggleNintendo(ET_DS4, 1) && !remapFacesSwapped(g_profile[ET_DS4][1].map));
+	for (int i = 0; i < 4; i++)
+		assert(g_profile[ET_DS4][1].map.target[RS_A + i] == i + 1);
+	assert(g_profile[ET_DS4][1].map.target[RS_LB] == 20);
+	g_profile[ET_DS4][1].map.target[RS_A] = 2;
+	g_profile[ET_DS4][1].map.target[RS_B] = 2;
+	assert(btnmapToggleNintendo(ET_DS4, 1) && remapFacesSwapped(g_profile[ET_DS4][1].map));
+	assert(btnmapToggleNintendo(ET_DS4, 1) && !remapFacesSwapped(g_profile[ET_DS4][1].map));
+	assert(btnmapToggleNintendo(ET_DS4, 1)); // swapped again, as the lines after expect
 	// copy, reset (to the type's defaults, not to identity: the Switch type starts swapped with QAM on Capture)
 	assert(btnmapCopyProfile(ET_DS4, 1, 2) && same(g_profile[ET_DS4][2], g_profile[ET_DS4][1]));
 	assert(!btnmapCopyProfile(ET_DS4, 1, 3) && !btnmapCopyProfile(ET_DS4, 3, 1));

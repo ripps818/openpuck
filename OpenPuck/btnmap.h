@@ -52,8 +52,9 @@ void btnmapSetPadStick(uint8_t et, uint8_t pad, uint8_t v);
 bool btnmapSetEntry(uint8_t et, uint8_t profile, uint8_t source,
 		    uint8_t target);
 // The Nintendo layout: overwrites the four face-button entries only, so a face button set some other way is lost
-// but nothing else is touched.
-bool btnmapApplyNintendo(uint8_t et, uint8_t profile);
+// but nothing else is touched. When they are already exchanged (remapFacesSwapped) it puts them back as
+// themselves, so the same op applies the layout and reverts it.
+bool btnmapToggleNintendo(uint8_t et, uint8_t profile);
 bool btnmapResetProfile(uint8_t et, uint8_t profile);
 bool btnmapCopyProfile(uint8_t et, uint8_t from, uint8_t to);
 bool btnmapSelect(uint8_t et, uint8_t profile, uint32_t holdMs = 0);

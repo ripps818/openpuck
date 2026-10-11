@@ -50,7 +50,7 @@ function onOp(a){
   if(a[0]===0x34||a[1]===4||(a[0]>=0x13&&a[0]<=0x1A))return onLizard(a);
   const [op,et,x,y,z]=a,m=model[et];
   if(op===0x2D)m.maps[x][y]=z;
-  else if(op===0x2E)for(let i=0;i<4;i++)m.maps[x][i]=swap(m.maps[x][i]);
+  else if(op===0x2E){const was=[2,1,4,3].every((c,i)=>m.maps[x][i]===c);for(let i=0;i<4;i++)m.maps[x][i]=was?i+1:swap(i+1);}
   else if(op===0x2F){m.maps[x]=DEF.slice();m.pads[x]=[0,0];}
   else if(op===0x30)m.active=x;
   else if(op===0x31)m.pads[x][y]=z;
@@ -62,10 +62,16 @@ let p=Array(210).fill(0);p[0]=30;p[193]=8;p[51]=100;
 // shortcut flags: bit0 Quick Access is the modifier, 3 feedback, 4 Quick Access + Select, 5 shortcuts on
 const s=Array(55).fill(0);s[0]=1;s[46]=24;
 const frame=(mk,a)=>({status:'ok',data:new DataView(new Uint8Array([mk,a.length,...a]).buffer)});
+// the puck's TX FIFO can be full when it answers, and then the frame is lost: dropAnswer makes the next answer
+// never arrive (the pending read is satisfied by the next request instead)
+let dropAnswer=false,heldRead=null;
 S.dev={serialNumber:'test',
-  transferOut:async(ep,b)=>{const a=Array.from(b);writes.push(a);last=a;if(a[0]>=0x2C&&a[0]<=0x34){ops.push(a);onOp(a);}else if(a[0]>=0x13&&a[0]<=0x1A)onOp(a);return {status:'ok'};},
-  transferIn:async()=>!last?frame(0xA5,(p[209]=activeBits(),p)):last[0]===0x34||(last[0]>=0x2C&&last[0]<=0x33&&last[1]===4)?frame(0xB0,dump4()):last[0]>=0x2C&&last[0]<=0x33?frame(0xB0,dump(last[1])):
-    [0x17,0x19,0x1A].includes(last[0])?lzFrame(lzMaps[lzTarget()]):last[0]===0x27?frame(0xAE,(s[47]=lzActive,s)):last[0]===0x09?frame(0xA7,[1].concat(Array(97).fill(0))):frame(0xA5,(p[209]=activeBits(),p))};
+  transferOut:async(ep,b)=>{const a=Array.from(b);writes.push(a);last=a;if(a[0]>=0x2C&&a[0]<=0x34){ops.push(a);onOp(a);}else if(a[0]>=0x13&&a[0]<=0x1A)onOp(a);
+    if(heldRead){const r=heldRead;heldRead=null;r();}return {status:'ok'};},
+  transferIn:async()=>dropAnswer?(dropAnswer=false,new Promise(r=>heldRead=()=>r(answer()))):answer()};
+const answer=()=>
+  !last?frame(0xA5,(p[209]=activeBits(),p)):last[0]===0x34||(last[0]>=0x2C&&last[0]<=0x33&&last[1]===4)?frame(0xB0,dump4()):last[0]>=0x2C&&last[0]<=0x33?frame(0xB0,dump(last[1])):
+    [0x17,0x19,0x1A].includes(last[0])?lzFrame(lzMaps[lzTarget()]):last[0]===0x27?frame(0xAE,(s[47]=lzActive,s)):last[0]===0x09?frame(0xA7,[1].concat(Array(97).fill(0))):frame(0xA5,(p[209]=activeBits(),p));
 const settle=()=>new Promise(r=>setTimeout(r,30));
 const activeBits=()=>model.reduce((v,m,et)=>v|(m.active<<(2*et)),0);
 const apply=async()=>{p[209]=activeBits();s[47]=lzActive;applyBlob(new Uint8Array(p));applySw(new Uint8Array(s));await settle();};
@@ -110,7 +116,7 @@ assert.deepEqual(labels(0).slice(0,4),['A','B','X','Y']);
 assert.deepEqual(labels(0).slice(15,24),['L4','R4','L5','R5','QAM','Left trackpad click','Right trackpad click','LT (full pull)','RT (full pull)']);
 for(const et of [2,3]){
   assert.equal(rec(et).nintendo.textContent,'Apply Nintendo layout');
-  assert(/^Swap Cross and Circle, and Square and Triangle/.test(rec(et).nintendo.title)&&!/\bA and B\b.*\bX and Y\b\. Only/.test(rec(et).nintendo.title.replace(/\(.*?\)/,'')),rec(et).nintendo.title);
+  assert(/^Swap Cross and Circle, and Square and Triangle \(A and B, X and Y trade places\)/.test(rec(et).nintendo.title),rec(et).nintendo.title);
   const names=[...rec(et).sources[0].options].map(o=>o.textContent);
   assert(!names.some(n=>/^[ABXY]$/.test(n)),names.join());assert(names.includes('Cross')&&names.includes('Touchpad Click'));
 }
@@ -137,6 +143,13 @@ assert.deepEqual(rec(0).sources.map(sel=>+sel.value),DEF);
  s[46]=57;await apply();for(let et=0;et<4;et++)assert(rec(et).sources[19].disabled,'type '+et);
  s[46]=24;await apply();for(let et=0;et<4;et++)assert(!rec(et).sources[19].disabled,'type '+et);}
 
+// a lost answer: the panel reads the type's profiles again, so the page still shows the new mapping
+{rec(0).tabs[1].click();model[0].maps[1][0]=1;model[0].maps[1][1]=2;S.profileLoadDue.add(0);await opsOf(profilesDrain);
+ dropAnswer=true;const n=ops.length;rec(0).nintendo.click();await new Promise(r=>setTimeout(r,2200));
+ assert.deepEqual(ops.slice(n),[[0x2E,0,1],[0x2C,0]]);assert.deepEqual(rec(0).sources.slice(0,4).map(sel=>+sel.value),[2,1,4,3]);
+ const lg=document.querySelector('#log').textContent;assert(/no answer, reading the profiles again/.test(lg),lg.slice(-200));
+ model[0].maps[1]=DEF.slice();model[0].maps[1][15]=5;S.profileLoadDue.add(0);await opsOf(profilesDrain);rec(0).tabs[0].click();}
+
 // edits address the profile being edited, not the active one
 setTab(0);rec(0).tabs[1].click();
 assert.equal(rec(0).title.textContent,'Button map · profile 2');assert(!rec(0).use.disabled);
@@ -144,6 +157,15 @@ assert.deepEqual(await opsOf(()=>change(rec(0).sources[15],1)),[[0x2D,0,1,15,1]]
 assert.equal(model[0].maps[1][15],1);assert.equal(model[0].maps[0][15],5);assert.equal(rec(0).sources[15].value,'1');
 assert.deepEqual(await opsOf(()=>rec(0).nintendo.click()),[[0x2E,0,1]]);
 assert.deepEqual(rec(0).sources.slice(0,4).map(sel=>+sel.value),[2,1,4,3]);
+// the button follows the state: with the face buttons exchanged it reverts them
+assert.equal(rec(0).nintendo.textContent,'Revert Nintendo layout');assert(/^Put the four face buttons back/.test(rec(0).nintendo.title));
+assert.equal(rec(1).nintendo.textContent,'Apply Nintendo layout'); // another type's profile is not swapped
+assert.deepEqual(await opsOf(()=>rec(0).nintendo.click()),[[0x2E,0,1]]);
+assert.deepEqual(rec(0).sources.slice(0,4).map(sel=>+sel.value),[1,2,3,4]);assert.equal(rec(0).nintendo.textContent,'Apply Nintendo layout');
+assert.equal(rec(0).sources[15].value,'1'); // nothing else moved
+assert.deepEqual(await opsOf(()=>rec(0).nintendo.click()),[[0x2E,0,1]]);assert.deepEqual(rec(0).sources.slice(0,4).map(sel=>+sel.value),[2,1,4,3]);
+// the label follows the profile being shown, too
+rec(0).tabs[0].click();assert.equal(rec(0).nintendo.textContent,'Apply Nintendo layout');rec(0).tabs[1].click();assert.equal(rec(0).nintendo.textContent,'Revert Nintendo layout');
 assert.deepEqual(await opsOf(()=>rec(0).use.click()),[[0x30,0,1]]);
 assert.deepEqual(dots(0),[false,true,false]);assert(rec(0).use.disabled);
 // copy offers the other two profiles and asks first
