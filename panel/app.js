@@ -76,18 +76,19 @@ $("#dfuUf2").onclick=async()=>{
 };
 $("#factoryErase").onclick=async()=>{
   if(!S.dev){ log("not connected"); return; }
-  if(!confirm("Factory erase?\n\nThis wipes ALL persistent storage on the copycat:\n  • the paired-controller bond (you'll have to re-pair)\n  • every saved setting (mode, chords, back paddles, sensitivity)\n\nThe copycat reboots to factory defaults. This CANNOT be undone.")) return;
+  if(!confirm("Factory erase?\n\nThis reformats the settings storage on the copycat:\n  • the paired-controller bond (you'll have to re-pair)\n  • every saved setting (mode, chords, back paddles, mapping profiles, sensitivity)\n\nThe firmware and the RF channel journal are kept. The copycat reboots to factory defaults. This CANNOT be undone.\n\nIf pairings or settings still won't save afterwards, use Wipe board instead.")) return;
   if(!confirm("Are you absolutely sure?\n\nThere is no recovery. The controller bond and all settings will be gone.")) return;
   const typed=prompt('Final confirmation — type  ERASE  (all caps) to wipe everything:');
   if(typed!=="ERASE"){ log("factory erase cancelled (confirmation text did not match)"); return; }
   await send([0x0A,0x45,0x52,0x53]);
   log("FACTORY ERASE sent — copycat is reformatting and rebooting to defaults. Re-pair the controller, then reconnect.");
 };
-// Debug-only: full board wipe. Erases the firmware itself (not just settings), leaving the board app-less so
-// it mounts as the UF2 bootloader drive on every boot until OpenPuck is flashed again. Sends 0x25 + "WIPE".
+// Full board wipe: erases the flash itself -- the firmware, the settings storage and the RF channel journal -- so
+// nothing a factory erase leaves behind survives. The board is left app-less and mounts as the UF2 bootloader drive
+// on every boot until OpenPuck is flashed again. Sends 0x25 + "WIPE".
 $("#wipeBoard").onclick=async()=>{
   if(!S.dev){ log("not connected"); return; }
-  if(!confirm("WIPE THE ENTIRE BOARD?\n\nThis is NOT a factory reset. It erases:\n  • the OpenPuck FIRMWARE itself\n  • every setting (mode, chords, back paddles, sensitivity)\n  • the paired-controller bond\n\nThe board reboots with NO firmware and mounts as the UF2 bootloader drive. It will do so on EVERY boot until you flash OpenPuck (a .uf2) back onto it. This panel will disconnect and NOT reconnect until then.\n\nThis CANNOT be undone from software.")) return;
+  if(!confirm("WIPE THE ENTIRE BOARD?\n\nThis is NOT a factory reset. It erases:\n  • the OpenPuck FIRMWARE itself\n  • every setting (mode, chords, back paddles, mapping profiles, sensitivity)\n  • the paired-controller bond\n  • the RF channel journal\n\nThe board reboots with NO firmware and mounts as the UF2 bootloader drive. It will do so on EVERY boot until you flash OpenPuck (a .uf2) back onto it. This panel will disconnect and NOT reconnect until then.\n\nThis CANNOT be undone from software.")) return;
   if(!confirm("Are you absolutely sure?\n\nThe board will be blank. The ONLY way back is to drag a .uf2 firmware file onto the UF2 drive it mounts as.")) return;
   const typed=prompt('Final confirmation — type  WIPE  (all caps) to erase the whole board:');
   if(typed!=="WIPE"){ log("board wipe cancelled (confirmation text did not match)"); return; }

@@ -56,7 +56,7 @@ export function applyDeviceProfile(){
   // reconnect restores them without clobbering the debugonly/lizard inline visibility rules.
   document.body.classList.toggle("dongle", d);
   const paired=$("#pairedCard"); if(paired) paired.style.display = d ? "" : "none";
-  // maintenance buttons: factory-erase is a puck-only op (0x0A); the dongle keeps DFU + (debug) wipe-board
+  // maintenance buttons: factory-erase is a puck-only op (0x0A); the dongle keeps DFU + wipe-board
   const fe=$("#factoryErase"); if(fe) fe.closest(".row").style.display = d ? "none" : "";
   // the GitHub "Update from a release" list is puck firmware; a dongle flashes via the local-file drop card
   const rc=$("#relCard"); if(rc) rc.style.display = d ? "none" : "";

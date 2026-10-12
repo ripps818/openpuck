@@ -291,6 +291,13 @@ Re-flashing firmware does **not** erase the board's internal LittleFS. The paire
 
 Both reformat the entire internal filesystem (`cfg.bin` + `bonds.bin` and anything else), so the action is irreversible and the controller must be **re-paired afterwards** (see §7).
 
+A factory reset reformats the filesystem but doesn't erase it raw, and it leaves the RF channel journal (raw flash at
+`0x86000`) and the firmware-update staging area alone. If pairings or settings still won't stay saved after one,
+use **☢ Wipe board** on the same Maintenance card (confirm twice and type `WIPE`). It erases the firmware, the whole
+filesystem region, the RF journal and the staging area, then the board mounts as a blank `UF2BOOT` drive on every
+boot until you drop an OpenPuck `.uf2` on it. Re-pair afterwards. It needs the Adafruit UF2 bootloader; other
+boards refuse it.
+
 Note on the serial method: puck (Steam/Lizard) mode drops the CDC console by default to free a USB endpoint for the wake-mouse interface, so the serial port may not be present in that mode. Either arm the one-shot debug CDC first (panel debug-CDC toggle / `D` console command, which keeps the console for the next boot), or just use the WebUSB **Factory erase** button, which is available in all modes.
 
 ## 7. Pair and verify
