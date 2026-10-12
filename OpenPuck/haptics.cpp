@@ -589,7 +589,8 @@ bool hapticAudioTone(uint8_t side, int8_t gainDb, uint16_t freqHz,
 // queueing every host packet and keeps waveform generation off the input ISR.
 // HD Emulation streams each side's two bands, summed, as PCM to that side's grip (where a Pro Controller has its
 // actuators), and plays each side's high band as an 0x83 tone on that side's trackpad. Index k matches bands[]:
-// 0/2 left/right low band, 1/3 left/right high band; tone[] uses the pad entries only.
+// 0/2 left/right low band, 1/3 left/right high band; tone[1] and tone[3] are the pads' tones, tone[0] and tone[2]
+// the grips' in the tone and split styles.
 struct HdTone {
 	uint16_t hz;
 	int8_t gain;
@@ -730,6 +731,43 @@ static bool hdToneWant(uint16_t amplitude, uint16_t hz, int8_t *gain)
 		g = hdQuietCeiling(hz);
 	*gain = (int8_t)g;
 	return true;
+}
+
+// Keep one actuator's tone playing at `gain` dB and `hz`, or cut it once `want` is false.
+static void hdToneKeep(uint8_t slot, HdTone &t, uint8_t side, bool want,
+		       int8_t gain, uint16_t hz, unsigned long now)
+{
+	if (!want) {
+		if (t.on)
+			hdToneSend(slot, side, HD_CUT_DB, t.hz, 30);
+		t.on = false;
+		return;
+	}
+	unsigned long since = now - t.ms;
+	int step = gain - t.gain;
+	bool change = hz != t.hz || step >= HD_STEP_DB || step <= -HD_STEP_DB;
+	if (t.on && step < HD_HIT_DB && !(change && since >= HD_STEP_MS) &&
+	    since < HD_REFRESH_MS)
+		return;
+	hdToneSend(slot, side, gain, hz, HD_TONE_MS);
+	t = { hz, gain, true, now };
+}
+
+// Grip tone for a band level: its share of full scale at the grip strength, in dB up to 0, and silent under the
+// -60 dB the controller still renders.
+static bool hdGripToneWant(uint16_t amplitude, int8_t *gain)
+{
+	float level = amplitude * g_rumbleScale / (100.0f * 65535.0f);
+	if (level < 0.001f)
+		return false;
+	float db = 20.0f * log10f(level);
+	*gain = db >= 0.0f ? 0 : (int8_t)lroundf(db);
+	return true;
+}
+
+static uint16_t hdClampHz(uint16_t hz)
+{
+	return hz < 40 ? 40 : (hz > 1280 ? 1280 : hz);
 }
 
 // Grip renderer: each grip plays its side's low + high band summed, phase-continuous, at PCM_RATE_HZ on a
@@ -886,9 +924,13 @@ static void hdStop(uint8_t slot)
 	if (!feedback)
 		hapticCancelPendingOn(slot);
 	bool padOn = g_hdRumble[slot].tone[1].on || g_hdRumble[slot].tone[3].on;
+	bool gripOn = g_hdRumble[slot].tone[0].on ||
+		      g_hdRumble[slot].tone[2].on;
 	// Two cut copies reduce the chance that RF loss stretches the tail; feedback owns the pads meanwhile.
 	for (uint8_t n = 0; padOn && !feedback && n < 2; n++)
 		hdToneSend(slot, HSIDE_PADS, HD_CUT_DB, 160, 30);
+	for (uint8_t n = 0; gripOn && n < 2; n++)
+		hdToneSend(slot, HSIDE_GRIPS, HD_CUT_DB, 160, 30);
 	g_hdRumble[slot].active = false;
 	for (uint8_t k = 0; k < 4; k++)
 		g_hdRumble[slot].tone[k].on = false;
@@ -896,6 +938,9 @@ static void hdStop(uint8_t slot)
 		  millis() - g_hdPcmState[slot].activeMs < HD_PCM_TAIL_MS);
 }
 
+// The Switch's haptic style (AUDIO_STYLE_*) sets how its grips play the two bands: wave streams them as PCM, tone
+// plays each side's stronger band as a tone, split plays the low band as 0x80 rumble and the high band as a tone,
+// rumble plays the stronger band as 0x80 rumble. The pads always play the high band as tones.
 static void hapticHdTask()
 {
 	unsigned long now = millis();
@@ -904,6 +949,8 @@ static void hapticHdTask()
 		__disable_irq();
 		HdRumbleState snapshot = g_hdRumble[slot];
 		__set_PRIMASK(pm);
+		uint8_t style = g_typeHaptic[HAP_STYLE][ET_SWITCH];
+		bool wave = style == AUDIO_STYLE_WAVE;
 		bool enabled = (g_rumbleStyle == RUMBLE_STYLE_HD) &&
 			       g_usbMode == MODE_SW_PRO && g_rumble &&
 			       g_hapticRelay && !USBDevice.suspended();
@@ -911,43 +958,71 @@ static void hapticHdTask()
 			  snapshot.bands[2] || snapshot.bands[3];
 		if (on)
 			g_hdPcmState[slot].activeMs = now;
+		// the style changed away from wave while a stream played
+		if (!wave && g_hdPcmState[slot].on)
+			hdPcmStop(slot, true);
 		// a silent gap keeps the grip stream (and its pre-buffer) alive for HD_PCM_HANG_MS
 		bool hang = g_hdPcmState[slot].on &&
 			    now - g_hdPcmState[slot].activeMs < HD_PCM_HANG_MS;
 		if (!enabled || (!on && !hang) ||
 		    now - snapshot.received > 600u || haptic82Blocked(slot)) {
-			if (snapshot.active)
+			if (snapshot.active) {
 				hdStop(slot);
+				if (g_rumble80On[slot])
+					hapticRumbleGrip(0, 0, slot);
+			}
 			continue;
 		}
 		g_hdRumble[slot].active = true;
 		bool feedback = hapticShortcutFeedbackActive(slot);
 		// pads play each side's high band as tones; shortcut confirmation pulses own them while they play
 		for (uint8_t k = 1; !feedback && k < 4; k += 2) {
-			HdTone &t = g_hdRumble[slot].tone[k];
-			uint8_t side = HSIDE_LPAD + k / 2;
-			uint16_t hz = snapshot.frequencies[k];
-			hz = hz < 40 ? 40 : (hz > 1280 ? 1280 : hz);
+			uint16_t hz = hdClampHz(snapshot.frequencies[k]);
 			int8_t gain;
-			if (!hdToneWant(snapshot.bands[k], hz, &gain)) {
-				if (t.on)
-					hdToneSend(slot, side, HD_CUT_DB, t.hz,
-						   30);
-				t.on = false;
-				continue;
-			}
-			unsigned long since = now - t.ms;
-			int step = gain - t.gain;
-			bool change = hz != t.hz || step >= HD_STEP_DB ||
-				      step <= -HD_STEP_DB;
-			if (t.on && step < HD_HIT_DB &&
-			    !(change && since >= HD_STEP_MS) &&
-			    since < HD_REFRESH_MS)
-				continue;
-			hdToneSend(slot, side, gain, hz, HD_TONE_MS);
-			t = { hz, gain, true, now };
+			bool want = hdToneWant(snapshot.bands[k], hz, &gain);
+			hdToneKeep(slot, g_hdRumble[slot].tone[k],
+				   HSIDE_LPAD + k / 2, want, gain, hz, now);
 		}
-		hdPcmRun(slot, snapshot.bands, snapshot.frequencies, now);
+		if (wave) {
+			hdPcmRun(slot, snapshot.bands, snapshot.frequencies,
+				 now);
+			if (g_rumble80On[slot])
+				hapticRumbleGrip(0, 0, slot);
+			continue;
+		}
+		if (style == AUDIO_STYLE_TONE || style == AUDIO_STYLE_SPLIT) {
+			for (uint8_t side = 0; side < 2; side++) {
+				// tone: the stronger band; split: the high band
+				uint8_t k = side * 2 + 1;
+				if (style == AUDIO_STYLE_TONE &&
+				    snapshot.bands[k - 1] > snapshot.bands[k])
+					k--;
+				int8_t gain;
+				bool want = hdGripToneWant(snapshot.bands[k],
+							   &gain);
+				hdToneKeep(slot,
+					   g_hdRumble[slot].tone[side * 2],
+					   HSIDE_LGRIP + side, want, gain,
+					   hdClampHz(snapshot.frequencies[k]),
+					   now);
+			}
+		}
+		// 0x80 rumble: both bands' peak (rumble), the low bands (split), or nothing, which stops one the
+		// style just left
+		uint16_t left = 0, right = 0;
+		if (style == AUDIO_STYLE_RUMBLE) {
+			left = snapshot.bands[0] > snapshot.bands[1] ?
+				       snapshot.bands[0] :
+				       snapshot.bands[1];
+			right = snapshot.bands[2] > snapshot.bands[3] ?
+					snapshot.bands[2] :
+					snapshot.bands[3];
+		} else if (style == AUDIO_STYLE_SPLIT) {
+			left = snapshot.bands[0];
+			right = snapshot.bands[2];
+		}
+		if (left || right || g_rumble80On[slot])
+			hapticRumbleGrip(left, right, slot);
 	}
 }
 
@@ -1036,7 +1111,7 @@ void rfConnQueueHapticRelay()
 {
 	if (relayPending())
 		return; // host relays first; injectables wait for an idle cycle
-	static const uint8_t HAP_ON[3] = { 0x01, 0x01, 0xF7 };
+	const uint8_t HAP_ON[3] = { 0x01, 0x01, padClickGain() };
 	static const uint8_t HAP_OFF[3] = { 0x01, 0x01, 0x00 };
 	if (g_testHaptic) {
 		if (relayEnqueue(0x82, HAP_ON, 3, true, 0xFF))
@@ -1353,6 +1428,24 @@ void hapticTestRumble()
 		g_rumbleTestStop = 1;
 }
 
+// Take over (or hand back) the controller's own movement ticks and clicks, see padTickCtrlDue
+static void padCtrlWrite(uint8_t slot, bool take)
+{
+	const uint16_t sp = take ? PAD_TICK_CTRL_OFF : PAD_TICK_CTRL_DEFAULT;
+	const uint16_t cl = take ? PAD_CLICK_CTRL_OFF : PAD_CLICK_CTRL_DEFAULT;
+	const uint8_t set[9] = { SETTING_TRACKPAD_TICK_SPACING,
+				 (uint8_t)sp,
+				 (uint8_t)(sp >> 8),
+				 SETTING_LEFT_TRACKPAD_CLICK_PRESSURE,
+				 (uint8_t)cl,
+				 (uint8_t)(cl >> 8),
+				 SETTING_RIGHT_TRACKPAD_CLICK_PRESSURE,
+				 (uint8_t)cl,
+				 (uint8_t)(cl >> 8) };
+	relayEnqueue(IBEX_CMD_SET_SETTINGS_VALUES, set, sizeof set, false,
+		     slot);
+}
+
 void hapticTask()
 {
 	hapticHdTask();
@@ -1396,6 +1489,8 @@ void hapticTask()
 		static unsigned long lastKeep[NSLOT] = { 0 };
 		static bool landedAuto[NSLOT] = { false };
 		static bool landedImu[NSLOT] = { false };
+		// 1 = the controller's own ticks and clicks are taken over, 0 = given back, 0xFF = nothing written this connect episode
+		static uint8_t landedTick[NSLOT] = { 0xFF, 0xFF, 0xFF, 0xFF };
 		static const uint8_t DATA_LIZARD_OFF[3] = { SETTING_LIZARD_MODE,
 							    0x00, 0x00 };
 		static const uint8_t DATA_LIZARD_ON[3] = { SETTING_LIZARD_MODE,
@@ -1416,6 +1511,7 @@ void hapticTask()
 					// autonomous, but one carrying our previous session's id9 does not
 					landedAuto[s] = false;
 					landedImu[s] = false;
+					landedTick[s] = 0xFF;
 					lastKeep[s] = 0;
 					continue;
 				}
@@ -1435,8 +1531,17 @@ void hapticTask()
 							sizeof DATA_LIZARD_ON,
 							false, (uint8_t)s);
 					}
+					// a tick level makes the puck play the movement ticks and the clicks, so the
+					// controller's own are taken out of the way; level 0 gives them back
+					const uint8_t due = padTickCtrlDue(
+						g_padTick, &landedTick[s]);
+					if (due != PAD_CTRL_NONE)
+						padCtrlWrite(
+							(uint8_t)s,
+							due == PAD_CTRL_TAKE);
 				} else {
 					landedAuto[s] = false;
+					landedTick[s] = 0xFF;
 					if (lastKeep[s] &&
 					    (uint32_t)(millis() - lastKeep[s]) <
 						    LIZKEEP_MS)
@@ -1449,11 +1554,31 @@ void hapticTask()
 						(uint8_t)s);
 				}
 			}
+		} else {
+			// back in a puck mode: hand the controller's own ticks and clicks back once per connect, in case
+			// an emulated mode took them over and the controller kept the settings
+			static bool landedGive[NSLOT] = { false };
+			for (int s = 0; s < NSLOT; s++) {
+				if (!g_slot[s].used || !hapticLinkUp(s))
+					landedGive[s] = false;
+				else if (!landedGive[s]) {
+					landedGive[s] = true;
+					padCtrlWrite((uint8_t)s, false);
+				}
+			}
 		} // !modeIsPuck
 	}
+	// Trackpad haptics On with a tick level: the puck plays the movement ticks itself, so their strength is ours
+	if (g_padHaptics == PAD_HAPTICS_ON && g_padTick &&
+	    !modeIsPuck(g_usbMode))
+		for (uint8_t s = 0; s < NSLOT; s++)
+			if (g_slot[s].used)
+				padTickMove(s);
 	// Clicks-only trackpad haptics: id9 is held at 0 above (no movement ticks), so the puck pulses each
-	// click itself. The PlayStation builders also feed padClickEdge; it fires once per rising edge.
-	if (g_padHaptics == PAD_HAPTICS_CLICK && !modeIsPuck(g_usbMode))
+	// click itself; with puck-made ticks the controller's own click pulse is off, so it does the same. The PlayStation builders also feed padClickEdge; it fires once per rising edge.
+	if ((g_padHaptics == PAD_HAPTICS_CLICK ||
+	     (g_padHaptics == PAD_HAPTICS_ON && g_padTick)) &&
+	    !modeIsPuck(g_usbMode))
 		for (uint8_t s = 0; s < NSLOT; s++)
 			if (g_slot[s].used)
 				padClickEdge(s, shortcutHostButtons(

@@ -26,10 +26,18 @@ const PS_PADS = {21:["Touchpad click, left half","padClickL"],22:["Touchpad clic
 export const TYPE_DEFS = [
   {key:"XBOX", name:"Xbox", labels:{1:"A",2:"B",3:"X",4:"Y",5:"LB",6:"RB",7:"L3",8:"R3",9:"Back",10:"Start",11:"Guide",19:"LT",20:"RT",...DPAD},
     padTargets:{21:["Mouse right click","mouseR"],22:["Mouse left click","mouseL"]}},
-  {key:"SWITCH", name:"Switch", labels:{1:"A",2:"B",3:"X",4:"Y",5:"L",6:"R",7:"L-Stick",8:"R-Stick",9:"Minus",10:"Plus",11:"Home",19:"ZL",20:"ZR",...DPAD,18:"Capture / Screenshot"}, padTargets:{}},
+  {key:"SWITCH", name:"Switch", labels:{1:"A",2:"B",3:"X",4:"Y",5:"L",6:"R",7:"L-Stick",8:"R-Stick",9:"Minus",10:"Plus",11:"Home",19:"ZL",20:"ZR",...DPAD,18:"Capture / Screenshot"}, padTargets:{},
+    haptics:{rumble:100,style:1}},
   {key:"DS4", name:"DS4", labels:{1:"Cross",2:"Circle",3:"Square",4:"Triangle",5:"L1",6:"R1",7:"L3",8:"R3",9:"Create",10:"Options",11:"PS",19:"L2",20:"R2",...DPAD,16:"Touchpad Click"}, padTargets:PS_PADS},
   {key:"DS5", name:"DS5", labels:{1:"Cross",2:"Circle",3:"Square",4:"Triangle",5:"L1",6:"R1",7:"L3",8:"R3",9:"Create",10:"Options",11:"PS",19:"L2",20:"R2",...DPAD,16:"Touchpad Click",17:"Mute"}, padTargets:PS_PADS},
 ];
+// Grip strength (percent) and haptic style a type starts with: the firmware's g_typeRumbleScaleDefault and kHapticStyleDefault
+const typeDefaults=def=>({rumble:200,style:3,click:26,tick:0,tickGain:11,...def.haptics});
+// movement-tick spacing: 0 leaves the ticks to the controller (fixed strength), 1..4 have the puck play them, a wider to a
+// narrower distance apart
+export const PAD_TICK_LABELS=["Controller's own","Sparse","Normal","Dense","Densest"];
+// click step 0..31 to dB (mirror of firmware padClickGainDb): -20..-1, then +1..+12; 0 dB is the legacy haptic stop
+export const clickDb=step=>step<20?step-20:step-19;
 // Which emulated type a USB mode belongs to (mirror of firmware etypeForMode); -1 = puck mode (no type).
 export function etypeForMode(m){ switch(m){case 1:case 10:return 0; case 2:case 4:return 1; case 6:case 8:case 9:return 2; case 5:case 7:return 3; default:return -1;} }
 // the firmware's back[] order; each label is the paddle glyph (full name on hover) plus its short name
@@ -98,9 +106,15 @@ export function currentType(){ return curTab; }
 function typeResetFields(et){
   const key=TYPE_DEFS[et].key, sw=key==="SWITCH", ds5=key==="DS5", b=40+et*9;
   const f=[[b,5,0],[b+1,6,0],[b+2,7,0],[b+3,8,0],[b+4,sw?18:0,0],[b+5,sw?1:0,0],[b+6,sw?0:1,0],[b+7,0,0],[b+8,1,0],
-    [PAD_STICK_FIELD0+et*2,0,20],[PAD_STICK_FIELD0+et*2+1,0,20],[108+et,100,25]];
-  if(sw||ds5) f.push([115,70,27]);
-  if(ds5) f.push([31,1,0],[88,3,22],[30,0,0],[114,0,26],[116,0,29]);
+    [PAD_STICK_FIELD0+et*2,0,20],[PAD_STICK_FIELD0+et*2+1,0,20],[108+et,typeDefaults(TYPE_DEFS[et]).rumble/2,25],
+    [hapField(HAP.CLICK,et),typeDefaults(TYPE_DEFS[et]).click,30],[hapField(HAP.TICK,et),typeDefaults(TYPE_DEFS[et]).tick,30],
+    [hapField(HAP.TICKGAIN,et),typeDefaults(TYPE_DEFS[et]).tickGain,30]];
+  // firmware before protocol 30 has one limiter for both types, and the style only on the DualSense
+  const perType=S.lastP && S.lastP[0]>=30;
+  if(sw||ds5) f.push(perType ? [hapField(HAP.KNEE,et),70,30] : [115,70,27]);
+  const style=typeDefaults(TYPE_DEFS[et]).style;
+  if(sw) f.push([hapField(HAP.STYLE,et),style,30]);
+  if(ds5) f.push([31,1,0],perType ? [hapField(HAP.STYLE,et),style,30] : [88,style,22],[30,0,0],[114,0,26],[116,0,29]);
   if(sw){
     f.push([38,0,19]);
     // the 0xAE frame is absent on firmware that predates these controls
@@ -114,7 +128,7 @@ export async function resetTypeDefaults(et){
   const name=TYPE_DEFS[et].name, key=TYPE_DEFS[et].key;
   const prof=profilesCapable();
   const shared=key==="XBOX" ? "\n\nThe Trackpad mouse settings are shared with Lizard mode and stay as they are."
-    : (key==="SWITCH"||key==="DS5") ? "\n\nThe grip limiter is one setting shared by the Switch and DS5 controller types, so it resets for both." : "";
+    : ((key==="SWITCH"||key==="DS5") && !(S.lastP && S.lastP[0]>=30)) ? "\n\nThe grip limiter is one setting shared by the Switch and DS5 controller types on this firmware, so it resets for both." : "";
   const what=prof ? "All three mapping profiles, and the trackpad, rumble and light settings" : "The button mapping, trackpad, rumble and light settings";
   if(!confirm("Reset the "+name+" controller type to its defaults?\n\n"+what+" go back to their factory values, and profile 1 is put in use. This saves to the puck immediately; your current choices for this controller type are lost."+shared)) return;
   mapResetBusy=true; $("#mapReset").disabled=true;
@@ -133,6 +147,16 @@ export async function resetTypeDefaults(et){
   }finally{ mapResetBusy=false; $("#mapReset").disabled=false; }
 }
 // Strength is sent as percent/2 (field 22), so every value here must be even.
+// Protocol 30 keeps five settings per controller type in one grid (firmware HAP_* in config.h): WebUSB field
+// 120 + 4 * setting + type, status blob byte 216 + 4 * setting + type (index 214 + ... here, the header being cut).
+// The release before it (29) has one limiter for all types (field 115) and the style on the DualSense only (field 88).
+export const HAP={KNEE:0,STYLE:1,CLICK:2,TICK:3,TICKGAIN:4};
+// per setting, in HAP order: the backup key and its range
+export const HAP_KEYS=[["limiter",50,100],["hapticStyle",0,3],["padClick",0,31],["padTick",0,4],["padTickGain",0,31]];
+export const hapField=(k,et)=>120+4*k+et;
+export const hapValue=(p,k,et)=>p[214+4*k+et];
+export const perTypeHaptics=()=>!!(S.lastP && S.lastP[0]>=30);
+const HAPTIC_STYLES=[[3,"Wave"],[1,"Tone"],[2,"Split"],[0,"Rumble"]];
 export const RUMBLE_SCALES=Array.from({length:246},(_,i)=>10+i*2);
 const HD_PAD_SCALES=Array.from({length:251},(_,i)=>i*2);
 
@@ -202,6 +226,27 @@ export function initTypes(){
       for(const [v,lbl] of [[1,"On"],[2,"Clicks only"],[0,"Off"]]){ const o=document.createElement("option"); o.value=v; o.textContent=lbl; pad.appendChild(o); }
       row(gPad,"Trackpad haptics",pad);
       pad.addEventListener("change",()=>setField(40+et*9+6, +pad.value));
+      // Click strength (protocol v30): the slider position is the firmware's step, weak -> strong.
+      // Movement ticks: the controller plays its own at a fixed strength (spacing 0); any other spacing has the puck play them at the tick strength.
+      { const gHap=document.createElement("div"); gHap.className="hide";
+        const click=document.createElement("input"); click.type="range"; click.min=0; click.max=31; click.step=1;
+        const clickV=document.createElement("span"); clickV.className="val";
+        const fmtClick=(pos,key="click")=>{ const db=clickDb(pos); return (db>0?"+":"")+db+" dB"+(pos===typeDefaults(def)[key]?" (default)":""); };
+        click.addEventListener("input",()=>{ clickV.textContent=fmtClick(+click.value); });
+        click.addEventListener("change",()=>setField(hapField(HAP.CLICK,et), +click.value));
+        const tick=document.createElement("input"); tick.type="range"; tick.min=0; tick.max=4; tick.step=1;
+        const tickV=document.createElement("span"); tickV.className="val";
+        tick.addEventListener("input",()=>{ tickV.textContent=PAD_TICK_LABELS[+tick.value]; });
+        tick.addEventListener("change",()=>setField(hapField(HAP.TICK,et), +tick.value));
+        const tickG=document.createElement("input"); tickG.type="range"; tickG.min=0; tickG.max=31; tickG.step=1;
+        const tickGV=document.createElement("span"); tickGV.className="val";
+        tickG.addEventListener("input",()=>{ tickGV.textContent=fmtClick(+tickG.value,"tickGain"); });
+        tickG.addEventListener("change",()=>setField(hapField(HAP.TICKGAIN,et), +tickG.value));
+        const note=document.createElement("p"); note.className="note";
+        note.textContent="Click strength applies to the clicks the puck sends itself: Clicks only, the PlayStation modes and the Switch D-pad click feedback. Movement ticks only play with Trackpad haptics On. The controller plays its own ticks and clicks at a fixed strength; choose a spacing and the puck plays both instead, ticks at the Tick strength and clicks at the Click strength, pausing the ticks around a click. Back on Controller's own they return at once. Clicks only has no ticks. Tick spacing and strength are untested on the Steam Controller 2.";
+        gHap.append(row(gPad,"Click strength",click,clickV),row(gPad,"Tick spacing",tick,tickV),row(gPad,"Tick strength",tickG,tickGV),note);
+        gPad.appendChild(gHap);
+        Object.assign(rec,{padHap:gHap,padClick:click,padClickV:clickV,padClickFmt:fmtClick,padTick:tick,padTickV:tickV,padTickG:tickG,padTickGV:tickGV}); }
       // the Xbox pointer's speed is one setting shared with Lizard mode: setTab() moves its card in or out of here
       if(def.key==="XBOX"){ rec.mouseHost=document.createElement("div"); rec.mouseHost.className="pad-mouse"; gPad.appendChild(rec.mouseHost); }
       // rumble on/off, grip strength, grip limiter
@@ -209,17 +254,27 @@ export function initTypes(){
       const rumble=toggle(gRum,"Rumble","on");
       // Grip rumble strength, per type (protocol v25). The rumble style follows the mode.
       { const sel=document.createElement("select");
-        for(const v of RUMBLE_SCALES){ const o=document.createElement("option"); o.value=v; o.textContent=v+"%"+(v===200?" (default)":""); sel.appendChild(o); }
+        for(const v of RUMBLE_SCALES){ const o=document.createElement("option"); o.value=v; o.textContent=v+"%"+(v===typeDefaults(def).rumble?" (default)":""); sel.appendChild(o); }
         row(gRum,"Grip rumble strength",sel).classList.add("hide");
         sel.addEventListener("change",()=>setField(108+et, (+sel.value)/2));
         rec.rumbleScl=sel; }
-      // Grip limiter (protocol v27): one setting, shared by DualSense wave haptics/speaker and Switch HD rumble grips
+      // Haptics style of the Switch's HD rumble on the grips (protocol v30); the DualSense's is in its Audio haptics card
+      if(def.key==="SWITCH"){
+        const sty=document.createElement("select");
+        for(const [v,lbl] of HAPTIC_STYLES){ const o=document.createElement("option"); o.value=v; o.textContent=v===typeDefaults(def).style?lbl+" (default)":lbl; sty.appendChild(o); }
+        sty.addEventListener("change",()=>setField(hapField(HAP.STYLE,et),+sty.value));
+        const note=document.createElement("p"); note.className="note";
+        note.textContent="How the grips play HD rumble. Wave streams both bands as a waveform. Tone plays each side's stronger band as a smooth tone. Split plays the low band as rumble and the high band as a tone. Rumble plays the stronger band as plain motor rumble. The trackpads always play the high band as tones.";
+        const wrap=document.createElement("div"); wrap.className="hide"; wrap.append(row(gRum,"Haptics style",sty),note); gRum.appendChild(wrap);
+        rec.hdStyle=sty; rec.hdStyleWrap=wrap;
+      }
+      // Grip limiter (protocol v27, per controller type from v30): the Switch's HD rumble grips and the DualSense's wave haptics/speaker
       if(def.key==="DS5"||def.key==="SWITCH"){
         const sel=document.createElement("select");
         for(const v of [50,60,70,80,90,100]){ const o=document.createElement("option"); o.value=v; o.textContent=v===100?"Off (hard clip)":v+"%"+(v===70?" (default)":""); sel.appendChild(o); }
-        sel.addEventListener("change",()=>setField(115,+sel.value));
+        sel.addEventListener("change",()=>setField(perTypeHaptics()?hapField(HAP.KNEE,et):115,+sel.value));
         const note=document.createElement("p"); note.className="note";
-        note.textContent="Grip vibration above this level is rounded off toward full strength instead of clipping, which plays as a pop. Lower is smoother on the strongest hits, higher keeps more of their punch. One setting for DualSense audio haptics and Switch HD rumble.";
+        note.textContent="Grip vibration above this level is rounded off toward full strength instead of clipping, which plays as a pop. Lower is smoother on the strongest hits, higher keeps more of their punch. It shapes the waveform streamed to the grips (the Wave style, and the DualSense speaker). Each controller type has its own.";
         const wrap=document.createElement("div"); wrap.className="hide"; wrap.append(row(gRum,"Grip limiter",sel),note); gRum.appendChild(wrap);
         rec.limiter=sel; rec.limiterWrap=wrap;
       }
@@ -242,7 +297,7 @@ export function initTypes(){
         const sty=document.createElement("select");
         for(const [v,lbl] of [[3,"Wave"],[1,"Tone"],[2,"Split"],[0,"Rumble"]]){ const o=document.createElement("option"); o.value=v; o.textContent=lbl; sty.appendChild(o); }
         row(gAud,"Haptics style",sty);
-        sty.addEventListener("change",()=>setField(88, +sty.value));
+        sty.addEventListener("change",()=>setField(perTypeHaptics()?hapField(HAP.STYLE,et):88, +sty.value));
         rec.audioStyle=sty;
         // Create button presses the touchpad click instead (protocol v29)
         const ct=toggle(gBtn,"","off");

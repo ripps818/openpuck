@@ -1,3 +1,4 @@
+#include <Arduino.h>
 #include "gamepad_util.h"
 #include "remap.h"
 #include "triton.h"
@@ -28,11 +29,83 @@ void padClickEdge(uint8_t slot, uint32_t clicks)
 	if (!rising || !g_padHaptics || haptic82Blocked(slot))
 		return;
 	// buzz the pad(s) actually clicked
-	const uint8_t click[3] = {
-		hsidePads(clicks & TB_LPADC, clicks & TB_RPADC), 0x01, 0xF7
-	};
+	const uint8_t click[3] = { hsidePads(clicks & TB_LPADC,
+					     clicks & TB_RPADC),
+				   0x01, padClickGain() };
 	// ahead of any queued PCM stream frames, which would delay the click by their length
 	relayEnqueueFront(0x82, click, sizeof click, true, slot);
+}
+
+// Shortest gap between two ticks on one pad: a fast swipe at the narrowest spacing would otherwise flood the relay
+#define PAD_TICK_MIN_MS 12u
+// Ticks stay quiet while a pad is clicked and for this long after it presses or lets go: the finger shifts as
+// the pad goes down and comes back up, and those ticks would smear into the click.
+#define PAD_TICK_CLICK_HOLD_MS 150u
+
+void padTickMove(uint8_t slot)
+{
+	static int16_t lastX[NSLOT][2], lastY[NSLOT][2];
+	static int32_t travel[NSLOT][2];
+	static bool touching[NSLOT][2], clicked[NSLOT][2];
+	static unsigned long seenMs[NSLOT], tickMs[NSLOT][2], clickMs[NSLOT][2];
+	if (slot >= NSLOT || !g_padTick)
+		return;
+	const unsigned long now = millis();
+	// a gap in the calls (a mode change, a lost link) would read as one long swipe
+	const bool stale = (uint32_t)(now - seenMs[slot]) > 100u;
+	seenMs[slot] = now;
+	if (stale || !hapticLinkUp(slot))
+		touching[slot][0] = touching[slot][1] = false;
+	if (!hapticLinkUp(slot) || haptic82Blocked(slot))
+		return;
+	const PuckInput &in = g_in[slot];
+	const uint32_t buttons = shortcutHostButtons(in.buttons);
+	const int16_t px[2] = { in.lpx, in.rpx };
+	const int16_t py[2] = { in.lpy, in.rpy };
+	const uint32_t touch[2] = { TB_LPADT, TB_RPADT };
+	const uint32_t click[2] = { TB_LPADC, TB_RPADC };
+	const int32_t spacing = padTickSpacing(g_padTick);
+	for (int p = 0; p < 2; p++) {
+		const bool down = (buttons & click[p]) != 0;
+		if (down != clicked[slot][p]) {
+			clicked[slot][p] = down;
+			clickMs[slot][p] = now;
+		}
+		if (!(buttons & touch[p])) {
+			touching[slot][p] = false;
+			continue;
+		}
+		if (!touching[slot][p]) {
+			touching[slot][p] = true;
+			lastX[slot][p] = px[p];
+			lastY[slot][p] = py[p];
+			travel[slot][p] = 0;
+			continue;
+		}
+		const int32_t dx = abs(px[p] - lastX[slot][p]);
+		const int32_t dy = abs(py[p] - lastY[slot][p]);
+		if (!dx && !dy)
+			continue;
+		lastX[slot][p] = px[p];
+		lastY[slot][p] = py[p];
+		if (down || (uint32_t)(now - clickMs[slot][p]) <
+				    PAD_TICK_CLICK_HOLD_MS) {
+			travel[slot][p] = 0;
+			continue;
+		}
+		// the larger axis plus half the smaller is within 12% of the true distance
+		travel[slot][p] += dx > dy ? dx + dy / 2 : dy + dx / 2;
+		if (travel[slot][p] < spacing)
+			continue;
+		travel[slot][p] = 0;
+		if ((uint32_t)(now - tickMs[slot][p]) < PAD_TICK_MIN_MS)
+			continue;
+		tickMs[slot][p] = now;
+		const uint8_t tick[3] = { hsidePads(p == 0, p == 1), 0x01,
+					  padTickGain() };
+		// ahead of any queued PCM stream frames, as for a click
+		relayEnqueueFront(0x82, tick, sizeof tick, true, slot);
+	}
 }
 
 void psNeutralCalib(uint8_t *buf)

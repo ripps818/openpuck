@@ -294,12 +294,16 @@ Web panel and config: gain is field 30 (0 = Auto), style is field 88 (blob `p[20
 3 wave; protocol v22). The panel's style button cycles tone, split, wave, rumble. Gain, on/off and style are saved in the config
 extension bytes 3, 4 and 11 (`cfgExtRead`).
 
-**Grip limiter** (DS5 and Switch tabs, protocol v27): the knee of the soft limiter on the grip PCM stream, as a
+**Grip limiter** (DS5 and Switch tabs, protocol v27; one per controller type from v30): the knee of the soft limiter on the grip PCM stream, as a
 percent of full scale: 50, 60, 70 (default), 80, 90, or 100 = off. Below the knee the waveform passes unchanged;
 above it, peaks are rounded off toward full scale instead of clipping, which plays as a pop. Lower is smoother on
-the strongest hits, higher keeps more of their punch. One setting (`g_hapticLimitKnee`, `hapticSoftLimit` in
-haptics.h) covers wave haptics, the controller speaker's own limiting and Switch HD rumble. Field 115, blob
-`p[209]`, config extension byte 14 (formerly the HD grip renderer switch, whose 0/1 values load as the default).
+the strongest hits, higher keeps more of their punch. `g_typeHaptic[HAP_KNEE][]` holds each type's, `g_hapticLimitKnee`
+(read by `hapticSoftLimit` in haptics.h) is the active type's copy, and it covers wave haptics, the controller
+speaker's own limiting and, on the Switch, the Wave style of HD rumble. It is setting 0 of the per-type haptic
+grid (PROTOCOL.md): field `120 + type`, blob `p[216 + type]`; field 115 still sets both types for an older panel, and
+`p[209]` reports the active type's. The legacy
+config extension byte 14 (formerly the HD grip renderer switch, whose 0/1 values load as the default) carries the
+DualSense's, and a config from before the per-type fields starts both types from it.
 
 ## 8. Pitfalls
 

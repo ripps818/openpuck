@@ -1,6 +1,6 @@
 import { S } from './state.js';
 import { $, fmtDur, held, log, setSlider } from './util.js';
-import { LIZARD_TAB, RUMBLE_SCALES, TYPE_DEFS, currentType, etypeForMode, setTab, swStatusApply, typeEls } from './types.js';
+import { HAP, LIZARD_TAB, PAD_TICK_LABELS, RUMBLE_SCALES, TYPE_DEFS, currentType, etypeForMode, hapValue, setTab, swStatusApply, typeEls } from './types.js';
 import { refreshRfStatus } from './rf.js';
 import { renderCtlrChips, renderSlotTabs } from './slots.js';
 import { renderHangLog, trailAdd } from './diag.js';
@@ -320,8 +320,9 @@ export function applyBlob(p){
         rec.createTouch.textContent=on?"on":"off";
         rec.createTouch.classList.toggle("active",on);
       }
+      const perType=p[0]>=30;
       if(rec.audioStyle){
-        const v = (p.length>203 && p[203]<=3)?p[203]:1;
+        const v = perType ? hapValue(p,HAP.STYLE,et) : (p.length>203 && p[203]<=3)?p[203]:1;
         if(document.activeElement!==rec.audioStyle) rec.audioStyle.value=v;
       }
       if(rec.speaker){
@@ -332,7 +333,20 @@ export function applyBlob(p){
       if(rec.limiter){
         const cap=p[0]>=27 && p.length>207;
         rec.limiterWrap.classList.toggle("hide",!cap);
-        if(cap && document.activeElement!==rec.limiter) rec.limiter.value=p[207];
+        if(cap && document.activeElement!==rec.limiter) rec.limiter.value=perType?hapValue(p,HAP.KNEE,et):p[207];
+      }
+      // v30: per-type click strength and movement-tick spacing / strength. Click needs Trackpad haptics on or clicks-only, ticks need On.
+      rec.padHap.classList.toggle("hide", !perType);
+      if(perType){
+        const click=hapValue(p,HAP.CLICK,et), tick=hapValue(p,HAP.TICK,et), tickG=hapValue(p,HAP.TICKGAIN,et)??11;
+        if(!held(rec.padClick)){ rec.padClick.value=click; rec.padClickV.textContent=rec.padClickFmt(click); }
+        if(!held(rec.padTick)){ rec.padTick.value=tick; rec.padTickV.textContent=PAD_TICK_LABELS[tick]||tick; }
+        if(!held(rec.padTickG)){ rec.padTickG.value=tickG; rec.padTickGV.textContent=rec.padClickFmt(tickG,"tickGain"); }
+        rec.padClick.disabled=(pad===0); rec.padTick.disabled=(pad!==1); rec.padTickG.disabled=(pad!==1||tick===0);
+      }
+      if(rec.hdStyle){
+        rec.hdStyleWrap.classList.toggle("hide",!perType);
+        if(perType && document.activeElement!==rec.hdStyle) rec.hdStyle.value=hapValue(p,HAP.STYLE,et);
       }
       if(rec.audioGain && p.length>195){
         const gain = p[195]*2;

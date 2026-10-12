@@ -4,12 +4,14 @@ root=Path(__file__).resolve().parents[2]
 s=(root/'OpenPuck/config.cpp').read_text()
 a=s.index('void captureFeedbackChord(');b=s.index('\nvoid applyActiveType()',a)
 hh=(root/'OpenPuck/haptics.h').read_text();hside=hh[hh.index('#define HSIDE_LPAD'):hh.index('// PCM haptic stream')]
+ch=(root/'OpenPuck/config.h').read_text();clickgain=ch[ch.index('// gain in dB of click step'):ch.index('// the s8 gain_db byte of a 0x82 movement tick')]
 head='''#include <stdint.h>
 #include <cassert>
 #include <initializer_list>
 #include "triton.h"
 #define NSLOT 4
 #define MODE_SW_PRO 4
+uint8_t g_padClick=26;
 uint8_t g_usbMode=MODE_SW_PRO,g_shortcutFlags=63;
 uint32_t g_gestureMask=0;
 uint8_t g_rumbleStyle=8;
@@ -24,6 +26,8 @@ void applyActiveType(){++applied;}
 #define ET_NONE 0xFF
 #define RUMBLE_SCALE_MIN 10u
 #define RUMBLE_SCALE_MAX 500u
+#define RUMBLE_SCALE_PCT 200u
+const uint16_t g_typeRumbleScaleDefault[ET_COUNT]={200,100,200,200};
 uint8_t g_etype=1;uint16_t g_typeRumbleScale[ET_COUNT]={};
 uint8_t etypeForMode(uint8_t m){return m==MODE_SW_PRO?1:ET_NONE;}
 '''
@@ -39,7 +43,7 @@ int pulses=0;
 uint8_t emittedSide=0, emittedBond=0;
 bool haptic82Blocked(int){return blocked;}
 bool relayEnqueueFront(uint8_t rid,const uint8_t *p,uint8_t n,bool haptic,uint8_t slot){
- assert(rid==0x82 && n==3 && haptic && p[1]==2 && p[2]==0xF7);
+ assert(rid==0x82 && n==3 && haptic && p[1]==2 && p[2]==0x07);
  ++pulses;emittedSide=p[0];emittedBond=slot;return true;
 }
 '''
@@ -47,11 +51,14 @@ ta=s.index('\tif (c.hdPadScale2 <= 250)');tb=s.index('\t// resolve the active em
 head += 'struct Tail {uint8_t hdPadScale2,reservedRumbleStyles[2],reservedWaveform,reservedWavePresets[2],reservedWaveThird,reservedWaveSlot,swQamSelect,shortcutFlags,reservedShortcutRumble[12],reservedTypeRumbleStyle[4],typeRumbleScale2[4];};\nvoid loadTail(Tail c){\n'+s[ta:tb]+'}\n'
 body='''int main(){
  Tail old;memset(&old,255,sizeof old);loadTail(old);assert(g_shortcutFlags==SHORTCUT_ENABLED); // fork default: back-4 modifier
- // a file without per-type strength seeds every type from the legacy global strength
- for(int et=0;et<ET_COUNT;et++)assert(g_typeRumbleScale[et]==200);
+ // a file without per-type strength gives each type its own default: the Switch starts at 100%
+ assert(g_typeRumbleScale[0]==200 && g_typeRumbleScale[1]==100 && g_typeRumbleScale[2]==200 && g_typeRumbleScale[3]==200);
+ // ...unless the legacy global strength was changed, which seeds every type
+ g_rumbleScale=300;loadTail(old);for(int et=0;et<ET_COUNT;et++)assert(g_typeRumbleScale[et]==300);
+ g_rumbleScale=200;
  Tail typed=old;typed.typeRumbleScale2[0]=50;typed.typeRumbleScale2[1]=75;typed.typeRumbleScale2[2]=1;
  g_rumbleScale=200;loadTail(typed);
- assert(g_typeRumbleScale[0]==100 && g_typeRumbleScale[1]==150 && g_typeRumbleScale[2]==200); // invalid -> global
+ assert(g_typeRumbleScale[0]==100 && g_typeRumbleScale[1]==150 && g_typeRumbleScale[2]==200 && g_typeRumbleScale[3]==200); // invalid -> default
  // bits 1/2 (ex profiles / D-pad haptic shortcuts) are dropped from saved flags
  Tail savedTail=old;savedTail.hdPadScale2=150;savedTail.shortcutFlags=62;
  loadTail(savedTail);assert(g_hdPadScale==300 && g_shortcutFlags==56);
@@ -94,7 +101,7 @@ body='''int main(){
  g_padHaptics=1;swDpadClickFeedback(3,0);g_padStick[0]=1;swDpadClickFeedback(3,TB_LPADT|TB_LPADC);assert(pulses==5);
 }'''
 with tempfile.TemporaryDirectory() as td:
- p=Path(td)/'test.cpp';p.write_text(head+hside+s[a:b]+u[ua:ub]+m[ha:hb]+body)
+ p=Path(td)/'test.cpp';p.write_text(head+hside+clickgain+s[a:b]+u[ua:ub]+m[ha:hb]+body)
  subprocess.run(['g++','-std=c++11','-Wall','-Wextra','-Werror','-fsanitize=address,undefined','-I'+str(root/'OpenPuck'),str(p),'-o',td+'/test'],check=True)
  subprocess.run([td+'/test'],check=True,env={'ASAN_OPTIONS':'detect_leaks=0'})
 print('Shortcut flags, Switch Pro capture, trackpad D-pad and click feedback tests passed')

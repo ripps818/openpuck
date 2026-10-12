@@ -407,6 +407,11 @@ PCM streaming, measured with the controller's IMU over USB (2026-10-03):
   - `0x80` rumble plays on **both grips**.
   - `0x82` / `0x83` side (bit 7 ignored): 0 left touchpad, 1 right touchpad, 2 both touchpads, 3 left grip,
     4 right grip, 5 both grips. `0x81` is the same except 0 = right touchpad and 1 = left touchpad.
+  - The `0x82` command byte is a haptic script ID, 1..17 (a table of waveform step lists). Steam plays its
+    movement ticks as script 1 and its click as script 2, which opens with the same four steps and adds a longer
+    tail. Steam applies its 0-12 dB strength slider host-side as the gain byte (click: slider - 17 dB), not as a
+    controller setting. Controller setting 76 is `haptic_master_gain_db` (-3, -24..6) and 75 the amplifier mode;
+    Steam also writes `user/haptic_boot_level` (op `0xDC` `01 <level>`, level 2) on every connect.
   - `0x88` PCM plays on the **grips** (first half left, second half right); `0x87` / `0x89` as in the table.
   So OpenPuck's DualSense wave style streams to the grips, where a real DualSense has its actuators too.
 - The controller pre-buffers about 40 ms (onset ~43 ms against ~16 ms for a `0x83` tone). It rides out 124 ms bursts
@@ -500,9 +505,36 @@ Messages:
     Controller speaker (blob version >= 26): `114` DualSense speaker volume as percent/2, 0 = off (default),
     up to 200%. Status blob `p[208]` (payload byte 206). See DUALSENSE_HAPTICS.md §7.
     Grip limiter (blob version >= 27): `115` soft-limit knee of the grip PCM stream, percent of full scale,
-    50..100 (70 default, 100 = off: hard clip only); other values are ignored. One setting for DualSense audio
-    haptics and speaker and Switch HD rumble grips. Status blob `p[209]` (payload byte 207); saved in config
-    extension byte 14.
+    50..100 (70 default, 100 = off: hard clip only); other values are ignored. It started as one setting for
+    DualSense audio haptics and speaker and Switch HD rumble grips; from version 30 each type has its own (below),
+    field 115 still sets both the Switch's and the DualSense's, and status blob `p[209]` (payload byte 207) reports
+    the active type's.
+    Per-type haptic settings (blob version >= 30): one grid of five settings by four types (Xbox, Switch, DS4, DS5).
+    Setting `k` of type `t` is field `120 + 4k + t` and status blob `p[216 + 4k + t]` (payload byte `214 + 4k + t`),
+    and the config file keeps the same grid in its tail. A write that is out of range, or for a type without the
+    setting, is ignored. A config from the v29 release has no grid: the limiter and the DualSense style start from
+    the shared values it kept (`115`, `88`), the rest from the defaults.
+
+    | k | setting | types | values | default |
+    |---|---|---|---|---|
+    | 0 | grip limiter knee, % of full scale | Switch, DS5 | 50-100 (100 = off) | 70 |
+    | 1 | haptic style | Switch, DS5 | `0` rumble, `1` tone, `2` split, `3` wave | Switch tone, DS5 wave |
+    | 2 | trackpad click gain step | all | 0-31 = -20 to -1 dB, then +1 to +12 dB (0 dB is skipped: gain byte 0 is the legacy haptic stop) | 26 (+7 dB) |
+    | 3 | movement-tick spacing | all | 0 = the controller plays its own ticks, 1-4 = the puck plays them, 11000 / 5500 / 2500 / 1500 units of pad travel apart | 0 |
+    | 4 | movement-tick gain step | all | as setting 2 | 11 (-9 dB) |
+
+    Ticks and clicks apply with Trackpad haptics On; Clicks only has no ticks. With a tick spacing set, the puck
+    plays both as `0x82` pulses at the gains above and sets the controller's tick spacing (controller setting 14)
+    to its maximum and its trackpad click pressures (settings 52 and 53) to -1, which turns off its own tick and
+    click pulse; going back to 0 writes 5500 and 40, and so does the first pass after a connect (also in the puck modes), because the controller keeps its settings while powered and an earlier take-over would linger. Ticks pause while a pad is clicked and for 150 ms after.
+    The controller's firmware table (`6ABC4999`) gives setting 14 a default of 5500 and a range of 0-32767, and
+    a click pressure of -1 means no click pulse; the tick event carries no gain, which is why the strength is the
+    puck's to set. The spacing units are the trackpad's own int16 coordinates.
+
+    The haptic style of the DualSense is the audio haptics style that `88` set (`88` still sets it; `p[205]` reports
+    it). On the Switch it sets how the grips play HD rumble: wave streams both bands as PCM, tone plays each side's
+    stronger band as a `0x83` grip tone, split plays the low band as `0x80` rumble and the high band as a grip tone,
+    rumble plays each side's stronger band as `0x80` rumble; the pads always play the high band as tones.
     Triggers (blob version >= 24): `102` deadzone % and `103` full-press % for the emulated modes. Travel at or
     below the deadzone reads 0, travel at or past the full-press point reads 255, linear between; 0/100 is
     raw. An edit that would put the deadzone at or above the full-press point is refused. Status blob
