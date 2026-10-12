@@ -8,7 +8,7 @@ web = (root/'OpenPuck/webusb_config.cpp').read_text()
 # the shipped table, setter and load loop, and the WebUSB field and blob code, spliced into one harness
 consts = cfg_h[cfg_h.index('enum { HAP_KNEE'):cfg_h.index('extern uint8_t g_typeHaptic')]
 table = cfg_c[cfg_c.index('uint8_t g_typeHaptic[HAP_COUNT]'):cfg_c.index('bool typeHapticSet(')]
-helpers = cfg_h[cfg_h.index('// the s8 gain_db byte'):cfg_h.index('// 1 = the active DualSense profile maps Create')]
+helpers = cfg_h[cfg_h.index('// gain in dB of click step'):cfg_h.index('// 1 = the active DualSense profile maps Create')]
 setter = cfg_c[cfg_c.index('bool typeHapticSet('):]
 setter = setter[:setter.index('\n}\n') + 3]
 load = cfg_c[cfg_c.index('\t// per-type haptic settings; one missing'):cfg_c.index('\tif (c.swDpadHaptics <= 1)')]
@@ -27,7 +27,7 @@ src = '''#include <cassert>
 #define AUDIO_STYLE_TONE 1
 #define AUDIO_STYLE_SPLIT 2
 #define AUDIO_STYLE_WAVE 3
-uint8_t g_hapticLimitKnee = 70, g_audioHapticStyle = 3, g_padClickAtten = 9, g_padTick = 0;
+uint8_t g_hapticLimitKnee = 70, g_audioHapticStyle = 3, g_padClick = 26, g_padTick = 0, g_padTickGain = 11;
 uint16_t g_typeRumbleScale[ET_COUNT] = {};
 int applied = 0, saved = 0;
 bool g_blobRequest = false;
@@ -56,19 +56,19 @@ int main()
 {
 	// defaults: Switch on tones, the rest on wave; 70% limiter, -9 dB click, ticks left to the controller
 	for (int et = 0; et < ET_COUNT; et++) {
-		assert(g_typeHaptic[HAP_KNEE][et] == 70 && g_typeHaptic[HAP_CLICK][et] == 9 && g_typeHaptic[HAP_TICK][et] == 0);
+		assert(g_typeHaptic[HAP_KNEE][et] == 70 && g_typeHaptic[HAP_CLICK][et] == 26 && g_typeHaptic[HAP_TICK][et] == 0 && g_typeHaptic[HAP_TICKGAIN][et] == 11);
 		assert(g_typeHaptic[HAP_STYLE][et] == (et == ET_SWITCH ? AUDIO_STYLE_TONE : AUDIO_STYLE_WAVE));
 	}
 	// the setter takes in-range values for the types that have the setting, and refreshes the live copies
 	applied = 0;
 	assert(typeHapticSet(HAP_KNEE, ET_SWITCH, 50) && typeHapticSet(HAP_KNEE, ET_DS5, 100) && g_typeHaptic[HAP_KNEE][ET_SWITCH] == 50 && applied == 2);
 	assert(typeHapticSet(HAP_STYLE, ET_DS5, AUDIO_STYLE_SPLIT) && g_typeHaptic[HAP_STYLE][ET_DS5] == AUDIO_STYLE_SPLIT);
-	assert(typeHapticSet(HAP_CLICK, ET_XBOX, 1) && typeHapticSet(HAP_CLICK, ET_DS4, 30) && typeHapticSet(HAP_TICK, ET_XBOX, 4));
+	assert(typeHapticSet(HAP_CLICK, ET_XBOX, 0) && typeHapticSet(HAP_CLICK, ET_DS4, 31) && typeHapticSet(HAP_TICK, ET_XBOX, 4) && typeHapticSet(HAP_TICKGAIN, ET_SWITCH, 31));
 	// ...and refuses the rest without touching anything
 	applied = 0;
 	assert(!typeHapticSet(HAP_KNEE, ET_XBOX, 70) && !typeHapticSet(HAP_KNEE, ET_DS4, 70) && !typeHapticSet(HAP_STYLE, ET_XBOX, 1));
 	assert(!typeHapticSet(HAP_KNEE, ET_SWITCH, 49) && !typeHapticSet(HAP_KNEE, ET_SWITCH, 101));
-	assert(!typeHapticSet(HAP_STYLE, ET_SWITCH, 4) && !typeHapticSet(HAP_CLICK, ET_SWITCH, 0) && !typeHapticSet(HAP_CLICK, ET_SWITCH, 31) && !typeHapticSet(HAP_TICK, ET_SWITCH, 5));
+	assert(!typeHapticSet(HAP_STYLE, ET_SWITCH, 4) && !typeHapticSet(HAP_CLICK, ET_SWITCH, 32) && !typeHapticSet(HAP_CLICK, ET_SWITCH, 255) && !typeHapticSet(HAP_TICK, ET_SWITCH, 5) && !typeHapticSet(HAP_TICKGAIN, ET_SWITCH, 32));
 	assert(!typeHapticSet(HAP_COUNT, ET_SWITCH, 1) && !typeHapticSet(HAP_KNEE, ET_COUNT, 70));
 	assert(applied == 0 && g_typeHaptic[HAP_KNEE][ET_XBOX] == 70 && g_typeHaptic[HAP_STYLE][ET_SWITCH] == AUDIO_STYLE_TONE);
 
@@ -78,11 +78,11 @@ int main()
 	g_hapticLimitKnee = 85; g_audioHapticStyle = AUDIO_STYLE_TONE;
 	for (int k = 0; k < HAP_COUNT; k++) for (int et = 0; et < ET_COUNT; et++) g_typeHaptic[k][et] = 0;
 	g_typeHaptic[HAP_STYLE][ET_SWITCH] = AUDIO_STYLE_TONE; g_typeHaptic[HAP_STYLE][ET_XBOX] = AUDIO_STYLE_WAVE;
-	g_typeHaptic[HAP_STYLE][ET_DS4] = AUDIO_STYLE_WAVE; g_typeHaptic[HAP_CLICK][ET_SWITCH] = 9; g_typeHaptic[HAP_CLICK][ET_DS5] = 9;
+	g_typeHaptic[HAP_STYLE][ET_DS4] = AUDIO_STYLE_WAVE; g_typeHaptic[HAP_CLICK][ET_SWITCH] = 26; g_typeHaptic[HAP_CLICK][ET_DS5] = 26;
 	load(old);
 	assert(g_typeHaptic[HAP_KNEE][ET_SWITCH] == 85 && g_typeHaptic[HAP_KNEE][ET_DS5] == 85);
 	assert(g_typeHaptic[HAP_STYLE][ET_DS5] == AUDIO_STYLE_TONE && g_typeHaptic[HAP_STYLE][ET_SWITCH] == AUDIO_STYLE_TONE);
-	assert(g_typeHaptic[HAP_CLICK][ET_SWITCH] == 9 && g_typeHaptic[HAP_TICK][ET_SWITCH] == 0);
+	assert(g_typeHaptic[HAP_CLICK][ET_SWITCH] == 26 && g_typeHaptic[HAP_TICK][ET_SWITCH] == 0);
 	// a saved grid wins, value by value; an out-of-range entry falls back
 	Cfg saved_cfg = old;
 	saved_cfg.typeHaptic[HAP_KNEE][ET_SWITCH] = 60; saved_cfg.typeHaptic[HAP_STYLE][ET_SWITCH] = AUDIO_STYLE_RUMBLE;
@@ -100,24 +100,27 @@ int main()
 	assert(field(120 + 4 * HAP_KNEE + ET_XBOX, 90) && g_typeHaptic[HAP_KNEE][ET_XBOX] == xboxKnee); // that type has no limiter
 	assert(!field(119, 1) && !field(120 + 4 * HAP_COUNT, 1));
 
-	// the click pulse's gain byte: the strength every type has always had is 0xF7, and no valid strength is gain byte 0
+	// the click pulse's gain byte: the default is +7 dB, and no valid strength is gain byte 0
 	// (the legacy haptic stop)
-	g_padClickAtten = PAD_CLICK_ATTEN_DEFAULT; assert(padClickGain() == 0xF7);
-	for (int a = PAD_CLICK_ATTEN_MIN; a <= PAD_CLICK_ATTEN_MAX; a++) { g_padClickAtten = (uint8_t)a; assert(padClickGain() != 0 && (int8_t)padClickGain() == -a); }
-	// a movement-tick level is written once per connect episode, again when it changes, and never for 0 (leave the controller's)
+	g_padClick = PAD_CLICK_DEFAULT; assert(padClickGain() == 0x07);
+	assert(padClickGainDb(0) == -20 && padClickGainDb(19) == -1 && padClickGainDb(20) == 1 && padClickGainDb(31) == 12);
+	for (int a = PAD_CLICK_MIN; a <= PAD_CLICK_MAX; a++) { g_padClick = (uint8_t)a; assert(padClickGain() != 0 && (int8_t)padClickGain() == padClickGainDb((uint8_t)a)); }
+	assert(padTickSpacing(1) == 11000 && padTickSpacing(2) == 5500 && padTickSpacing(4) == 1500);
+	g_padTickGain = PAD_TICKGAIN_DEFAULT; assert(padTickGain() == 0xF7);
+	g_padTickGain = 31; assert((int8_t)padTickGain() == 12);
+	// the controller's own ticks are pushed out of reach once when the puck plays them, and handed back when it stops
 	uint8_t landed = 0xFF;
-	assert(!padTickDue(0, &landed) && landed == 0xFF);
-	assert(padTickDue(2, &landed) && landed == 2 && !padTickDue(2, &landed));
-	assert(padTickDue(3, &landed) && landed == 3);
-	assert(!padTickDue(0, &landed) && landed == 3);
-	landed = 0xFF; assert(padTickDue(3, &landed));
+	assert(padTickCtrlDue(0, &landed) == PAD_CTRL_GIVE && landed == 0 && padTickCtrlDue(0, &landed) == PAD_CTRL_NONE);
+	assert(padTickCtrlDue(2, &landed) == PAD_CTRL_TAKE && landed == 1 && padTickCtrlDue(3, &landed) == PAD_CTRL_NONE);
+	assert(padTickCtrlDue(0, &landed) == PAD_CTRL_GIVE && landed == 0 && padTickCtrlDue(0, &landed) == PAD_CTRL_NONE);
+	landed = 0xFF; assert(padTickCtrlDue(2, &landed) == PAD_CTRL_TAKE);
 
 	// the status blob carries the grid from byte 216, setting-major
-	uint8_t p[232]; memset(p, 0xEE, sizeof p);
+	uint8_t p[236]; memset(p, 0xEE, sizeof p);
 	for (int k = 0; k < HAP_COUNT; k++) for (int et = 0; et < ET_COUNT; et++) g_typeHaptic[k][et] = (uint8_t)(10 * k + et);
 	blobFill(p);
 	for (int k = 0; k < HAP_COUNT; k++) for (int et = 0; et < ET_COUNT; et++) assert(p[216 + 4 * k + et] == 10 * k + et);
-	assert(p[231] == 33 && p[211] == 0xEE); // the last byte of the grid; the strength bytes below it are not part of it
+	assert(p[235] == 43 && p[211] == 0xEE); // the last byte of the grid; the strength bytes below it are not part of it
 	return 0;
 }
 '''

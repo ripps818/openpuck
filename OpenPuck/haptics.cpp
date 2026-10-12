@@ -1428,6 +1428,24 @@ void hapticTestRumble()
 		g_rumbleTestStop = 1;
 }
 
+// Take over (or hand back) the controller's own movement ticks and clicks, see padTickCtrlDue
+static void padCtrlWrite(uint8_t slot, bool take)
+{
+	const uint16_t sp = take ? PAD_TICK_CTRL_OFF : PAD_TICK_CTRL_DEFAULT;
+	const uint16_t cl = take ? PAD_CLICK_CTRL_OFF : PAD_CLICK_CTRL_DEFAULT;
+	const uint8_t set[9] = { SETTING_TRACKPAD_TICK_SPACING,
+				 (uint8_t)sp,
+				 (uint8_t)(sp >> 8),
+				 SETTING_LEFT_TRACKPAD_CLICK_PRESSURE,
+				 (uint8_t)cl,
+				 (uint8_t)(cl >> 8),
+				 SETTING_RIGHT_TRACKPAD_CLICK_PRESSURE,
+				 (uint8_t)cl,
+				 (uint8_t)(cl >> 8) };
+	relayEnqueue(IBEX_CMD_SET_SETTINGS_VALUES, set, sizeof set, false,
+		     slot);
+}
+
 void hapticTask()
 {
 	hapticHdTask();
@@ -1471,7 +1489,7 @@ void hapticTask()
 		static unsigned long lastKeep[NSLOT] = { 0 };
 		static bool landedAuto[NSLOT] = { false };
 		static bool landedImu[NSLOT] = { false };
-		// last movement-tick level written to each controller (0xFF = none yet this connect episode)
+		// 1 = the controller's own ticks and clicks are taken over, 0 = given back, 0xFF = nothing written this connect episode
 		static uint8_t landedTick[NSLOT] = { 0xFF, 0xFF, 0xFF, 0xFF };
 		static const uint8_t DATA_LIZARD_OFF[3] = { SETTING_LIZARD_MODE,
 							    0x00, 0x00 };
@@ -1513,21 +1531,14 @@ void hapticTask()
 							sizeof DATA_LIZARD_ON,
 							false, (uint8_t)s);
 					}
-					// 0 = leave the controller's level; it can't be restored once written, only by the
-					// controller reconnecting
-					if (padTickDue(g_padTick,
-						       &landedTick[s])) {
-						const uint8_t tick[3] = {
-							SETTING_HAPTIC_INTENSITY_MOUSE_MODE,
-							(uint8_t)(g_padTick -
-								  1),
-							0x00
-						};
-						relayEnqueue(
-							IBEX_CMD_SET_SETTINGS_VALUES,
-							tick, sizeof tick,
-							false, (uint8_t)s);
-					}
+					// a tick level makes the puck play the movement ticks and the clicks, so the
+					// controller's own are taken out of the way; level 0 gives them back
+					const uint8_t due = padTickCtrlDue(
+						g_padTick, &landedTick[s]);
+					if (due != PAD_CTRL_NONE)
+						padCtrlWrite(
+							(uint8_t)s,
+							due == PAD_CTRL_TAKE);
 				} else {
 					landedAuto[s] = false;
 					landedTick[s] = 0xFF;
@@ -1543,11 +1554,31 @@ void hapticTask()
 						(uint8_t)s);
 				}
 			}
+		} else {
+			// back in a puck mode: hand the controller's own ticks and clicks back once per connect, in case
+			// an emulated mode took them over and the controller kept the settings
+			static bool landedGive[NSLOT] = { false };
+			for (int s = 0; s < NSLOT; s++) {
+				if (!g_slot[s].used || !hapticLinkUp(s))
+					landedGive[s] = false;
+				else if (!landedGive[s]) {
+					landedGive[s] = true;
+					padCtrlWrite((uint8_t)s, false);
+				}
+			}
 		} // !modeIsPuck
 	}
+	// Trackpad haptics On with a tick level: the puck plays the movement ticks itself, so their strength is ours
+	if (g_padHaptics == PAD_HAPTICS_ON && g_padTick &&
+	    !modeIsPuck(g_usbMode))
+		for (uint8_t s = 0; s < NSLOT; s++)
+			if (g_slot[s].used)
+				padTickMove(s);
 	// Clicks-only trackpad haptics: id9 is held at 0 above (no movement ticks), so the puck pulses each
-	// click itself. The PlayStation builders also feed padClickEdge; it fires once per rising edge.
-	if (g_padHaptics == PAD_HAPTICS_CLICK && !modeIsPuck(g_usbMode))
+	// click itself; with puck-made ticks the controller's own click pulse is off, so it does the same. The PlayStation builders also feed padClickEdge; it fires once per rising edge.
+	if ((g_padHaptics == PAD_HAPTICS_CLICK ||
+	     (g_padHaptics == PAD_HAPTICS_ON && g_padTick)) &&
+	    !modeIsPuck(g_usbMode))
 		for (uint8_t s = 0; s < NSLOT; s++)
 			if (g_slot[s].used)
 				padClickEdge(s, shortcutHostButtons(

@@ -77,9 +77,9 @@
 #define SETTING_RIGHT_TRACKPAD_MODE 8
 #define SETTING_LIZARD_MODE 9
 #define SETTING_SMOOTH_ABSOLUTE_MOUSE 24 // 0x18
-// Trackpad tick strength while a finger moves in mouse mode. Valve's UI offers four levels (Off, Low, Medium,
-// High); the values 0..3 are assumed to map in that order and are not verified on the SC2.
-#define SETTING_HAPTIC_INTENSITY_MOUSE_MODE 41 // 0x29
+// Pad travel between movement ticks, in the controller's units (default 5500, 0..32767); the tick event itself
+// carries no gain. Setting 41 (3900, 0..25000) has no reader that the firmware decompile shows.
+#define SETTING_TRACKPAD_TICK_SPACING 14 // 0x0e
 #define SETTING_LED_USER_BRIGHTNESS 45 // 0x2d
 #define SETTING_ENABLE_RAW_JOYSTICK 46 // 0x2e
 #define SETTING_IMU_MODE 48 // 0x30

@@ -242,37 +242,74 @@ extern uint16_t g_audioSpeaker;
 //             Switch and DualSense. g_hapticLimitKnee is the active type's live copy (applyActiveType).
 //  HAP_STYLE: AUDIO_STYLE_*: how the DualSense plays its audio haptics and how the Switch plays HD rumble on the
 //             grips. Switch and DualSense. g_audioHapticStyle is the DualSense entry's live copy.
-//  HAP_CLICK: strength of the pulse the puck sends for a trackpad click, as dB below full scale, 1..30 (9 is the
-//             strength it always had). 0 dB is kept out of reach: the legacy haptic stop is a 0x82 with gain byte 0.
-//  HAP_TICK:  level of the controller's own trackpad movement ticks: 0 leaves the controller's, 1..4 write
-//             Off/Low/Medium/High.
-// The last two apply to every type.
-enum { HAP_KNEE, HAP_STYLE, HAP_CLICK, HAP_TICK, HAP_COUNT };
+//  HAP_CLICK: gain of the pulse the puck sends for a trackpad click, as a step 0..31 (padClickGainDb: -20..-1 dB,
+//             then +1..+12 dB). 0 dB is skipped: the legacy haptic stop is a 0x82 with gain byte 0.
+//  HAP_TICK:  spacing of the trackpad movement ticks while Trackpad haptics is On: 0 leaves them to the
+//             controller, which plays them at a fixed strength; 1..4 make the puck play them itself, a wider to a
+//             narrower distance apart (padTickSpacing).
+//  HAP_TICKGAIN: gain of the ticks the puck plays, in HAP_CLICK's steps.
+// The last three apply to every type.
+enum { HAP_KNEE, HAP_STYLE, HAP_CLICK, HAP_TICK, HAP_TICKGAIN, HAP_COUNT };
 #define HAPTIC_LIMIT_KNEE_DEFAULT 70u
-#define PAD_CLICK_ATTEN_MIN 1
-#define PAD_CLICK_ATTEN_DEFAULT 9
-#define PAD_CLICK_ATTEN_MAX 30
+#define PAD_CLICK_MIN 0
+#define PAD_CLICK_DEFAULT 26
+#define PAD_CLICK_MAX 31
 #define PAD_TICK_DEFAULT 0
 #define PAD_TICK_MAX 4
+#define PAD_TICKGAIN_DEFAULT 11
 extern uint8_t g_typeHaptic[HAP_COUNT][ET_COUNT];
 extern uint8_t g_hapticLimitKnee;
 // Store a value if it is in range and the type has the setting, and refresh the live mirrors.
 bool typeHapticSet(uint8_t setting, uint8_t et, uint8_t value);
 // Live copies of the active type's click strength and tick level (the defaults in puck modes)
-extern uint8_t g_padClickAtten, g_padTick;
+extern uint8_t g_padClick, g_padTick, g_padTickGain;
+// gain in dB of click step 0..31: -20..-1, then +1..+12 (Steam's own haptic range tops out at 12 dB)
+static inline int padClickGainDb(uint8_t step)
+{
+	return step < 20 ? (int)step - 20 : (int)step - 19;
+}
 // the s8 gain_db byte of a 0x82 click pulse at the active type's strength
 static inline uint8_t padClickGain(void)
 {
-	return (uint8_t)(0u - g_padClickAtten);
+	return (uint8_t)(int8_t)padClickGainDb(g_padClick);
 }
-// Whether a movement-tick level still has to be written to a controller: a level was asked for and it doesn't
-// hold it yet. landed is the last level written this connect episode (0xFF = none); a write is recorded here.
-static inline bool padTickDue(uint8_t level, uint8_t *landed)
+// the s8 gain_db byte of a 0x82 movement tick at the active type's tick strength
+static inline uint8_t padTickGain(void)
 {
-	if (!level || *landed == level)
-		return false;
-	*landed = level;
-	return true;
+	return (uint8_t)(int8_t)padClickGainDb(g_padTickGain);
+}
+// Pad travel between the ticks the puck plays, at tick level 1..4, in the trackpad's own int16 units. The widest
+// is the controller's default spacing.
+static inline uint16_t padTickSpacing(uint8_t level)
+{
+	static const uint16_t kSpacing[PAD_TICK_MAX] = { 11000, 5500, 2500,
+							 1500 };
+	return kSpacing[level - 1];
+}
+// What the puck takes over from the controller when it plays the movement ticks and the clicks itself. The
+// controller's tick spacing (its setting 14) goes to the largest value it takes, which leaves its own ticks too
+// rare to be heard under ours; its trackpad click pressure (settings 52 and 53) goes to -1, which turns off the
+// click pulse it plays by itself. The defaults are what it starts with.
+#define PAD_TICK_CTRL_DEFAULT 5500u
+#define PAD_TICK_CTRL_OFF 32767u
+#define PAD_CLICK_CTRL_DEFAULT 40u
+#define PAD_CLICK_CTRL_OFF 0xFFFFu
+enum { PAD_CTRL_NONE, PAD_CTRL_TAKE, PAD_CTRL_GIVE };
+// Whether the settings above still have to be written to a controller (PAD_CTRL_*). landed is what this connect
+// episode has done (1 = taken over, 0 = given back, 0xFF = nothing); a write is recorded here. The defaults are
+// written once on connect too: the controller keeps its settings while it is powered, so a take-over from an
+// earlier session would otherwise linger.
+static inline uint8_t padTickCtrlDue(uint8_t level, uint8_t *landed)
+{
+	if (level && *landed != 1) {
+		*landed = 1;
+		return PAD_CTRL_TAKE;
+	}
+	if (!level && *landed != 0) {
+		*landed = 0;
+		return PAD_CTRL_GIVE;
+	}
+	return PAD_CTRL_NONE;
 }
 // 1 = the active DualSense profile maps Create to the touchpad click. A view of that profile (btnmap.cpp), kept
 // for cfg.bin, the status blob and older panels; the map itself does the work.

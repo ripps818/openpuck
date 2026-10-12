@@ -40,6 +40,9 @@ void psNeutralCalib(uint8_t *buf);
 //    matching calibration so hosts that trust it land on the same numbers as hosts that fall back to raw.
 void psImuPack(uint8_t *out, const PuckInput &in);
 void padClickEdge(uint8_t slot, uint32_t clicks);
+// Play a movement tick each time a finger on either pad has travelled the active type's tick spacing. Call
+// every loop while Trackpad haptics is On with a tick level; it reads the slot's pad positions itself.
+void padTickMove(uint8_t slot);
 
 // Steam trackpad s16 coords -> absolute touch surface. TOUCH_PAD_W is split into left/right halves so both
 // pads can co-exist as two contacts on a single DualSense/DS4 touchpad.

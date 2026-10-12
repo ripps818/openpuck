@@ -2396,9 +2396,12 @@ const TYPE_DEFS = [
   {key:"DS5", name:"DS5", labels:{1:"Cross",2:"Circle",3:"Square",4:"Triangle",5:"L1",6:"R1",7:"L3",8:"R3",9:"Create",10:"Options",11:"PS",19:"L2",20:"R2",...DPAD,16:"Touchpad Click",17:"Mute"}, padTargets:PS_PADS},
 ];
 // Grip strength (percent) and haptic style a type starts with: the firmware's g_typeRumbleScaleDefault and kHapticStyleDefault
-const typeDefaults=def=>({rumble:200,style:3,click:9,tick:0,...def.haptics});
-// movement-tick level: 0 leaves the controller's own, 1..4 ask for Off/Low/Medium/High
-const PAD_TICK_LABELS=["Controller default","Off","Low","Medium","High"];
+const typeDefaults=def=>({rumble:200,style:3,click:26,tick:0,tickGain:11,...def.haptics});
+// movement-tick spacing: 0 leaves the ticks to the controller (fixed strength), 1..4 have the puck play them, a wider to a
+// narrower distance apart
+const PAD_TICK_LABELS=["Controller's own","Sparse","Normal","Dense","Densest"];
+// click step 0..31 to dB (mirror of firmware padClickGainDb): -20..-1, then +1..+12; 0 dB is the legacy haptic stop
+const clickDb=step=>step<20?step-20:step-19;
 // Which emulated type a USB mode belongs to (mirror of firmware etypeForMode); -1 = puck mode (no type).
 function etypeForMode(m){ switch(m){case 1:case 10:return 0; case 2:case 4:return 1; case 6:case 8:case 9:return 2; case 5:case 7:return 3; default:return -1;} }
 // the firmware's back[] order; each label is the paddle glyph (full name on hover) plus its short name
@@ -2468,7 +2471,8 @@ function typeResetFields(et){
   const key=TYPE_DEFS[et].key, sw=key==="SWITCH", ds5=key==="DS5", b=40+et*9;
   const f=[[b,5,0],[b+1,6,0],[b+2,7,0],[b+3,8,0],[b+4,sw?18:0,0],[b+5,sw?1:0,0],[b+6,sw?0:1,0],[b+7,0,0],[b+8,1,0],
     [PAD_STICK_FIELD0+et*2,0,20],[PAD_STICK_FIELD0+et*2+1,0,20],[108+et,typeDefaults(TYPE_DEFS[et]).rumble/2,25],
-    [hapField(HAP.CLICK,et),typeDefaults(TYPE_DEFS[et]).click,30],[hapField(HAP.TICK,et),typeDefaults(TYPE_DEFS[et]).tick,30]];
+    [hapField(HAP.CLICK,et),typeDefaults(TYPE_DEFS[et]).click,30],[hapField(HAP.TICK,et),typeDefaults(TYPE_DEFS[et]).tick,30],
+    [hapField(HAP.TICKGAIN,et),typeDefaults(TYPE_DEFS[et]).tickGain,30]];
   // firmware before protocol 30 has one limiter for both types, and the style only on the DualSense
   const perType=S.lastP && S.lastP[0]>=30;
   if(sw||ds5) f.push(perType ? [hapField(HAP.KNEE,et),70,30] : [115,70,27]);
@@ -2507,12 +2511,12 @@ async function resetTypeDefaults(et){
   }finally{ mapResetBusy=false; $("#mapReset").disabled=false; }
 }
 // Strength is sent as percent/2 (field 22), so every value here must be even.
-// Protocol 30 keeps four settings per controller type in one grid (firmware HAP_* in config.h): WebUSB field
+// Protocol 30 keeps five settings per controller type in one grid (firmware HAP_* in config.h): WebUSB field
 // 120 + 4 * setting + type, status blob byte 216 + 4 * setting + type (index 214 + ... here, the header being cut).
 // The release before it (29) has one limiter for all types (field 115) and the style on the DualSense only (field 88).
-const HAP={KNEE:0,STYLE:1,CLICK:2,TICK:3};
+const HAP={KNEE:0,STYLE:1,CLICK:2,TICK:3,TICKGAIN:4};
 // per setting, in HAP order: the backup key and its range
-const HAP_KEYS=[["limiter",50,100],["hapticStyle",0,3],["padClick",1,30],["padTick",0,4]];
+const HAP_KEYS=[["limiter",50,100],["hapticStyle",0,3],["padClick",0,31],["padTick",0,4],["padTickGain",0,31]];
 const hapField=(k,et)=>120+4*k+et;
 const hapValue=(p,k,et)=>p[214+4*k+et];
 const perTypeHaptics=()=>!!(S.lastP && S.lastP[0]>=30);
@@ -2586,23 +2590,27 @@ function initTypes(){
       for(const [v,lbl] of [[1,"On"],[2,"Clicks only"],[0,"Off"]]){ const o=document.createElement("option"); o.value=v; o.textContent=lbl; pad.appendChild(o); }
       row(gPad,"Trackpad haptics",pad);
       pad.addEventListener("change",()=>setField(40+et*9+6, +pad.value));
-      // Click strength (protocol v30): dB below full. The slider runs weak -> strong, so its position is 31 - dB.
-      // Movement ticks are the controller's own; the slider picks the level it plays them at, 0 = leave it alone.
+      // Click strength (protocol v30): the slider position is the firmware's step, weak -> strong.
+      // Movement ticks: the controller plays its own at a fixed strength (spacing 0); any other spacing has the puck play them at the tick strength.
       { const gHap=document.createElement("div"); gHap.className="hide";
-        const click=document.createElement("input"); click.type="range"; click.min=1; click.max=30; click.step=1;
+        const click=document.createElement("input"); click.type="range"; click.min=0; click.max=31; click.step=1;
         const clickV=document.createElement("span"); clickV.className="val";
-        const fmtClick=pos=>{ const db=31-pos; return "-"+db+" dB"+(db===typeDefaults(def).click?" (default)":""); };
+        const fmtClick=(pos,key="click")=>{ const db=clickDb(pos); return (db>0?"+":"")+db+" dB"+(pos===typeDefaults(def)[key]?" (default)":""); };
         click.addEventListener("input",()=>{ clickV.textContent=fmtClick(+click.value); });
-        click.addEventListener("change",()=>setField(hapField(HAP.CLICK,et), 31-(+click.value)));
+        click.addEventListener("change",()=>setField(hapField(HAP.CLICK,et), +click.value));
         const tick=document.createElement("input"); tick.type="range"; tick.min=0; tick.max=4; tick.step=1;
         const tickV=document.createElement("span"); tickV.className="val";
         tick.addEventListener("input",()=>{ tickV.textContent=PAD_TICK_LABELS[+tick.value]; });
         tick.addEventListener("change",()=>setField(hapField(HAP.TICK,et), +tick.value));
+        const tickG=document.createElement("input"); tickG.type="range"; tickG.min=0; tickG.max=31; tickG.step=1;
+        const tickGV=document.createElement("span"); tickGV.className="val";
+        tickG.addEventListener("input",()=>{ tickGV.textContent=fmtClick(+tickG.value,"tickGain"); });
+        tickG.addEventListener("change",()=>setField(hapField(HAP.TICKGAIN,et), +tickG.value));
         const note=document.createElement("p"); note.className="note";
-        note.textContent="Click strength applies to the clicks the puck sends itself: Clicks only, the PlayStation modes and the Switch D-pad click feedback. Movement ticks are played by the controller; this asks it for a level and only applies with Trackpad haptics On. Controller default leaves it alone, and going back to it takes effect when the controller reconnects. The tick levels are untested on the Steam Controller 2.";
-        gHap.append(row(gPad,"Click strength",click,clickV),row(gPad,"Movement ticks",tick,tickV),note);
+        note.textContent="Click strength applies to the clicks the puck sends itself: Clicks only, the PlayStation modes and the Switch D-pad click feedback. Movement ticks only play with Trackpad haptics On. The controller plays its own ticks and clicks at a fixed strength; choose a spacing and the puck plays both instead, ticks at the Tick strength and clicks at the Click strength, pausing the ticks around a click. Back on Controller's own they return at once. Clicks only has no ticks. Tick spacing and strength are untested on the Steam Controller 2.";
+        gHap.append(row(gPad,"Click strength",click,clickV),row(gPad,"Tick spacing",tick,tickV),row(gPad,"Tick strength",tickG,tickGV),note);
         gPad.appendChild(gHap);
-        Object.assign(rec,{padHap:gHap,padClick:click,padClickV:clickV,padClickFmt:fmtClick,padTick:tick,padTickV:tickV}); }
+        Object.assign(rec,{padHap:gHap,padClick:click,padClickV:clickV,padClickFmt:fmtClick,padTick:tick,padTickV:tickV,padTickG:tickG,padTickGV:tickGV}); }
       // the Xbox pointer's speed is one setting shared with Lizard mode: setTab() moves its card in or out of here
       if(def.key==="XBOX"){ rec.mouseHost=document.createElement("div"); rec.mouseHost.className="pad-mouse"; gPad.appendChild(rec.mouseHost); }
       // rumble on/off, grip strength, grip limiter
@@ -4090,13 +4098,14 @@ function applyBlob(p){
         rec.limiterWrap.classList.toggle("hide",!cap);
         if(cap && document.activeElement!==rec.limiter) rec.limiter.value=perType?hapValue(p,HAP.KNEE,et):p[207];
       }
-      // v30: per-type click strength / movement-tick level. Click needs Trackpad haptics on or clicks-only, ticks need On.
+      // v30: per-type click strength and movement-tick spacing / strength. Click needs Trackpad haptics on or clicks-only, ticks need On.
       rec.padHap.classList.toggle("hide", !perType);
       if(perType){
-        const click=hapValue(p,HAP.CLICK,et), tick=hapValue(p,HAP.TICK,et);
-        if(!held(rec.padClick)){ rec.padClick.value=31-click; rec.padClickV.textContent=rec.padClickFmt(31-click); }
+        const click=hapValue(p,HAP.CLICK,et), tick=hapValue(p,HAP.TICK,et), tickG=hapValue(p,HAP.TICKGAIN,et)??11;
+        if(!held(rec.padClick)){ rec.padClick.value=click; rec.padClickV.textContent=rec.padClickFmt(click); }
         if(!held(rec.padTick)){ rec.padTick.value=tick; rec.padTickV.textContent=PAD_TICK_LABELS[tick]||tick; }
-        rec.padClick.disabled=(pad===0); rec.padTick.disabled=(pad!==1);
+        if(!held(rec.padTickG)){ rec.padTickG.value=tickG; rec.padTickGV.textContent=rec.padClickFmt(tickG,"tickGain"); }
+        rec.padClick.disabled=(pad===0); rec.padTick.disabled=(pad!==1); rec.padTickG.disabled=(pad!==1||tick===0);
       }
       if(rec.hdStyle){
         rec.hdStyleWrap.classList.toggle("hide",!perType);

@@ -18,10 +18,11 @@
   is the punchiest, 50 the softest).
 - A fresh config starts the Switch tab on Tone with 100% grip strength, and the other tabs at 200% (the DS5 tab on Wave).
   A config that already has per-type strengths keeps them.
-- Trackpad click strength and Movement ticks (each tab, under Trackpads): Click strength at -1 dB must feel clearly
-  stronger than the -9 dB default, in a PlayStation mode, Clicks only, the Switch D-pad click feedback and the
-  Test haptic. Movement ticks needs Trackpad haptics On; Off/Low/Medium/High should change how the ticks feel
-  while a finger moves (the levels are untested on the SC2: report what each position does).
+- Trackpad click strength, tick spacing and tick strength (each tab, under Trackpads): Click strength at +12 dB must
+  feel clearly stronger than the +7 dB default, in a PlayStation mode, Clicks only, the Switch D-pad click feedback
+  and the Test haptic. With Trackpad haptics On, Tick spacing at Controller's own leaves the controller's ticks and
+  clicks alone; any other spacing makes the puck play both, so Tick strength and Click strength must change them,
+  the ticks must pause around a click, and the physical click must still register. Clicks only has no ticks.
 - Haptics style (Switch tab: Wave, Tone, Split, Rumble; DS5 tab: its Audio haptics card): each tab keeps its own
   across a reboot, and switching style mid-effect must stop the old style's vibration. On the Switch, play the same
   HD rumble in each style, or run `tools/switch_hd_test.py pulse`, and check nothing keeps buzzing or clicks after it ends.

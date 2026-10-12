@@ -4,14 +4,14 @@ root=Path(__file__).resolve().parents[2]
 s=(root/'OpenPuck/config.cpp').read_text()
 a=s.index('void captureFeedbackChord(');b=s.index('\nvoid applyActiveType()',a)
 hh=(root/'OpenPuck/haptics.h').read_text();hside=hh[hh.index('#define HSIDE_LPAD'):hh.index('// PCM haptic stream')]
-ch=(root/'OpenPuck/config.h').read_text();clickgain=ch[ch.index('// the s8 gain_db byte'):ch.index('// Whether a movement-tick')]
+ch=(root/'OpenPuck/config.h').read_text();clickgain=ch[ch.index('// gain in dB of click step'):ch.index('// the s8 gain_db byte of a 0x82 movement tick')]
 head='''#include <stdint.h>
 #include <cassert>
 #include <initializer_list>
 #include "triton.h"
 #define NSLOT 4
 #define MODE_SW_PRO 4
-uint8_t g_padClickAtten=9;
+uint8_t g_padClick=26;
 uint8_t g_usbMode=MODE_SW_PRO,g_shortcutFlags=63;
 uint32_t g_gestureMask=0;
 uint8_t g_rumbleStyle=8;
@@ -43,7 +43,7 @@ int pulses=0;
 uint8_t emittedSide=0, emittedBond=0;
 bool haptic82Blocked(int){return blocked;}
 bool relayEnqueueFront(uint8_t rid,const uint8_t *p,uint8_t n,bool haptic,uint8_t slot){
- assert(rid==0x82 && n==3 && haptic && p[1]==2 && p[2]==0xF7);
+ assert(rid==0x82 && n==3 && haptic && p[1]==2 && p[2]==0x07);
  ++pulses;emittedSide=p[0];emittedBond=slot;return true;
 }
 '''

@@ -335,13 +335,14 @@ export function applyBlob(p){
         rec.limiterWrap.classList.toggle("hide",!cap);
         if(cap && document.activeElement!==rec.limiter) rec.limiter.value=perType?hapValue(p,HAP.KNEE,et):p[207];
       }
-      // v30: per-type click strength / movement-tick level. Click needs Trackpad haptics on or clicks-only, ticks need On.
+      // v30: per-type click strength and movement-tick spacing / strength. Click needs Trackpad haptics on or clicks-only, ticks need On.
       rec.padHap.classList.toggle("hide", !perType);
       if(perType){
-        const click=hapValue(p,HAP.CLICK,et), tick=hapValue(p,HAP.TICK,et);
-        if(!held(rec.padClick)){ rec.padClick.value=31-click; rec.padClickV.textContent=rec.padClickFmt(31-click); }
+        const click=hapValue(p,HAP.CLICK,et), tick=hapValue(p,HAP.TICK,et), tickG=hapValue(p,HAP.TICKGAIN,et)??11;
+        if(!held(rec.padClick)){ rec.padClick.value=click; rec.padClickV.textContent=rec.padClickFmt(click); }
         if(!held(rec.padTick)){ rec.padTick.value=tick; rec.padTickV.textContent=PAD_TICK_LABELS[tick]||tick; }
-        rec.padClick.disabled=(pad===0); rec.padTick.disabled=(pad!==1);
+        if(!held(rec.padTickG)){ rec.padTickG.value=tickG; rec.padTickGV.textContent=rec.padClickFmt(tickG,"tickGain"); }
+        rec.padClick.disabled=(pad===0); rec.padTick.disabled=(pad!==1); rec.padTickG.disabled=(pad!==1||tick===0);
       }
       if(rec.hdStyle){
         rec.hdStyleWrap.classList.toggle("hide",!perType);
