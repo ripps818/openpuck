@@ -548,7 +548,7 @@ Messages:
     DualSense audio haptics and speaker and Switch HD rumble grips; from version 30 each type has its own (below),
     field 115 still sets both the Switch's and the DualSense's, and status blob `p[209]` (payload byte 207) reports
     the active type's.
-    Per-type haptic settings (blob version >= 30): one grid of five settings by four types (Xbox, Switch, DS4, DS5).
+    Per-type haptic settings (blob version >= 30): one grid of six settings by four types (Xbox, Switch, DS4, DS5).
     Setting `k` of type `t` is field `120 + 4k + t` and status blob `p[216 + 4k + t]` (payload byte `214 + 4k + t`),
     and the config file keeps the same grid in its tail. A write that is out of range, or for a type without the
     setting, is ignored. A config from the v29 release has no grid: the limiter and the DualSense style start from
@@ -556,11 +556,18 @@ Messages:
 
     | k | setting | types | values | default |
     |---|---|---|---|---|
-    | 0 | grip limiter knee, % of full scale | Switch, DS5 | 50-100 (100 = off) | 70 |
-    | 1 | haptic style | Switch, DS5 | `0` rumble, `1` tone, `2` split, `3` wave | Switch tone, DS5 wave |
+    | 0 | grip limiter knee, % of full scale | Switch, DS5 | 50-100 (100 = off) | 85 |
+    | 1 | haptic style | Switch, DS5 | `0` rumble, `1` tone, `2` split, `3` wave | wave |
     | 2 | trackpad click gain step | all | 0-31 = -20 to -1 dB, then +1 to +12 dB (0 dB is skipped: gain byte 0 is the legacy haptic stop) | 26 (+7 dB) |
     | 3 | movement-tick spacing | all | 0 = the controller plays its own ticks, 1-4 = the puck plays them, 11000 / 5500 / 2500 / 1500 units of pad travel apart | 0 |
     | 4 | movement-tick gain step | all | as setting 2 | 11 (-9 dB) |
+    | 5 | soft boost of the grip wave stream | Switch, DS5 | `0` off, `1`-`3` raise quiet passages by up to 2× / 3× / 4× | 1 |
+
+    Soft boost is an upward compressor on the PCM stream to the grips (Wave style). It follows the louder grip's
+    peak level (instant rise, ~80 ms fall) and, below 20% of full scale, raises it 2:1 toward that level, capped
+    by the setting; louder passages pass unchanged to the limiter. Below 0.3% of full scale the boost fades out, so
+    noise in a quiet track stays quiet. The grips play down to ~0.5% of full scale in proportion (IMU), but a
+    hand barely feels a few percent. Firmware before it sends a shorter status blob (no `p[236..239]`).
 
     Ticks and clicks apply with Trackpad haptics On; Clicks only has no ticks. With a tick spacing set, the puck
     plays both as `0x82` pulses at the gains above and sets the controller's tick spacing (controller setting 14)

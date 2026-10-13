@@ -237,6 +237,31 @@ static inline float hapticSoftLimit(float y)
 	a = k + (1.0f - k) * o / (1.0f + o);
 	return y < 0 ? -a : a;
 }
+// Soft boost (HAP_LIFT, g_hapticLift): an upward compressor for the grip PCM stream. The grips play 2% of full scale
+// faithfully (IMU), but a hand barely feels it, so soft footsteps vanish. Below HAPTIC_LIFT_T the level is raised
+// 2:1 toward it, capped at 1 + level (2x / 3x / 4x); louder passages pass unchanged on to the limiter. One envelope
+// for both grips keeps the left/right balance. Below HAPTIC_LIFT_FLOOR the boost fades out, so dither and noise
+// in a quiet track stay quiet. The envelope rises at once and falls over ~80 ms at 4 kHz, slower than a cycle of
+// the lowest band, so the gain does not ripple within a wave.
+#define HAPTIC_LIFT_T 0.2f
+#define HAPTIC_LIFT_FLOOR 0.003f
+#define HAPTIC_LIFT_RELEASE 0.9969f
+struct HapticLift {
+	float env;
+};
+static inline float hapticLiftGain(HapticLift *s, float peak)
+{
+	s->env = peak > s->env ? peak : s->env * HAPTIC_LIFT_RELEASE;
+	if (!g_hapticLift || s->env >= HAPTIC_LIFT_T)
+		return 1.0f;
+	float cap = 1.0f + g_hapticLift;
+	float g = s->env > 1e-6f ? sqrtf(HAPTIC_LIFT_T / s->env) : cap;
+	if (g > cap)
+		g = cap;
+	if (s->env < HAPTIC_LIFT_FLOOR)
+		g = 1.0f + (g - 1.0f) * (s->env / HAPTIC_LIFT_FLOOR);
+	return g;
+}
 void hapticSwitchHd(uint8_t slot, uint16_t leftLow, uint16_t leftHigh,
 		    uint16_t rightLow, uint16_t rightHigh);
 

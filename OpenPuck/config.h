@@ -238,7 +238,7 @@ extern uint16_t g_audioSpeaker;
 // (typeHapticSet refuses the rest), and each has its own range. On the wire setting k of type et is WebUSB field
 // 120 + 4 * k + et and status blob byte p[216 + 4 * k + et]; the config file keeps the same grid in its tail.
 //  HAP_KNEE:  grip PCM soft-limit knee (DualSense wave/speaker, Switch HD grips), percent of full scale, 50..100
-//             (70 default). Peaks above it are rounded off toward full scale; 100 leaves only the hard clip.
+//             (85 default). Peaks above it are rounded off toward full scale; 100 leaves only the hard clip.
 //             Switch and DualSense. g_hapticLimitKnee is the active type's live copy (applyActiveType).
 //  HAP_STYLE: AUDIO_STYLE_*: how the DualSense plays its audio haptics and how the Switch plays HD rumble on the
 //             grips. Switch and DualSense. g_audioHapticStyle is the DualSense entry's live copy.
@@ -248,8 +248,18 @@ extern uint16_t g_audioSpeaker;
 //             controller, which plays them at a fixed strength; 1..4 make the puck play them itself, a wider to a
 //             narrower distance apart (padTickSpacing).
 //  HAP_TICKGAIN: gain of the ticks the puck plays, in HAP_CLICK's steps.
-// The last three apply to every type.
-enum { HAP_KNEE, HAP_STYLE, HAP_CLICK, HAP_TICK, HAP_TICKGAIN, HAP_COUNT };
+//  HAP_LIFT:  soft boost of the grip PCM stream (DualSense wave, Switch HD wave): 0 off, 1..3 raise quiet passages
+//             by up to 2x / 3x / 4x (hapticLiftGain). Switch and DualSense. g_hapticLift is the active type's copy.
+// Click, tick and tick gain apply to every type.
+enum {
+	HAP_KNEE,
+	HAP_STYLE,
+	HAP_CLICK,
+	HAP_TICK,
+	HAP_TICKGAIN,
+	HAP_LIFT,
+	HAP_COUNT
+};
 // Measured on the controller's IMU (Switch HD and DualSense wave), the grips stay linear to ~0.7 of full scale
 // and ease off toward it: a knee of 85 costs no measurable strength, 70 loses 3-5% near the top
 #define HAPTIC_LIMIT_KNEE_DEFAULT 85u
@@ -259,8 +269,11 @@ enum { HAP_KNEE, HAP_STYLE, HAP_CLICK, HAP_TICK, HAP_TICKGAIN, HAP_COUNT };
 #define PAD_TICK_DEFAULT 0
 #define PAD_TICK_MAX 4
 #define PAD_TICKGAIN_DEFAULT 11
+#define HAPTIC_LIFT_DEFAULT 1
+#define HAPTIC_LIFT_MAX 3
 extern uint8_t g_typeHaptic[HAP_COUNT][ET_COUNT];
 extern uint8_t g_hapticLimitKnee;
+extern uint8_t g_hapticLift;
 // Store a value if it is in range and the type has the setting, and refresh the live mirrors.
 bool typeHapticSet(uint8_t setting, uint8_t et, uint8_t value);
 // Live copies of the active type's click strength and tick level (the defaults in puck modes)
