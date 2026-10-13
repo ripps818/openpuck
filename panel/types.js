@@ -256,7 +256,7 @@ export function initTypes(){
       // same order on the Switch and DS5 tabs. A Switch game sends one signal, HD rumble, so its haptics strength is
       // the grip rumble strength. A DualSense game sends motor rumble and audio haptics apart, each with its own.
       const gRum=group("Rumble");
-      // one grid cell for Rumble and the small cards under it, so they stack at any column count
+      // one grid cell for Rumble and the small cards under it (Adaptive triggers, Lights), so they stack at any column count
       const stack=document.createElement("div"); stack.className="stack"; gRum.before(stack); stack.append(gRum);
       const rumble=toggle(gRum,"Rumble","on");
       const sw=def.key==="SWITCH", ds5=def.key==="DS5";
@@ -347,7 +347,7 @@ export function initTypes(){
         rec.trig=sel; rec.trigWrap=gTrig;
       }
       // LED brightness
-      { const gLed=group("Lights");
+      { const gLed=group("Lights"); stack.append(gLed);
         const sl=document.createElement("input"); sl.type="range"; sl.min=0; sl.max=100; sl.step=5;
         const vspan=document.createElement("span"); vspan.className="val";
         row(gLed,"LED brightness",sl,vspan);
@@ -375,7 +375,7 @@ export function initTypes(){
       rec.abSwap=ab; rec.pad=pad; rec.rumble=rumble;
       // Switch Pro-only settings get their own card on the Switch profile
       if(def.key==="SWITCH"){
-        const g=group("Switch Pro mode only"); g.classList.add("span");
+        const g=group("Switch Pro mode only"); g.classList.add("span"); gPad.after(g);
         for(const id of ["qamSelectRow","swGyroMapBlock","swGyroOld"]) g.appendChild(document.getElementById(id));
         // the D-pad click feedback and the HD trackpad strength belong with the trackpads
         for(const id of ["swClickControls","hdPadBlock"]) gPad.appendChild(document.getElementById(id));
