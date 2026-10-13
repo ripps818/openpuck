@@ -54,9 +54,9 @@ static void blobFill(uint8_t *p)
 ''' + blob + '''}
 int main()
 {
-	// defaults: Switch on tones, the rest on wave; 70% limiter, -9 dB click, ticks left to the controller
+	// defaults: Switch on tones, the rest on wave; 85% limiter, -9 dB click, ticks left to the controller
 	for (int et = 0; et < ET_COUNT; et++) {
-		assert(g_typeHaptic[HAP_KNEE][et] == 70 && g_typeHaptic[HAP_CLICK][et] == 26 && g_typeHaptic[HAP_TICK][et] == 0 && g_typeHaptic[HAP_TICKGAIN][et] == 11);
+		assert(g_typeHaptic[HAP_KNEE][et] == 85 && g_typeHaptic[HAP_CLICK][et] == 26 && g_typeHaptic[HAP_TICK][et] == 0 && g_typeHaptic[HAP_TICKGAIN][et] == 11);
 		assert(g_typeHaptic[HAP_STYLE][et] == (et == ET_SWITCH ? AUDIO_STYLE_TONE : AUDIO_STYLE_WAVE));
 	}
 	// the setter takes in-range values for the types that have the setting, and refreshes the live copies
@@ -70,7 +70,7 @@ int main()
 	assert(!typeHapticSet(HAP_KNEE, ET_SWITCH, 49) && !typeHapticSet(HAP_KNEE, ET_SWITCH, 101));
 	assert(!typeHapticSet(HAP_STYLE, ET_SWITCH, 4) && !typeHapticSet(HAP_CLICK, ET_SWITCH, 32) && !typeHapticSet(HAP_CLICK, ET_SWITCH, 255) && !typeHapticSet(HAP_TICK, ET_SWITCH, 5) && !typeHapticSet(HAP_TICKGAIN, ET_SWITCH, 32));
 	assert(!typeHapticSet(HAP_COUNT, ET_SWITCH, 1) && !typeHapticSet(HAP_KNEE, ET_COUNT, 70));
-	assert(applied == 0 && g_typeHaptic[HAP_KNEE][ET_XBOX] == 70 && g_typeHaptic[HAP_STYLE][ET_SWITCH] == AUDIO_STYLE_TONE);
+	assert(applied == 0 && g_typeHaptic[HAP_KNEE][ET_XBOX] == 85 && g_typeHaptic[HAP_STYLE][ET_SWITCH] == AUDIO_STYLE_TONE);
 
 	// a v29 file has none of the grid (0xFF): the limiter and the DualSense style come from the shared values
 	// the older file kept, everything else keeps its default

@@ -250,7 +250,9 @@ extern uint16_t g_audioSpeaker;
 //  HAP_TICKGAIN: gain of the ticks the puck plays, in HAP_CLICK's steps.
 // The last three apply to every type.
 enum { HAP_KNEE, HAP_STYLE, HAP_CLICK, HAP_TICK, HAP_TICKGAIN, HAP_COUNT };
-#define HAPTIC_LIMIT_KNEE_DEFAULT 70u
+// Measured on the controller's IMU (Switch HD and DualSense wave), the grips stay linear to ~0.7 of full scale
+// and ease off toward it: a knee of 85 costs no measurable strength, 70 loses 3-5% near the top
+#define HAPTIC_LIMIT_KNEE_DEFAULT 85u
 #define PAD_CLICK_MIN 0
 #define PAD_CLICK_DEFAULT 26
 #define PAD_CLICK_MAX 31
