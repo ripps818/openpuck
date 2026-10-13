@@ -69,6 +69,7 @@ uint16_t g_audioSpeaker = 0;
 uint8_t g_hapticLimitKnee = HAPTIC_LIMIT_KNEE_DEFAULT;
 uint8_t g_hapticLift = HAPTIC_LIFT_DEFAULT;
 uint8_t g_trigHaptics = TRIG_HAPTICS_DEFAULT;
+uint8_t g_dpadClick = DPAD_CLICK_DEFAULT;
 uint8_t g_padClick = PAD_CLICK_DEFAULT;
 uint8_t g_padTick = PAD_TICK_DEFAULT;
 uint8_t g_padTickGain = PAD_TICKGAIN_DEFAULT;
@@ -101,6 +102,9 @@ uint8_t g_typeHaptic[HAP_COUNT][ET_COUNT] = {
 	/* HAP_TRIG */
 	{ TRIG_HAPTICS_DEFAULT, TRIG_HAPTICS_DEFAULT, TRIG_HAPTICS_DEFAULT,
 	  TRIG_HAPTICS_DEFAULT },
+	/* HAP_DPAD */
+	{ DPAD_CLICK_DEFAULT, DPAD_CLICK_DEFAULT, DPAD_CLICK_DEFAULT,
+	  DPAD_CLICK_DEFAULT },
 };
 struct TypeHapticSpec {
 	uint8_t min, max;
@@ -114,11 +118,20 @@ static const TypeHapticSpec kTypeHaptic[HAP_COUNT] = {
 	/* HAP_TICKGAIN */ { PAD_CLICK_MIN, PAD_CLICK_MAX, 0xF },
 	/* HAP_LIFT  */ { 0, HAPTIC_LIFT_MAX, (1u << ET_SWITCH) | (1u << ET_DS5) },
 	/* HAP_TRIG  */ { 0, TRIG_HAPTICS_BOTH, 1u << ET_DS5 },
+	/* HAP_DPAD  */ { 0, 1, 0xF },
 };
 static bool typeHapticInRange(uint8_t setting, uint8_t value)
 {
 	return value >= kTypeHaptic[setting].min &&
 	       value <= kTypeHaptic[setting].max;
+}
+bool typeQamSelectSet(uint8_t et, uint8_t value)
+{
+	if (et >= ET_COUNT || value > QAM_SELECT_MAX)
+		return false;
+	g_typeQamSelect[et] = value;
+	applyActiveType();
+	return true;
 }
 bool typeHapticSet(uint8_t setting, uint8_t et, uint8_t value)
 {
@@ -134,8 +147,9 @@ uint8_t g_createAsTouch = 0;
 uint8_t g_trigInner = 0, g_trigOuter = 100;
 uint8_t g_ledBright = 0;
 
-uint8_t g_swDpadHaptics = 1;
-uint8_t g_swQamSelect = 18;
+// no type has a target until one is chosen, and the chord does nothing without one
+uint8_t g_typeQamSelect[ET_COUNT] = { 0, 0, 0, 0 };
+uint8_t g_qamSelect = 0;
 // Default = the original shortcut arrangement: all four back buttons, controller modes, no D-pad haptic
 // shortcuts, no confirmation pulses, no Quick Access + Select capture.
 uint8_t g_shortcutFlags = SHORTCUT_ENABLED;
@@ -159,8 +173,7 @@ void captureFeedbackChord(uint8_t slot, uint32_t buttons)
 	static bool held[NSLOT] = {};
 	if (slot >= NSLOT)
 		return;
-	bool active = g_usbMode == MODE_SW_PRO && g_swQamSelect &&
-		      (g_shortcutFlags & SHORTCUT_CAPTURE) &&
+	bool active = g_qamSelect &&
 		      (buttons & (TB_QAM | TB_MENU)) == (TB_QAM | TB_MENU);
 	if (active && !held[slot])
 		hapticShortcutFeedback(slot, 1);
@@ -177,6 +190,7 @@ void applyActiveType()
 		g_back[2] = 7;
 		g_back[3] = 8;
 		g_qamMap = 0;
+		g_qamSelect = 0;
 		g_abSwap = 0;
 		g_padHaptics = 1;
 		g_rumble = 1;
@@ -206,6 +220,8 @@ void applyActiveType()
 	g_hapticLimitKnee = g_typeHaptic[HAP_KNEE][g_etype];
 	g_hapticLift = g_typeHaptic[HAP_LIFT][g_etype];
 	g_trigHaptics = g_typeHaptic[HAP_TRIG][ET_DS5];
+	g_qamSelect = g_typeQamSelect[g_etype];
+	g_dpadClick = g_typeHaptic[HAP_DPAD][g_etype];
 	g_audioHapticStyle = g_typeHaptic[HAP_STYLE][ET_DS5];
 	g_padClick = g_typeHaptic[HAP_CLICK][g_etype];
 	g_padTick = g_typeHaptic[HAP_TICK][g_etype];
@@ -274,6 +290,9 @@ struct Cfg {
 	// per-type haptic settings, g_typeHaptic's grid. 0xFF or out of range (an older file) -> the default, with the
 	// limiter and the DualSense style taken from the legacy shared ext bytes 14 and 11
 	uint8_t typeHaptic[HAP_COUNT][ET_COUNT];
+	// per-type Quick Access + Select target, g_typeQamSelect. 0xFF (older file) -> the Switch's from swQamSelect
+	// when its enable switch was on, the rest none
+	uint8_t typeQamSelect[ET_COUNT];
 }; // rsvd0 = ex-padSmooth, now the one-shot debug-CDC arm
 
 // Shortest cfg.bin we still accept: the layout as of CFG_MAGIC 0xCF, i.e. everything before the appended tail.
@@ -354,14 +373,14 @@ void saveCfg()
 		  g_suspendOff,
 		  {},
 		  {},
-		  g_swDpadHaptics,
+		  g_typeHaptic[HAP_DPAD][ET_SWITCH],
 		  (uint8_t)(g_hdPadScale / 2),
 		  { 0xFF, 0xFF },
 		  0xFF,
 		  { 0xFF, 0xFF },
 		  0xFF,
 		  0xFF,
-		  g_swQamSelect,
+		  g_typeQamSelect[ET_SWITCH],
 		  g_shortcutFlags };
 	memcpy(c.ext, g_cfgExt, sizeof c.ext);
 	c.createAsTouch = g_createAsTouch;
@@ -372,6 +391,7 @@ void saveCfg()
 		c.typeRumbleScale2[i] = (uint8_t)(g_typeRumbleScale[i] / 2);
 		for (int k = 0; k < HAP_COUNT; k++)
 			c.typeHaptic[k][i] = g_typeHaptic[k][i];
+		c.typeQamSelect[i] = g_typeQamSelect[i];
 		c.padStick[i][0] = g_padStickCfg[i][0];
 		c.padStick[i][1] = g_padStickCfg[i][1];
 	}
@@ -552,9 +572,10 @@ void loadCfg()
 				g_typeHaptic[k][et] = g_hapticLimitKnee;
 			else if (k == HAP_STYLE && et == ET_DS5)
 				g_typeHaptic[k][et] = g_audioHapticStyle;
+			else if (k == HAP_DPAD && et == ET_SWITCH &&
+				 c.swDpadHaptics <= 1)
+				g_typeHaptic[k][et] = c.swDpadHaptics;
 		}
-	if (c.swDpadHaptics <= 1)
-		g_swDpadHaptics = c.swDpadHaptics;
 	if (c.hdPadScale2 <= 250)
 		g_hdPadScale = (uint16_t)c.hdPadScale2 * 2;
 	// per-type grip strength; a file from before it seeds every type with the legacy global value, unless that
@@ -568,8 +589,17 @@ void loadCfg()
 						g_typeRumbleScaleDefault[et] :
 						g_rumbleScale;
 	}
-	if (c.swQamSelect <= 20)
-		g_swQamSelect = c.swQamSelect;
+	for (uint8_t et = 0; et < ET_COUNT; et++) {
+		if (c.typeQamSelect[et] <= QAM_SELECT_MAX)
+			g_typeQamSelect[et] = c.typeQamSelect[et];
+		// the shortcut was Switch-only and needed its enable switch: a file from then keeps the Switch's target
+		// only if that switch was on
+		else if (et == ET_SWITCH && c.shortcutFlags <= 63 &&
+			 (c.shortcutFlags & SHORTCUT_CAPTURE))
+			g_typeQamSelect[et] = c.swQamSelect <= QAM_SELECT_MAX ?
+						      c.swQamSelect :
+						      18;
+	}
 	// bits 1 and 2 were the removed profiles and D-pad haptic shortcut behaviors
 	if (c.shortcutFlags <= 63)
 		g_shortcutFlags = c.shortcutFlags & ~6u;

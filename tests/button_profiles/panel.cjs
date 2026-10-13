@@ -144,14 +144,32 @@ for(let et=0;et<4;et++){
 }
 const touch=(et,pad)=>[...typeEls[et].padStick[pad].options].map(o=>o.textContent);
 // Disabled is offered where the pad's own use is something (touchpad, mouse); an Off pad already does nothing
-assert.deepEqual(touch(0,0),['Off','Left stick','Right stick']);assert.deepEqual(touch(0,1),['Mouse','Disabled','Left stick','Right stick']);
-assert.deepEqual(touch(2,0),['Touchpad, left half','Disabled','Left stick','Right stick']);assert.deepEqual(touch(3,1),['Touchpad, right half','Disabled','Left stick','Right stick']);
+// every type offers the trackpad as a D-pad
+const DP=['D-pad on touch','D-pad on click'];
+assert.deepEqual(touch(0,0),['Off','Left stick','Right stick',...DP]);assert.deepEqual(touch(0,1),['Mouse','Disabled','Left stick','Right stick',...DP]);
+assert.deepEqual(touch(2,0),['Touchpad, left half','Disabled','Left stick','Right stick',...DP]);assert.deepEqual(touch(3,1),['Touchpad, right half','Disabled','Left stick','Right stick',...DP]);
 assert(!touch(1,0).includes('Disabled')&&!touch(1,1).includes('Disabled'));
-assert.deepEqual(touch(1,1),['Off','Left stick','Right stick','D-pad on touch (Switch Pro)','D-pad on click (Switch Pro)']);
+assert.deepEqual(touch(1,1),['Off','Left stick','Right stick',...DP]);
 // a click can only act as what the type's mode does with it: the mouse on Xbox, the touchpad on PlayStation, nothing on Switch
 const padT=et=>[...rec(et).sources[20].options].filter(o=>+o.value>=21).map(o=>o.value+'='+o.textContent+'|'+o.dataset.glyph);
 assert.deepEqual(padT(0),['21=Mouse right click|mouseR','22=Mouse left click|mouseL']);
 assert.deepEqual(padT(1),[]);
+// Quick Access + Select: a target per controller type in the Button map card, from the status blob's p[248 + type]
+{const qs=et=>rec(et).qamSelect,rowShown=et=>!qs(et).closest('.row').classList.contains('hide');
+ assert([0,1,2,3].every(et=>!rowShown(et)),'hidden on a blob without it');
+ while(p.length<250)p.push(0);p[246]=0;p[247]=18;p[248]=10;p[249]=0;await apply();
+ assert([0,1,2,3].every(rowShown));assert.deepEqual([0,1,2,3].map(et=>qs(et).value),['0','18','10','0']);
+ assert.equal([...qs(1).options].find(o=>o.value==='18').textContent,'Take screenshot');
+ assert([0,1,2,3].every(et=>qs(et).closest('.card').querySelector('h2').textContent.startsWith('Button map')&&![...qs(et).options].some(o=>+o.value>20)));
+ const n0=writes.length;change(qs(3),9);await new Promise(r=>setTimeout(r,30));
+ assert.deepEqual(writes.slice(n0).filter(x=>x[0]===2).pop(),[2,155,9]);
+ p.length=230;await apply();assert([0,1,2,3].every(et=>!rowShown(et)));}
+// a pad on a D-pad mode spends its click on the D-pad, so that pad's Click is greyed out (and back with any other Touch)
+for(const et of [0,1,2,3])for(const pad of [0,1]){
+  const click=rec(et).sources[20+pad],other=rec(et).sources[21-pad];
+  for(const v of [3,4]){await opsOf(()=>change(typeEls[et].padStick[pad],v));assert(click.disabled&&!other.disabled,'type '+et+' pad '+pad+' D-pad '+v);}
+  await opsOf(()=>change(typeEls[et].padStick[pad],0));assert(!click.disabled&&!other.disabled);
+}
 assert.deepEqual(padT(2),['21=Touchpad click, left half|padClickL','22=Touchpad click, right half|padClickR']);assert.deepEqual(padT(3),padT(2));
 assert.deepEqual([rec(0).sources[20].value,rec(0).sources[21].value],['21','22']);
 // the factory entries on Switch are the pad clicks too, but nothing there uses them: they read as none
@@ -161,7 +179,11 @@ assert.deepEqual([rec(1).sources[20].value,rec(1).sources[21].value],['0','0']);
  assert.deepEqual(await opsOf(()=>change(rec(0).sources[21],1)),[[0x2D,0,sel0,21,1]]);assert.equal(model[0].maps[sel0][21],1);
  assert.deepEqual(await opsOf(()=>change(rec(0).sources[21],22)),[[0x2D,0,sel0,21,22]]);}
 assert(padCard(0).contains(document.querySelector('#mouseCard')));
-assert(padCard(1).contains(document.querySelector('#swClickControls'))&&padCard(1).contains(document.querySelector('#hdPadBlock')));
+// the trackpads' haptics are a card of their own, right below the pads
+const fbCard=et=>padCard(et).nextElementSibling;
+for(const et of [0,1,2,3])assert(fbCard(et).querySelector('h2').textContent==='Trackpad feedback'&&!fbCard(et).contains(padCols(et)[0])&&!padCard(et).contains(rec(et).dpad));
+assert(fbCard(1).contains(document.querySelector('#swClickControls'))&&fbCard(1).contains(document.querySelector('#hdPadBlock'))&&!padCard(1).contains(document.querySelector('#hdPadBlock')));
+assert(fbCard(2).contains(typeEls[2].dpad)&&fbCard(2).contains(typeEls[2].pad));
 setTab(LIZARD_TAB);assert(!padCard(0).contains(document.querySelector('#mouseCard')));assert(document.querySelector('#mapLizardPane').contains(document.querySelector('#mouseCard')));
 setTab(0);assert(padCard(0).contains(document.querySelector('#mouseCard')));
 // disabling a pad is a firmware v30 value: older firmware would ignore it, so the option is not selectable there

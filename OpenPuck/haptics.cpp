@@ -1801,6 +1801,10 @@ void hapticTask()
 				padClickEdge(s, shortcutHostButtons(
 							g_in[s].buttons) &
 							(TB_LPADC | TB_RPADC));
+	if (!modeIsPuck(g_usbMode))
+		for (uint8_t s = 0; s < NSLOT; s++)
+			if (g_slot[s].used)
+				padDpadClickFeedback(s);
 	// Per-slot link-edge detect (backup for hapticOnReconnect in rf_link).
 	static bool wasHapticLinkUp[NSLOT] = { 0 };
 	for (int s = 0; s < NSLOT; s++) {

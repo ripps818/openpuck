@@ -291,7 +291,7 @@ static Adafruit_USBD_HID
 // ===================== report 0x45 -> XInput + mouse =====================
 static void rfXboxGamepad(uint8_t slot, const uint8_t *r)
 {
-	uint32_t b = remapButtons(shortcutHostButtons(btnsOf(r)));
+	uint32_t b = remapHostButtons(slot, padDpadApplyRaw(r));
 	uint16_t btn = 0;
 	if (b & TB_DUP)
 		btn |= XB_DUP;
@@ -347,7 +347,7 @@ static void rfXboxGamepad(uint8_t slot, const uint8_t *r)
 // one mouse. Slot 0's right-pad drives it; other slots' right-pad input is intentionally ignored here.
 static void rfXboxMouse(const uint8_t *r)
 {
-	uint32_t b = remapButtons(shortcutHostButtons(btnsOf(r)));
+	uint32_t b = remapButtons(shortcutHostButtons(padDpadApplyRaw(r)));
 	static int prx = 0, pry = 0;
 	static bool prt = false;
 	static float vx = 0, vy = 0, rmx = 0, rmy = 0;

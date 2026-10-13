@@ -21,7 +21,7 @@ Upstream's configurator doesn't have the settings below.
 - **Grip limiter:** strong grip vibration above a set level (70% by default) is rounded off instead of clipping into a pop. On the Switch and DS5 tabs, with a separate setting for Switch HD rumble and DualSense audio haptics, as is the Haptics style.
 - **Trackpad haptic strength:** each mode's tab has click strength, tick spacing and tick strength sliders. With a tick spacing chosen the puck plays the movement ticks and the clicks itself, so both have a strength you set. This is experimental. Details: [docs/CONTROLLER_FEATURES.md](docs/CONTROLLER_FEATURES.md).
 - **Per-mode rumble:** each mode keeps its own rumble switch and grip strength, and the rumble style follows the mode. See [Rumble](#rumble) below.
-- **Switch Pro trackpad D-pad and screenshot shortcut:** trackpads can act as a D-pad on touch or on click (diagonals included), and Quick Access + Minus can take a screenshot. Details: [docs/CONTROLLER_FEATURES.md](docs/CONTROLLER_FEATURES.md).
+- **Trackpad D-pad and Quick Access + Select:** in every emulated mode, trackpads can act as a D-pad on touch or on click (diagonals included), and Quick Access + Select can act as a button of your choice (a screenshot on the Switch). Details: [docs/CONTROLLER_FEATURES.md](docs/CONTROLLER_FEATURES.md).
 - **Full-rate haptic streams in Steam mode:** the controller's PCM haptic commands are relayed at full rate, so audio-to-haptics apps such as Fancy Haptics play as cleanly through OpenPuck as over USB.
 - **Trigger deadzone and full-press point:** emulated modes can ignore the first part of the trigger travel and treat a pull past a set point as a full press. This helps games made for DualSense resistive triggers that never see a full pull.
 - **Shortcut modifier choice:** mode shortcuts can use Quick Access as the modifier instead of all four back buttons. Shortcuts can also play a confirmation pulse or be turned off entirely. See [Mode shortcuts](#mode-shortcuts).
@@ -67,7 +67,7 @@ Hold the modifier and press a button. The modifier is all four back buttons by d
 | <img src="docs/glyphs/down.svg" height="18" alt="D-pad"> Down | Switch HORIPAD | Configurable |
 | <img src="docs/glyphs/padClickL.svg" height="18" alt="Left"> <img src="docs/glyphs/padClickR.svg" height="18" alt="Right"> Trackpad click | Toggle touchpad | High buzz = on, low buzz = off |
 
-Also in every mode: **Steam + Y held for 2 seconds** turns the controller off. In Switch Pro mode, **Quick Access + Minus** can take a screenshot (turn on "Quick Access + Select action" in the Mode shortcuts card).
+Also in every mode: **Steam + Y held for 2 seconds** turns the controller off. **Quick Access + Select** can act as any button you pick for each mode (a screenshot on the Switch, for example); it does nothing until you choose one in the Button map card.
 
 ### Modes
 | Mode (configurator name) | What it is |

@@ -205,10 +205,15 @@ extern uint8_t
 // applyActiveType() at boot and after any edit to the active type.
 extern uint8_t g_abSwap; // 1 = swap A/B and X/Y (Nintendo face-button layout)
 extern uint8_t g_back[4];
-extern uint8_t g_swDpadHaptics;
 
 extern uint8_t g_qamMap;
-extern uint8_t g_swQamSelect;
+// What Quick Access + Select (Menu) acts as, a remap target code (0 none; 18 is the Switch's Capture), per
+// controller type; g_qamSelect is the active type's copy. None until chosen: the chord needs no other switch.
+extern uint8_t g_typeQamSelect[ET_COUNT];
+extern uint8_t g_qamSelect;
+#define QAM_SELECT_MAX 20
+// Store a target for a type (false when out of range) and refresh the live copy.
+bool typeQamSelectSet(uint8_t et, uint8_t value);
 extern uint8_t g_shortcutFlags;
 void shortcutModeRequest(uint8_t mode, uint8_t slot);
 void shortcutModeTask();
@@ -252,6 +257,9 @@ extern uint16_t g_audioSpeaker;
 //             by up to 1.5x / 2x / 3x / 4x (hapticLiftGain). Switch and DualSense. g_hapticLift is the active type's copy.
 //  HAP_TRIG:  where the DualSense adaptive-trigger effects are felt (TRIG_HAPTICS_*): off, the trackpads, the
 //             grips, or both. DualSense only. g_trigHaptics is the live copy.
+//  HAP_DPAD:  1 = a click on a trackpad in a D-pad mode pulses that pad while Trackpad haptics is off
+//             (padDpadClickFeedback). Every type; the Switch's starts from the old Switch-only setting.
+//             g_dpadClick is the active type's copy.
 // Click, tick and tick gain apply to every type.
 enum {
 	HAP_KNEE,
@@ -261,6 +269,7 @@ enum {
 	HAP_TICKGAIN,
 	HAP_LIFT,
 	HAP_TRIG,
+	HAP_DPAD,
 	HAP_COUNT
 };
 // Measured on the controller's IMU (Switch HD and DualSense wave), the grips stay linear to ~0.7 of full scale
@@ -279,10 +288,12 @@ enum {
 #define TRIG_HAPTICS_GRIPS 2
 #define TRIG_HAPTICS_BOTH 3
 #define TRIG_HAPTICS_DEFAULT TRIG_HAPTICS_PADS
+#define DPAD_CLICK_DEFAULT 1
 extern uint8_t g_typeHaptic[HAP_COUNT][ET_COUNT];
 extern uint8_t g_hapticLimitKnee;
 extern uint8_t g_hapticLift;
 extern uint8_t g_trigHaptics;
+extern uint8_t g_dpadClick;
 // Store a value if it is in range and the type has the setting, and refresh the live mirrors.
 bool typeHapticSet(uint8_t setting, uint8_t et, uint8_t value);
 // Live copies of the active type's click strength and tick level (the defaults in puck modes)

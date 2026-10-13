@@ -57,9 +57,12 @@
 // bit 1 (2u) was SHORTCUT_PROFILES, removed with the Switch Pro profiles
 // bit 2 (4u) was SHORTCUT_HAPTICS, the removed D-pad haptic shortcuts
 #define SHORTCUT_FEEDBACK 8u
+// the old enable switch of Quick Access + Select; the chord now needs only a target, but a saved file still tells
+// whether the Switch's was on
 #define SHORTCUT_CAPTURE 16u
 #define SHORTCUT_ENABLED 32u
 extern uint8_t g_shortcutFlags;
+extern uint8_t g_qamSelect;
 
 // The modifier is held, whether or not the mode shortcuts are switched on: the profile switch uses it too.
 static inline bool shortcutModifierHeld(uint32_t buttons)
@@ -93,12 +96,12 @@ static inline uint32_t shortcutHostButtons(uint32_t buttons)
 	return buttons;
 }
 
-static inline bool switchSelectShortcut(uint8_t slot, uint32_t &buttons)
+static inline bool qamSelectShortcut(uint8_t slot, uint32_t &buttons)
 {
 	static bool consumed[4] = {};
 	if (slot >= 4)
 		return false;
-	bool active = (g_shortcutFlags & SHORTCUT_CAPTURE) &&
+	bool active = g_qamSelect &&
 		      (buttons & (TB_QAM | TB_MENU)) == (TB_QAM | TB_MENU);
 	if (!(buttons & TB_MENU))
 		consumed[slot] = false;

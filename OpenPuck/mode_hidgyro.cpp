@@ -209,7 +209,7 @@ static ds4_setcb_t const DS4_SETCB[NSLOT] = { hidGyroSet0, hidGyroSet1,
 // usbSlot drives the per-HID counters; slot (bond) is the controller whose decoded input feeds the report.
 static void hidGyroBuild(uint8_t usbSlot, uint8_t slot, uint8_t out[63])
 {
-	uint32_t b = psButtonsFromSteam(g_in[slot].buttons);
+	uint32_t b = psButtonsFromSteam(slot, padDpadApplyIn(g_in[slot]));
 	padClickEdge(slot, b & (TB_LPADC | TB_RPADC));
 	// A pad mapped to a stick must NOT also report as a touchpad contact -- the host would read the same
 	// finger twice (stick deflection AND a cursor drag). A disabled pad reports none either.

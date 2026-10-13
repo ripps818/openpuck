@@ -251,7 +251,7 @@ static void ds3Imu(uint8_t *out, int16_t v)
 // Offsets are the genuine report's rd[] minus one (rd[0] is the prepended id).
 static void ds3Build(uint8_t slot, uint8_t out[48])
 {
-	uint32_t b = psButtonsFromSteam(g_in[slot].buttons);
+	uint32_t b = psButtonsFromSteam(slot, padDpadApplyIn(g_in[slot]));
 	bool l2 = (g_in[slot].lt > SW_TRIG_ON) || (b & TB_L2);
 	bool r2 = (g_in[slot].rt > SW_TRIG_ON) || (b & TB_R2);
 	memset(out, 0, 48);

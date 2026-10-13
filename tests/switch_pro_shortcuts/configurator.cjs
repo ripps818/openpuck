@@ -30,25 +30,23 @@ const apply=async()=>{applyBlob(new Uint8Array(p));applySw(new Uint8Array(s));aw
 const $=sel=>document.querySelector(sel);
 const act=async fn=>{const n=writes.length;fn();await settle();return writes.slice(n).filter(x=>x[0]===2).pop();};
 // Rumble style is automatic: no style pickers, rumble presets, strength steps, D-pad haptic toggle or save button.
-for(const id of ['rumbleStyle','rumbleState1','strengthSteps','scHaptics','shortcutSave','hdTuning','calibrationCard','hdWaveform','swProfilesCard','scProfiles','swProfileChords'])assert(!$('#'+id),id);
-assert.equal($('#qamSelect').value,'18');
+for(const id of ['rumbleStyle','rumbleState1','strengthSteps','scHaptics','shortcutSave','hdTuning','calibrationCard','hdWaveform','swProfilesCard','scProfiles','swProfileChords','qamSelectRow','qamSelect'])assert(!$('#'+id),id);
 // Shortcut toggles live in the Mode shortcuts card; every chord is available.
 assert(!$('#shortcutToggles').classList.contains('hide'));assert($('#shortcutToggles').closest('.card').querySelector('.chord'));
 // The modifier shows as a glyph named on hover: the toggle and every chord label follow the setting.
 const mods=()=>[...document.querySelectorAll('.ic-mod')].map(e=>e.getAttribute('aria-label')+'|'+e.title);
 assert.equal(mods().length,8);assert(mods().every(m=>m==='Quick Access|Quick Access'),mods().join());
-assert($('#scQam .ic-mod'));assert.equal($('#qamSelectRow label .ic').title,'Quick Access');
+assert($('#scQam .ic-mod'));
 for(const el of document.querySelectorAll('.chord,.chordD'))assert(!el.parentElement.classList.contains('hide'));
 assert.deepEqual(await act(()=>$('#scQam').click()),[2,240,56]);s[46]=56;await apply();assert(mods().every(m=>m==='All four back buttons|All four back buttons'),mods().join());
-for(const [id,bit] of [['scFeedback',8],['scCapture',16],['scEnabled',32]])assert.deepEqual(await act(()=>$('#'+id).click()),[2,240,s[46]^bit]);
+for(const [id,bit] of [['scFeedback',8],['scEnabled',32]])assert.deepEqual(await act(()=>$('#'+id).click()),[2,240,s[46]^bit]);
 // Switch Pro-only controls live in the Switch tab of Button mapping; the trackpad ones (click feedback, HD strength) in its Trackpads card.
-const swTab=$('#qamSelectRow').parentElement;assert($('#typeCfgs').contains(swTab));
+const swTab=$('#swGyroMapBlock').parentElement;assert($('#typeCfgs').contains(swTab));
 for(const id of ['#swGyroMap'])assert(swTab.contains($(id)),id);
 const padTab=$('#swClickControls').parentElement;assert($('#typeCfgs').contains(padTab)&&padTab!==swTab);assert(padTab.contains($('#hdPadScale')));
 assert(!$('#swClickControls').classList.contains('hide'));assert.equal($('#swClickFeedback').value,'1');
 const change=el=>act(()=>el.dispatchEvent(new w.Event('change')));
 const click=$('#swClickFeedback');click.value='0';assert.deepEqual(await change(click),[2,230,0]);
-const capture=$('#qamSelect');capture.value='0';assert.deepEqual(await change(capture),[2,239,0]);
 // v25: grip strength per type in Button mapping (no style row); the global strength row hides.
 const secs=[...$('#typeCfgs').children];
 // the mapping profile cards (status v30+) are covered by tests/button_profiles/panel.cjs; this test reads the rest
@@ -115,11 +113,11 @@ assert(document.querySelectorAll('.modebtn').length>=11);assert($('#lizardList')
 // The remap lists draw a dropdown over each (hidden) select so every target's glyph shows beside its name.
 {const gsel=sel=>sel.parentElement,btnOf=sel=>gsel(sel).querySelector('.gsel-btn'),listOf=sel=>gsel(sel).querySelector('.gsel-list');
  const sels=[...document.querySelectorAll('.gsel > select')].filter(e=>!e.closest('.prof-card'));
- // per profile: four back buttons, QAM, the two trackpad touch pickers and their two click pickers; plus the Switch QAM + View picker
- assert.equal(sels.length,4*9+1);
+ // per profile: four back buttons, QAM, the two trackpad touch pickers and their two click pickers
+ assert.equal(sels.length,4*9);
  for(const sel of sels){assert(sel.hidden);assert(listOf(sel).classList.contains('hide'));}
  // every target on every controller has a glyph (only the none / default entry has none), by the right name
- const g=et=>Object.fromEntries([...own(secs[et],'select')[0].options].map(o=>[o.textContent,o.dataset.glyph||'']));
+ const g=et=>Object.fromEntries([...own(secs[et],'select').find(s=>!s.closest('.card').contains($('#swGyroMap'))).options].map(o=>[o.textContent,o.dataset.glyph||'']));
  for(let et=0;et<4;et++)for(const [name,gl] of Object.entries(g(et)))if(!/^(— none —|Default)/.test(name))assert(gl,et+' '+name);
  assert.deepEqual(['A','LB','Back','Start','D-pad Up','Guide','LT'].map(n=>g(0)[n]),['A','LB','view','menu','up','guide','LT']);
  assert.deepEqual(['Minus','ZL','L','L-Stick','Capture / Screenshot'].map(n=>g(1)[n]),['minus','ZL','swL','L3','capture']);
