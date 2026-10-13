@@ -183,7 +183,17 @@ for(const b of document.querySelectorAll(".modebtn")){
   b.onclick=()=>{ const m=+b.dataset.mode;
     const clean=(m===7||m===8||m===9);
     const msg="Switch to "+MODE_NAMES[m]+"? The copycat will reboot."+(clean?"\n\nNOTE: the single-HID PlayStation modes (and PS3) drop WebUSB + host-wake, so THIS PANEL WILL DISCONNECT and can't reach the device while it's in this mode. To get back, chord on the controller: hold "+(S.lastSw && (S.lastSw[46]&1)?"Quick Access":"all four back paddles")+" + A to return to Steam mode. The back4+D-pad chords are how you get back INTO these modes without the panel — check their assignments in the chords card first.":"");
-    if(confirm(msg)){ send([0x03, m]); log("mode switch requested — device will reboot"); } };
+    // Right after a flash or a mode switch the panel reconnects before the puck has settled, and a command sent
+    // then can be lost; the first status blob shows it is ready. A switch that lands reboots the puck within a
+    // second, so a link still up after a few seconds means it did not.
+    if(!S.dev || !S.blobSeen){ alert("The puck is still starting up. Try again once the panel shows its status."); return; }
+    if(!confirm(msg)) return;
+    const dev=S.dev;
+    send([0x03, m]).then(ok=>{
+      if(!ok){ alert("The mode switch didn't reach the puck. Try again."); return; }
+      log("mode switch requested — device will reboot");
+      setTimeout(()=>{ if(S.dev===dev){ log("mode switch: the puck did not reboot"); alert("The puck didn't switch modes. Try again."); } }, 4000);
+    }); };
   const back=()=>{ if(S.lastP) showModeDesc(S.lastP[1]); };
   b.onmouseenter=b.onfocus=()=>showModeDesc(+b.dataset.mode);
   b.onmouseleave=b.onblur=back;

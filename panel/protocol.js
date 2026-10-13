@@ -16,6 +16,7 @@ export const USB_FILTERS=[{vendorId:0x28DE},{vendorId:0x045E},{vendorId:0x057E},
 async function openDevice(d){
   try{
     S.dev=d;
+    S.blobSeen=false;
     pendingInRead=null;
     await S.dev.open();
     if(S.dev.configuration===null) await S.dev.selectConfiguration(1);
@@ -89,7 +90,7 @@ function onGone(){
   window._flightAuto=false; // re-arm the one-shot flight-trail auto-load for the next reconnect
   window._wedgeEp=false; window._wedgePeak=0; // re-arm the live wedge logger for the next wedge episode
   window._lastBlobTs=0; window._hbLostEp=false; // re-arm the heartbeat watchdog (don't fire on a stale pre-reset timestamp)
-  S.polling=false; S.dev=null; S.tabInited=false; pendingInRead=null; // re-default the config tab to the mode on next connect
+  S.polling=false; S.dev=null; S.blobSeen=false; S.tabInited=false; pendingInRead=null; // re-default the config tab to the mode on next connect
   // the next device may be a different puck: its profiles are read afresh
   S.profiles=S.profiles.map(()=>null); S.profileSel=[]; S.profileLoadDue.clear(); S.gesture=null;
   const preSel=$("#ledPreset"); if(preSel) preSel.value="default";
@@ -102,10 +103,11 @@ function onGone(){
   let tries=0;
   const iv=setInterval(async()=>{ if(S.dev||tries++>40){ clearInterval(iv); return; } if(await autoConnect()) clearInterval(iv); }, 500);
 }
+// true once the bytes reached the puck
 export async function send(bytes){
-  if(!S.dev) return;
-  try{ await S.dev.transferOut(S.epOut, new Uint8Array(bytes)); }
-  catch(e){ log("write err: "+e.message); }
+  if(!S.dev) return false;
+  try{ await S.dev.transferOut(S.epOut, new Uint8Array(bytes)); return true; }
+  catch(e){ log("write err: "+e.message); return false; }
 }
 let pendingInRead = null;
 // One transferIn at a time, shared by every reader of the IN pipe: a read that times out stays pending and is

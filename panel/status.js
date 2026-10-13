@@ -58,6 +58,7 @@ export function applySw(s){
 export function applyBlob(p){
   for(const rec of typeEls) for(const sel of rec.padStick) for(const o of sel.options) if(+o.value>=3) o.disabled=p[0]<(+o.value===5?30:23);
   S.lastP=p; // remember for Export (carries every config field the panel shows)
+  S.blobSeen=true; // the puck answers: it is done booting and takes commands
   window._lastBlobTs=Date.now(); // feeds the host-side heartbeat watchdog (hard-wedge detection)
   // Lazy, capability-gated lizard-map load: only after a blob proves the puck speaks v16+ (the op-0x11 dump).
   // On older firmware 0x11 is dropped silently and readLizard() would block the endpoint forever, so we must

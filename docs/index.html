@@ -719,6 +719,8 @@
 const S = {
   // WebUSB device + endpoints
   dev:null, epIn:0, epOut:0,
+  // a status blob arrived since this connect: the puck is past boot and takes commands
+  blobSeen:false,
   // Pipe owners: each pauses the status-blob poll while it holds the shared bulk endpoint.
   polling:false, capturing:false, backupBusy:false, flightBusy:false, lizardBusy:false, rfBusy:false,
   inflight:false, fieldBusy:false,
@@ -3856,6 +3858,7 @@ function applySw(s){
 function applyBlob(p){
   for(const rec of typeEls) for(const sel of rec.padStick) for(const o of sel.options) if(+o.value>=3) o.disabled=p[0]<(+o.value===5?30:23);
   S.lastP=p; // remember for Export (carries every config field the panel shows)
+  S.blobSeen=true; // the puck answers: it is done booting and takes commands
   window._lastBlobTs=Date.now(); // feeds the host-side heartbeat watchdog (hard-wedge detection)
   // Lazy, capability-gated lizard-map load: only after a blob proves the puck speaks v16+ (the op-0x11 dump).
   // On older firmware 0x11 is dropped silently and readLizard() would block the endpoint forever, so we must
@@ -4322,6 +4325,7 @@ const USB_FILTERS=[{vendorId:0x28DE},{vendorId:0x045E},{vendorId:0x057E},{vendor
 async function openDevice(d){
   try{
     S.dev=d;
+    S.blobSeen=false;
     pendingInRead=null;
     await S.dev.open();
     if(S.dev.configuration===null) await S.dev.selectConfiguration(1);
@@ -4395,7 +4399,7 @@ function onGone(){
   window._flightAuto=false; // re-arm the one-shot flight-trail auto-load for the next reconnect
   window._wedgeEp=false; window._wedgePeak=0; // re-arm the live wedge logger for the next wedge episode
   window._lastBlobTs=0; window._hbLostEp=false; // re-arm the heartbeat watchdog (don't fire on a stale pre-reset timestamp)
-  S.polling=false; S.dev=null; S.tabInited=false; pendingInRead=null; // re-default the config tab to the mode on next connect
+  S.polling=false; S.dev=null; S.blobSeen=false; S.tabInited=false; pendingInRead=null; // re-default the config tab to the mode on next connect
   // the next device may be a different puck: its profiles are read afresh
   S.profiles=S.profiles.map(()=>null); S.profileSel=[]; S.profileLoadDue.clear(); S.gesture=null;
   const preSel=$("#ledPreset"); if(preSel) preSel.value="default";
@@ -4408,10 +4412,11 @@ function onGone(){
   let tries=0;
   const iv=setInterval(async()=>{ if(S.dev||tries++>40){ clearInterval(iv); return; } if(await autoConnect()) clearInterval(iv); }, 500);
 }
+// true once the bytes reached the puck
 async function send(bytes){
-  if(!S.dev) return;
-  try{ await S.dev.transferOut(S.epOut, new Uint8Array(bytes)); }
-  catch(e){ log("write err: "+e.message); }
+  if(!S.dev) return false;
+  try{ await S.dev.transferOut(S.epOut, new Uint8Array(bytes)); return true; }
+  catch(e){ log("write err: "+e.message); return false; }
 }
 let pendingInRead = null;
 // One transferIn at a time, shared by every reader of the IN pipe: a read that times out stays pending and is
@@ -5036,7 +5041,17 @@ for(const b of document.querySelectorAll(".modebtn")){
   b.onclick=()=>{ const m=+b.dataset.mode;
     const clean=(m===7||m===8||m===9);
     const msg="Switch to "+MODE_NAMES[m]+"? The copycat will reboot."+(clean?"\n\nNOTE: the single-HID PlayStation modes (and PS3) drop WebUSB + host-wake, so THIS PANEL WILL DISCONNECT and can't reach the device while it's in this mode. To get back, chord on the controller: hold "+(S.lastSw && (S.lastSw[46]&1)?"Quick Access":"all four back paddles")+" + A to return to Steam mode. The back4+D-pad chords are how you get back INTO these modes without the panel — check their assignments in the chords card first.":"");
-    if(confirm(msg)){ send([0x03, m]); log("mode switch requested — device will reboot"); } };
+    // Right after a flash or a mode switch the panel reconnects before the puck has settled, and a command sent
+    // then can be lost; the first status blob shows it is ready. A switch that lands reboots the puck within a
+    // second, so a link still up after a few seconds means it did not.
+    if(!S.dev || !S.blobSeen){ alert("The puck is still starting up. Try again once the panel shows its status."); return; }
+    if(!confirm(msg)) return;
+    const dev=S.dev;
+    send([0x03, m]).then(ok=>{
+      if(!ok){ alert("The mode switch didn't reach the puck. Try again."); return; }
+      log("mode switch requested — device will reboot");
+      setTimeout(()=>{ if(S.dev===dev){ log("mode switch: the puck did not reboot"); alert("The puck didn't switch modes. Try again."); } }, 4000);
+    }); };
   const back=()=>{ if(S.lastP) showModeDesc(S.lastP[1]); };
   b.onmouseenter=b.onfocus=()=>showModeDesc(+b.dataset.mode);
   b.onmouseleave=b.onblur=back;

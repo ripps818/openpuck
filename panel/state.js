@@ -3,6 +3,8 @@
 export const S = {
   // WebUSB device + endpoints
   dev:null, epIn:0, epOut:0,
+  // a status blob arrived since this connect: the puck is past boot and takes commands
+  blobSeen:false,
   // Pipe owners: each pauses the status-blob poll while it holds the shared bulk endpoint.
   polling:false, capturing:false, backupBusy:false, flightBusy:false, lizardBusy:false, rfBusy:false,
   inflight:false, fieldBusy:false,
