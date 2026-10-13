@@ -56,6 +56,8 @@ static volatile bool g_swFrameRequest = false;
 // Motion sample for the panel's 3D view (op 0x2A <slot> -> one 0xAF frame). The panel asks ~25 times a second, so
 // it is deferred to the usbd task like the blob; 0xFF = nothing pending.
 static volatile uint8_t g_motionSlot = 0xFF;
+// Grip PCM stream counters (op 0x35 -> one 0xB1 frame), a debug read for tools/switch_hd_test.py --diag
+static volatile bool g_pcmDiagRequest = false;
 // Type whose mapping profiles the next 0xB0 frame carries (v30); 0xFF = nothing pending.
 static volatile uint8_t g_mapDumpType = 0xFF;
 // Firmware-update ack ([0xAB][5][status][nextOff u32 LE]). Like the blob it is written from the usbd task
@@ -125,7 +127,7 @@ static bool boardCommand(uint8_t op)
 //                 (HAP_* in config.h: grip limiter knee, haptic style, trackpad click strength, movement-tick
 //                 spacing and strength), WebUSB field 120 + 4 * setting + type; p[205] / p[209] stay the DualSense's style and
 //                 the active type's knee for older panels]
-#define WB_PAYLEN 234
+#define WB_PAYLEN 238
 // The blob send is drop-on-full (never blocks loop), so the vendor TX FIFO MUST be able to hold a whole blob
 // -- otherwise tud_vendor_write_available() never reaches the frame size and EVERY frame is dropped (blank
 // panel / stale mappings). The Makefile sets -DCFG_TUD_VENDOR_TX_BUFSIZE=256; guard it here so a build without
@@ -160,7 +162,7 @@ static void webusbSendBlob()
 	// (30 = +mapping profiles: ops 0x2C..0x34 and the 0xB0 frame (see docs/PROTOCOL.md), Lizard profiles included;
 	// the older paddle / QAM / swap fields and lizard ops keep working and now edit the active profile;
 	// +per-type haptic settings: grip limiter, haptic style, trackpad click strength, movement-tick spacing and strength
-	// (fields 120..139, blob p[216..235]);
+	// +soft boost of the grip wave stream (fields 120..143, blob p[216..239]);
 	// 29 = +Create-as-touchpad-click toggle (field 116, blob p[210]); +selectable RF channel set: op 0x2B
 	// [mask: 5 bytes LE], 0xAD frame v2 (every even channel 4..80, rows paged by field 97's value, enabled +
 	// default masks appended; the panel keys off the 0xAD version, not this one);
@@ -713,6 +715,68 @@ static void webusbSendMotion(uint8_t slot)
 	}
 }
 
+// 0x35: grip PCM stream counters since boot (g_pcmDiag), written from the usbd task like the blob:
+//   [0xB1][172][ver=1][made sent acked requeued lost evicted: u32 LE][0x44 events 0..15: u16 LE]
+//   [polls/s: u16 LE][relays/s: u16 LE][Switch HD wave rate, kHz][reply delay buckets 0..15: u16 LE]
+//   [corrupt replies: u16 LE][outcome[attempt 0..2][reply 0..4]: u16 LE, see PcmDiag]
+//   [audio packets u32][audio alt u8][DualSense stream slots u8][left haptic level u16]
+//   [queue delay buckets 0..7: u16][made-gap buckets 0..7: u16][ran dry: end, mid-stream, at start: u16]
+static void webusbSendPcmDiag()
+{
+	static uint8_t f[2 + 200];
+	uint8_t *p = f + 3;
+	auto put = [&](uint32_t v, uint8_t n) {
+		for (uint8_t i = 0; i < n; i++)
+			*p++ = (uint8_t)(v >> (8 * i));
+	};
+	f[0] = 0xB1;
+	f[1] = 200;
+	f[2] = 1;
+	const PcmDiag d = g_pcmDiag;
+	const uint32_t c[6] = { d.made,	    d.sent, d.acked,
+				d.requeued, d.lost, d.evicted };
+	for (uint8_t i = 0; i < 6; i++)
+		put(c[i], 4);
+	for (uint8_t i = 0; i < 16; i++)
+		put(d.events[i], 2);
+	put(g_pollsps, 2);
+	put(g_relayps, 2);
+#ifdef OPK_HD_PCM_8K
+	put(8, 1);
+#else
+	put(4, 1);
+#endif
+	for (uint8_t i = 0; i < 16; i++)
+		put(d.replyUs[i], 2);
+	put(d.crcBad, 2);
+	for (uint8_t a = 0; a < 3; a++)
+		for (uint8_t o = 0; o < 5; o++)
+			put(d.outcome[a][o], 2);
+	put(d.audioPkts, 4);
+	put(d.audioAlt, 1);
+	put(d.waveMask, 1);
+	put(d.audioEnvL, 2);
+	for (uint8_t i = 0; i < 8; i++)
+		put(d.queueDelay[i], 2);
+	for (uint8_t i = 0; i < 8; i++)
+		put(d.madeGap[i], 2);
+	put(d.dryEnd, 2);
+	put(d.dryMid, 2);
+	put(d.dryStart, 2);
+	put((uint32_t)d.lateMin, 4);
+	put((uint32_t)d.lateMax, 4);
+	put((uint32_t)d.lateLast, 4);
+	put((uint32_t)d.lateAtDry, 4);
+	put(d.otherRelays, 4);
+	put(d.flushSkip, 4);
+	put(g_connPoll, 2);
+	put(d.isoRecover, 2);
+	if (tud_vendor_write_available() >= sizeof f) {
+		usb_web.write(f, sizeof f);
+		usb_web.flush();
+	}
+}
+
 // All of a type's mapping profiles (see btnmapDump). False when the frame did not fit the TX FIFO (an unsolicited
 // status blob can be in it), so the caller keeps the request and tries again on the next SOF: the panel waits
 // for this frame to answer every profile op, and a dropped one leaves its page showing the old mapping.
@@ -768,6 +832,10 @@ static void webusbSofDrain(void)
 	if (g_motionSlot != 0xFF) {
 		webusbSendMotion(g_motionSlot);
 		g_motionSlot = 0xFF;
+	}
+	if (g_pcmDiagRequest) {
+		g_pcmDiagRequest = false;
+		webusbSendPcmDiag();
 	}
 	if (g_mapDumpType != 0xFF) {
 		const uint8_t et = g_mapDumpType;
@@ -1012,10 +1080,11 @@ void webusbPoll()
 			uint8_t op = buf[0];
 			// 0x16 = test rumble (v21), 0x17..0x1A = lizard v2 (v21), 0x27 = Switch Pro/shortcut frame
 			// request (v23), 0x28 = save shortcut settings (v23), 0x29 = IMU on (v28), 0x2A = motion sample
-			// (v28), 0x2B = RF channel set (v29), 0x2C..0x34 = mapping profiles (v30); extend this range
-			// whenever a new opcode is added, or the parser drops it as garbage.
+			// (v28), 0x2B = RF channel set (v29), 0x2C..0x34 = mapping profiles (v30), 0x35 = PCM counters,
+			// 0x36 = HD pan test; extend this range whenever a new opcode is added, or the parser drops it
+			// as garbage.
 			if ((op < 0x01 || op > 0x1A) &&
-			    (op < 0x20 || op > 0x34)) { // resync: drop one byte
+			    (op < 0x20 || op > 0x36)) { // resync: drop one byte
 				memmove(buf, buf + 1, --n);
 				continue;
 			}
@@ -1104,7 +1173,7 @@ void webusbPoll()
 			}
 
 			else if (op == 0x28) {
-				saveCfg();
+				saveCfgSoon();
 				g_blobRequest = true;
 			} else if (op == 0x16) {
 				hapticTestRumble();
@@ -1112,6 +1181,10 @@ void webusbPoll()
 				hapticImuOn();
 			} else if (op == 0x2A) {
 				g_motionSlot = buf[1] < NSLOT ? buf[1] : 0;
+			} else if (op == 0x35) {
+				g_pcmDiagRequest = true;
+			} else if (op == 0x36) {
+				hapticTestHdPan();
 			}
 
 			// Enabled RF recovery channels (bit i = channel 4 + 2 * i). The 0xAD reply carries the
@@ -1124,7 +1197,7 @@ void webusbPoll()
 						<< (8u * i);
 				if (mask != g_rfChannelMask &&
 				    rfRecoverySetChannelMask(mask))
-					saveCfg();
+					saveCfgSoon();
 				g_rfStatusPage = 0;
 				g_rfStatusRequest = true;
 			}
@@ -1385,6 +1458,7 @@ void webusbPoll()
 				// 0x23: plain clean reboot. After a committed 0x22 the boot path applies the staged
 				// image; unarmed it is just a normal restart.
 			} else if (op == 0x23) {
+				cfgSaveFlush();
 				usb_web.flush();
 				delay(40);
 				faultDiagArmIntentionalReset();
@@ -1436,7 +1510,7 @@ void webusbPoll()
 						if (et == g_etype)
 							applyActiveType();
 					}
-					saveCfg();
+					saveCfgSoon();
 					g_blobRequest = true;
 					memmove(buf, buf + need, n - need);
 					n -= need;
@@ -1447,7 +1521,7 @@ void webusbPoll()
 					typeHapticSet((uint8_t)((f - 120) / 4),
 						      (uint8_t)((f - 120) % 4),
 						      v);
-					saveCfg();
+					saveCfgSoon();
 					g_blobRequest = true;
 					memmove(buf, buf + need, n - need);
 					n -= need;
@@ -1807,7 +1881,7 @@ void webusbPoll()
 					break;
 				}
 				if (persist)
-					saveCfg();
+					saveCfgSoon();
 				if (!rfStatusOnly)
 					g_blobRequest = true;
 			} else if (op == 0x03) {

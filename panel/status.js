@@ -1,6 +1,6 @@
 import { S } from './state.js';
 import { $, fmtDur, held, log, setSlider } from './util.js';
-import { HAP, LIZARD_TAB, PAD_TICK_LABELS, RUMBLE_SCALES, TYPE_DEFS, currentType, etypeForMode, hapValue, setTab, swStatusApply, typeEls } from './types.js';
+import { HAP, hapIndex, LIZARD_TAB, PAD_TICK_LABELS, RUMBLE_SCALES, TYPE_DEFS, currentType, etypeForMode, hapValue, setTab, swStatusApply, typeEls } from './types.js';
 import { refreshRfStatus } from './rf.js';
 import { renderCtlrChips, renderSlotTabs } from './slots.js';
 import { renderHangLog, trailAdd } from './diag.js';
@@ -330,6 +330,11 @@ export function applyBlob(p){
         rec.speakerWrap.classList.toggle("hide",!cap);
         if(cap && document.activeElement!==rec.speaker) rec.speaker.value=p[206]*2;
       }
+      if(rec.lift){
+        const cap=perType && p.length>hapIndex(HAP.LIFT,et);
+        rec.liftWrap.classList.toggle("hide",!cap);
+        if(cap && document.activeElement!==rec.lift) rec.lift.value=hapValue(p,HAP.LIFT,et);
+      }
       if(rec.limiter){
         const cap=p[0]>=27 && p.length>207;
         rec.limiterWrap.classList.toggle("hide",!cap);
@@ -352,7 +357,7 @@ export function applyBlob(p){
         const gain = p[195]*2;
         if(document.activeElement!==rec.audioGain){
           rec.audioGain.value = gain;
-          rec.audioGainV.textContent = (gain===0)?"Auto":gain + "%";
+          rec.audioGainV.textContent = rec.audioGainLabel(gain);
         }
       }
       if(document.activeElement!==rec.led){ rec.led.value=led; rec.ledV.textContent=(led===0)?"Auto":led+"%"; }
@@ -392,7 +397,7 @@ export function applyBlob(p){
     const perType=(p[0]>=25 && p.length>213);
     scl.parentElement.classList.toggle("hide", perType);
     typeEls.forEach((rec,et)=>{
-      rec.rumbleScl.parentElement.classList.toggle("hide", !perType);
+      rec.rumbleSclWrap.classList.toggle("hide", !perType);
       if(!perType) return;
       const pct=p[210+et]*2;
       if(document.activeElement!==rec.rumbleScl) rec.rumbleScl.value=RUMBLE_SCALES.reduce((a,b)=>Math.abs(b-pct)<Math.abs(a-pct)?b:a);

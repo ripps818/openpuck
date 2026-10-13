@@ -6,7 +6,7 @@ cfg_c = (root/'OpenPuck/config.cpp').read_text()
 web = (root/'OpenPuck/webusb_config.cpp').read_text()
 
 # the shipped table, setter and load loop, and the WebUSB field and blob code, spliced into one harness
-consts = cfg_h[cfg_h.index('enum { HAP_KNEE'):cfg_h.index('extern uint8_t g_typeHaptic')]
+consts = cfg_h[cfg_h.index('enum {\n\tHAP_KNEE'):cfg_h.index('extern uint8_t g_typeHaptic')]
 table = cfg_c[cfg_c.index('uint8_t g_typeHaptic[HAP_COUNT]'):cfg_c.index('bool typeHapticSet(')]
 helpers = cfg_h[cfg_h.index('// gain in dB of click step'):cfg_h.index('// 1 = the active DualSense profile maps Create')]
 setter = cfg_c[cfg_c.index('bool typeHapticSet('):]
@@ -27,12 +27,14 @@ src = '''#include <cassert>
 #define AUDIO_STYLE_TONE 1
 #define AUDIO_STYLE_SPLIT 2
 #define AUDIO_STYLE_WAVE 3
+uint8_t g_hapticLift = 1;
 uint8_t g_hapticLimitKnee = 70, g_audioHapticStyle = 3, g_padClick = 26, g_padTick = 0, g_padTickGain = 11;
 uint16_t g_typeRumbleScale[ET_COUNT] = {};
 int applied = 0, saved = 0;
 bool g_blobRequest = false;
 void applyActiveType() { ++applied; }
 void saveCfg() { ++saved; }
+void saveCfgSoon() { ++saved; }
 ''' + consts + table + helpers + setter + '''
 struct Cfg { uint8_t typeHaptic[HAP_COUNT][ET_COUNT]; };
 static void load(const Cfg &c)
@@ -54,11 +56,14 @@ static void blobFill(uint8_t *p)
 ''' + blob + '''}
 int main()
 {
-	// defaults: Switch on tones, the rest on wave; 70% limiter, -9 dB click, ticks left to the controller
+	// defaults: every type on wave; 85% limiter, -9 dB click, ticks left to the controller
 	for (int et = 0; et < ET_COUNT; et++) {
-		assert(g_typeHaptic[HAP_KNEE][et] == 70 && g_typeHaptic[HAP_CLICK][et] == 26 && g_typeHaptic[HAP_TICK][et] == 0 && g_typeHaptic[HAP_TICKGAIN][et] == 11);
-		assert(g_typeHaptic[HAP_STYLE][et] == (et == ET_SWITCH ? AUDIO_STYLE_TONE : AUDIO_STYLE_WAVE));
+		assert(g_typeHaptic[HAP_KNEE][et] == 85 && g_typeHaptic[HAP_CLICK][et] == 26 && g_typeHaptic[HAP_TICK][et] == 0 && g_typeHaptic[HAP_TICKGAIN][et] == 11);
+		assert(g_typeHaptic[HAP_STYLE][et] == AUDIO_STYLE_WAVE && g_typeHaptic[HAP_LIFT][et] == 1);
 	}
+	// soft boost: 0..3 on the Switch and DualSense only
+	assert(typeHapticSet(HAP_LIFT, ET_SWITCH, 0) && typeHapticSet(HAP_LIFT, ET_DS5, 3) && !typeHapticSet(HAP_LIFT, ET_DS5, 4) && !typeHapticSet(HAP_LIFT, ET_XBOX, 2));
+	typeHapticSet(HAP_LIFT, ET_SWITCH, 1); typeHapticSet(HAP_LIFT, ET_DS5, 1);
 	// the setter takes in-range values for the types that have the setting, and refreshes the live copies
 	applied = 0;
 	assert(typeHapticSet(HAP_KNEE, ET_SWITCH, 50) && typeHapticSet(HAP_KNEE, ET_DS5, 100) && g_typeHaptic[HAP_KNEE][ET_SWITCH] == 50 && applied == 2);
@@ -70,18 +75,18 @@ int main()
 	assert(!typeHapticSet(HAP_KNEE, ET_SWITCH, 49) && !typeHapticSet(HAP_KNEE, ET_SWITCH, 101));
 	assert(!typeHapticSet(HAP_STYLE, ET_SWITCH, 4) && !typeHapticSet(HAP_CLICK, ET_SWITCH, 32) && !typeHapticSet(HAP_CLICK, ET_SWITCH, 255) && !typeHapticSet(HAP_TICK, ET_SWITCH, 5) && !typeHapticSet(HAP_TICKGAIN, ET_SWITCH, 32));
 	assert(!typeHapticSet(HAP_COUNT, ET_SWITCH, 1) && !typeHapticSet(HAP_KNEE, ET_COUNT, 70));
-	assert(applied == 0 && g_typeHaptic[HAP_KNEE][ET_XBOX] == 70 && g_typeHaptic[HAP_STYLE][ET_SWITCH] == AUDIO_STYLE_TONE);
+	assert(applied == 0 && g_typeHaptic[HAP_KNEE][ET_XBOX] == 85 && g_typeHaptic[HAP_STYLE][ET_SWITCH] == AUDIO_STYLE_WAVE);
 
 	// a v29 file has none of the grid (0xFF): the limiter and the DualSense style come from the shared values
 	// the older file kept, everything else keeps its default
 	Cfg old; memset(&old, 255, sizeof old);
 	g_hapticLimitKnee = 85; g_audioHapticStyle = AUDIO_STYLE_TONE;
 	for (int k = 0; k < HAP_COUNT; k++) for (int et = 0; et < ET_COUNT; et++) g_typeHaptic[k][et] = 0;
-	g_typeHaptic[HAP_STYLE][ET_SWITCH] = AUDIO_STYLE_TONE; g_typeHaptic[HAP_STYLE][ET_XBOX] = AUDIO_STYLE_WAVE;
+	g_typeHaptic[HAP_STYLE][ET_SWITCH] = AUDIO_STYLE_WAVE; g_typeHaptic[HAP_STYLE][ET_XBOX] = AUDIO_STYLE_WAVE;
 	g_typeHaptic[HAP_STYLE][ET_DS4] = AUDIO_STYLE_WAVE; g_typeHaptic[HAP_CLICK][ET_SWITCH] = 26; g_typeHaptic[HAP_CLICK][ET_DS5] = 26;
 	load(old);
 	assert(g_typeHaptic[HAP_KNEE][ET_SWITCH] == 85 && g_typeHaptic[HAP_KNEE][ET_DS5] == 85);
-	assert(g_typeHaptic[HAP_STYLE][ET_DS5] == AUDIO_STYLE_TONE && g_typeHaptic[HAP_STYLE][ET_SWITCH] == AUDIO_STYLE_TONE);
+	assert(g_typeHaptic[HAP_STYLE][ET_DS5] == AUDIO_STYLE_TONE && g_typeHaptic[HAP_STYLE][ET_SWITCH] == AUDIO_STYLE_WAVE);
 	assert(g_typeHaptic[HAP_CLICK][ET_SWITCH] == 26 && g_typeHaptic[HAP_TICK][ET_SWITCH] == 0);
 	// a saved grid wins, value by value; an out-of-range entry falls back
 	Cfg saved_cfg = old;
@@ -116,11 +121,11 @@ int main()
 	landed = 0xFF; assert(padTickCtrlDue(2, &landed) == PAD_CTRL_TAKE);
 
 	// the status blob carries the grid from byte 216, setting-major
-	uint8_t p[236]; memset(p, 0xEE, sizeof p);
+	uint8_t p[240]; memset(p, 0xEE, sizeof p);
 	for (int k = 0; k < HAP_COUNT; k++) for (int et = 0; et < ET_COUNT; et++) g_typeHaptic[k][et] = (uint8_t)(10 * k + et);
 	blobFill(p);
 	for (int k = 0; k < HAP_COUNT; k++) for (int et = 0; et < ET_COUNT; et++) assert(p[216 + 4 * k + et] == 10 * k + et);
-	assert(p[235] == 43 && p[211] == 0xEE); // the last byte of the grid; the strength bytes below it are not part of it
+	assert(p[239] == 53 && p[211] == 0xEE); // the last byte of the grid; the strength bytes below it are not part of it
 	return 0;
 }
 '''

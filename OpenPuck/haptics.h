@@ -63,6 +63,11 @@ extern uint8_t g_rumbleStyle; // RUMBLE_STYLE_*
 #define RUMBLE_TEST_AMP 0x8000u
 #define RUMBLE_TEST_MS 500u
 void hapticTestRumble();
+// Grip test: a 160 + 320 Hz tone panned left-right-left twice. In Switch Pro HD mode it goes through the Switch's
+// haptic style; in other modes it streams to the grips as PCM.
+void hapticTestHdPan();
+// slots the DualSense audio wave stream feeds (mode_ps5_audio.cpp)
+uint8_t ps5WaveMask();
 // turn on IMU streaming on every linked controller (WebUSB op 0x29)
 void hapticImuOn();
 
@@ -232,6 +237,31 @@ static inline float hapticSoftLimit(float y)
 	a = k + (1.0f - k) * o / (1.0f + o);
 	return y < 0 ? -a : a;
 }
+// Soft boost (HAP_LIFT, g_hapticLift): an upward compressor for the grip PCM stream. The grips play 2% of full scale
+// faithfully (IMU), but a hand barely feels it, so soft footsteps vanish. Below HAPTIC_LIFT_T the level is raised
+// 2:1 toward it, capped at 1 + level (2x / 3x / 4x); louder passages pass unchanged on to the limiter. One envelope
+// for both grips keeps the left/right balance. Below HAPTIC_LIFT_FLOOR the boost fades out, so dither and noise
+// in a quiet track stay quiet. The envelope rises at once and falls over ~80 ms at 4 kHz, slower than a cycle of
+// the lowest band, so the gain does not ripple within a wave.
+#define HAPTIC_LIFT_T 0.2f
+#define HAPTIC_LIFT_FLOOR 0.003f
+#define HAPTIC_LIFT_RELEASE 0.9969f
+struct HapticLift {
+	float env;
+};
+static inline float hapticLiftGain(HapticLift *s, float peak)
+{
+	s->env = peak > s->env ? peak : s->env * HAPTIC_LIFT_RELEASE;
+	if (!g_hapticLift || s->env >= HAPTIC_LIFT_T)
+		return 1.0f;
+	float cap = 1.0f + g_hapticLift;
+	float g = s->env > 1e-6f ? sqrtf(HAPTIC_LIFT_T / s->env) : cap;
+	if (g > cap)
+		g = cap;
+	if (s->env < HAPTIC_LIFT_FLOOR)
+		g = 1.0f + (g - 1.0f) * (s->env / HAPTIC_LIFT_FLOOR);
+	return g;
+}
 void hapticSwitchHd(uint8_t slot, uint16_t leftLow, uint16_t leftHigh,
 		    uint16_t rightLow, uint16_t rightHigh);
 
@@ -263,6 +293,43 @@ bool rfConnFlushRelay(uint8_t ch, uint8_t s1, bool *requeued = nullptr);
 extern volatile uint16_t g_ringFault;
 // relay entries evicted unsent because a slot's ring was full (serial "# stat" drop=)
 extern volatile uint16_t g_relayDrops;
+// Grip PCM stream counters since boot, read with WebUSB op 0x35 (0xB1 frame). A frame is made once, sent one or
+// more times, and ends acked, lost (unanswered after every retry) or evicted (pushed out of a full ring unsent).
+// events[] counts the controller's 0x44 stream events by id; 0x02 = ran dry.
+// replyUs[] buckets each reply to a 0x88 frame by its delay after the frame, 200 us per bucket (15 = 3 ms and
+// later); crcBad counts replies that arrived corrupt.
+struct PcmDiag {
+	uint32_t made, sent, acked, requeued, lost, evicted;
+	uint16_t events[16];
+	uint16_t replyUs[16];
+	uint16_t crcBad;
+	// outcome[attempt][reply]: attempt 0 first send, 1 same-cycle resend, 2 later-cycle retry; reply 0 none,
+	// 1 empty within 400 us, 2 empty later, 3 with data within 400 us, 4 with data later
+	uint16_t outcome[3][5];
+	// DualSense audio: USB audio packets received, the streaming interface's alt setting, the slots the grip
+	// stream sends to, and the left haptic channel's level after the gate
+	uint32_t audioPkts;
+	uint8_t audioAlt, waveMask;
+	uint16_t audioEnvL;
+	// 0x88 timing in ms buckets 0-2, 2-4, 4-8, 8-12, 12-16, 16-24, 24-32, 32+: queueDelay = enqueue to first send,
+	// madeGap = between frames made for one slot within a stream
+	uint16_t queueDelay[8], madeGap[8];
+	// "ran dry" events: after the last frame (end of stream), with frames still being made (mid-stream), and the
+	// mid-stream ones within 500 ms of the stream start
+	uint16_t dryEnd, dryMid, dryStart;
+	// Send timing of the current stream: each frame's first send against a steady sample clock from the first
+	// one, in us (late = sent later than the clock says). The span max - min is the jitter the controller's
+	// buffer has to absorb; lateAtDry is late - min at the last mid-stream "ran dry".
+	int32_t lateMin, lateMax, lateLast, lateAtDry;
+	// relay entries other than 0x88 sent, and poll cycles that skipped the relay because the last poll got no
+	// reply, while a frame waited
+	uint32_t otherRelays, flushSkip;
+	// DualSense: times the ISO OUT endpoint was found wedged and re-armed (mode_ps5_audio.cpp isoWatch)
+	uint16_t isoRecover;
+};
+extern PcmDiag g_pcmDiag;
+// count a controller 0x44 stream event, classing a "ran dry" by where in the stream it landed
+void pcmDiagEvent(int slot, uint8_t event);
 
 // boot reset: clear relay/active flags, arm the reconnect block
 void hapticInit();

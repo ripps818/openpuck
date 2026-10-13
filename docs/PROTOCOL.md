@@ -401,7 +401,9 @@ from the feature-`0x01` **command** space even though the numbers overlap. Groun
 
 PCM streaming, measured with the controller's IMU over USB (2026-10-03):
 - `0x86` sets the sample format, and the format persists. Op 1 does not stop playback, and channel 5 measured the
-  same as channel 2. OpenPuck sends `{2, 2, 9}` (4 kHz u-law) before each stream and periodically while streaming.
+  same as channel 2. OpenPuck sends `{2, 2, 9}` (4 kHz u-law) once at the start of each stream. Re-sending it
+  mid-stream made the grips stutter about once a second (2026-10-12). A controller whose link drops comes back
+  without the format, so OpenPuck restarts that controller's stream, with a fresh `0x86`, once it returns.
 - The controller has four LRAs in two groups: one under each trackpad, and a higher-output one in each grip.
   Routing, as the controller firmware (`6ABC4999`) handles each report:
   - `0x80` rumble plays on **both grips**.
@@ -430,10 +432,47 @@ PCM streaming, measured with the controller's IMU over USB (2026-10-03):
   defines events for format accepted, bad format, already playing, buffer low, buffer high and overflow. Six 3 s
   streams over RF, with either start, showed no mid-stream `0x02`.
 - Level: a u-law sample amplitude of about 0.4 (0.31 at 100 Hz, 0.49 at 320 Hz) matches a -3 dB `0x83` tone.
+- Grip linearity, measured with the controller resting on a table (2026-10-12): vibration rises in proportion to
+  the sample amplitude up to about 0.7 of full scale, eases off toward full scale, and clips past it. Driving
+  about twice full scale (two full bands at 200% grip strength) makes the grips audibly grind. OpenPuck therefore
+  caps the Switch wave style at 100% grip strength and the DualSense wave style at 250% haptic gain. A soft-limit
+  knee of 85 costs no measurable strength, while 70 costs 3-5% near the top; two blind A/B tests (steady and
+  swept) found no audible difference, with 85 preferred. On the DualSense at 250% gain, a blind swept A/B with no
+  dropped packets or underruns felt 85 and 100 alike and 70 weaker; 85 stays the default as headroom for peaks.
 - An 8 kHz stereo stream is 258 frames/s, above one relay per 4 ms poll. OpenPuck flushes a second queued relay in
   the same cycle when the ring holds a backlog, and resends an unanswered `0x86`-`0x89` frame once with the same PID.
   A frame still unanswered goes back to the front of the ring for up to two later cycles: a lost frame would take its
-  samples out of the stream's fill for good, and two or three losses run it dry.
+  samples out of the stream's fill for good, and two or three losses run it dry. A retry on a later cycle carries
+  a new PID, so if the first copy did land, the controller plays the frame twice.
+- **Replies to PCM frames** (measured with the `0x35` counters, 2026-10-12). The controller answers every packet in
+  its ESB ACK. The ACK is empty when the controller has nothing queued and ends within ~200 us; otherwise it carries
+  an `F1` packed with queued reports (its `0x44` stream events among them) up to 127 bytes, ending ~800-1000 us after
+  the frame. Either kind, with a good CRC, means the frame arrived. OpenPuck waits up to 1200 us after a PCM frame
+  and counts an empty ACK as delivered. With the old 400 us window and only replies with data counted, about 80% of
+  frames were resent and many played twice; the controller then sent `0x44` events `0x08` and `0x01` by the
+  thousand. Both vanish once nothing is duplicated, so they are probably "buffer high" and "frame dropped" (not
+  confirmed in its firmware). `0x00` arrives once per grip at each stream start (format accepted).
+- **TX to RX turnaround in hardware.** The controller's ACK follows ~130 us after a frame. In DualSense mode the
+  USB audio processing runs in the TinyUSB task, above the main loop, and when it preempted the loop between the end
+  of TX and a software RXEN, 83% of PCM frames got no reply. The radio now switches to RX by itself
+  (`DISABLED` -> `RXEN` shortcut), the RX buffer goes in once TX has started (`PACKETPTR` is read at `START`), and a
+  reply is detected by `CRCOK`/`CRCERROR`, which only a received packet raises. Afterwards: 1% unanswered, 250
+  polls/s (207 before).
+- **Send timing.** The controller's fill covers ~15.5 ms of lateness. A frame later than that, measured against a
+  steady sample clock from the stream's first frame, runs the stream dry mid-play. Two causes found in DualSense
+  mode (2026-10-12):
+  - A PCM frame's ACK often carries the controller's input, so the poll right after it gets an empty ACK. The poll
+    loop counted that as a missed poll and skipped the next relay turn (~90 times/s), holding frames a cycle: send
+    times spread ~14 ms and streams ran dry. An empty ACK with a good CRC now counts as a reply: no skips, spread
+    ~9-12 ms, no mid-stream underruns.
+  - The nRF5x USB driver drops an ISO OUT packet without an error when no transfer is armed at its SOF. The audio
+    callback re-armed only after its DSP, so a slow packet lost the next one: 1 ms cut from the wave, felt as a
+    tick. The callback now arms a second buffer first; every packet arrives.
+  - A flash write (a settings save) while the stream plays can wedge the ISO OUT endpoint: the driver keeps a
+    transfer pending, refuses every re-arm, and drops every packet until a bus reset. A game then loses the Wave
+    style for good (style switches in the panel did this). Settings changed while the audio interface is at alt 1
+    apply at once and are saved once it leaves alt 1 (or before a reboot). A watchdog also re-arms the endpoint
+    when alt 1 has gone 50 ms without a packet.
 - A stream that has gone silent is left to run dry. A `0x86` op 1 or a `-128 dB` `0x83` cut sent to an idle actuator
   plays as a click, so OpenPuck sends them only while something may still be playing.
 
@@ -509,7 +548,7 @@ Messages:
     DualSense audio haptics and speaker and Switch HD rumble grips; from version 30 each type has its own (below),
     field 115 still sets both the Switch's and the DualSense's, and status blob `p[209]` (payload byte 207) reports
     the active type's.
-    Per-type haptic settings (blob version >= 30): one grid of five settings by four types (Xbox, Switch, DS4, DS5).
+    Per-type haptic settings (blob version >= 30): one grid of six settings by four types (Xbox, Switch, DS4, DS5).
     Setting `k` of type `t` is field `120 + 4k + t` and status blob `p[216 + 4k + t]` (payload byte `214 + 4k + t`),
     and the config file keeps the same grid in its tail. A write that is out of range, or for a type without the
     setting, is ignored. A config from the v29 release has no grid: the limiter and the DualSense style start from
@@ -517,11 +556,18 @@ Messages:
 
     | k | setting | types | values | default |
     |---|---|---|---|---|
-    | 0 | grip limiter knee, % of full scale | Switch, DS5 | 50-100 (100 = off) | 70 |
-    | 1 | haptic style | Switch, DS5 | `0` rumble, `1` tone, `2` split, `3` wave | Switch tone, DS5 wave |
+    | 0 | grip limiter knee, % of full scale | Switch, DS5 | 50-100 (100 = off) | 85 |
+    | 1 | haptic style | Switch, DS5 | `0` rumble, `1` tone, `2` split, `3` wave | wave |
     | 2 | trackpad click gain step | all | 0-31 = -20 to -1 dB, then +1 to +12 dB (0 dB is skipped: gain byte 0 is the legacy haptic stop) | 26 (+7 dB) |
     | 3 | movement-tick spacing | all | 0 = the controller plays its own ticks, 1-4 = the puck plays them, 11000 / 5500 / 2500 / 1500 units of pad travel apart | 0 |
     | 4 | movement-tick gain step | all | as setting 2 | 11 (-9 dB) |
+    | 5 | soft boost of the grip wave stream | Switch, DS5 | `0` off, `1`-`3` raise quiet passages by up to 2× / 3× / 4× | 1 |
+
+    Soft boost is an upward compressor on the PCM stream to the grips (Wave style). It follows the louder grip's
+    peak level (instant rise, ~80 ms fall) and, below 20% of full scale, raises it 2:1 toward that level, capped
+    by the setting; louder passages pass unchanged to the limiter. Below 0.3% of full scale the boost fades out, so
+    noise in a quiet track stays quiet. The grips play down to ~0.5% of full scale in proportion (IMU), but a
+    hand barely feels a few percent. Firmware before it sends a shorter status blob (no `p[236..239]`).
 
     Ticks and clicks apply with Trackpad haptics On; Clicks only has no ticks. With a tick spacing set, the puck
     plays both as `0x82` pulses at the gains above and sets the controller's tick spacing (controller setting 14)
@@ -644,6 +690,13 @@ Messages:
     reads, and profiles `1` and `2` in files of their own, first written as copies of profile `0`. In Lizard
     mode the active one is the live map; selecting another loads it at once. The active Lizard profile is byte
     47 of the `0xAE` payload, so a switch made on the controller shows on the next poll.
+  - `0x35`: grip PCM stream counters since boot, replying with an `0xB1` frame (debug; read by
+    `tools/switch_hd_test.py --diag`). No status-blob version gates it: older firmware ignores the op.
+  - `0x36`: grip pan test. A 160 + 320 Hz tone panned left-right-left on a 2 s cycle for 4 s. In Switch Pro
+    mode with HD rumble it goes through the HD path and the Switch haptic style; in any other mode the puck streams
+    it to the grips as PCM (`0x86`/`0x88`), skipping a controller the DualSense audio stream already feeds.
+    Firmware before this change does nothing outside Switch Pro HD mode, and older firmware ignores the op. No
+    reply.
   - `0x20`–`0x24`: staged firmware update (begin/data/end/reboot/abort), acked with `0xAB` frames
   - `0x25 0x57 0x49 0x50 0x45`: **full board wipe** (`"WIPE"` magic, debug panel only). Erases the app
     region + LittleFS (settings + bonds) + bootloader-settings page and reboots app-less, so the board mounts
@@ -664,6 +717,25 @@ Messages:
     `[rowStart][rowCount][rowCount × 9-byte rows][the 29 v1 trailer bytes][enabled mask: 5 B LE]`
     `[default mask: 5 B LE]`. In v2 the journal-builder index is a candidate index (channel `4 + 2i`), and
     the startup channel is the one the next boot uses (a saved channel that is no longer enabled is skipped).
+  - `0xB1 200 <payload>`: grip PCM stream counters, answering `0x35`: `[ver=1]`, then `made sent acked requeued
+    lost evicted` (u32 LE): `0x88` frames built, transmissions (an immediate resend counts again), frames
+    answered, put back for a later cycle, unanswered after every retry, and pushed out of a full relay ring
+    unsent. Then the controller's `0x44` stream events by id `0..15` (u16 LE; `0x02` = ran dry), polls/s and
+    relays/s (u16 LE), the Switch HD wave rate in kHz (4, or 8 in an `OPK_HD_PCM_8K` build), the replies to
+    `0x88` frames bucketed by delay after the frame, 200 us per bucket with bucket 15 for 3 ms and later (16 ×
+    u16 LE), the count of replies that arrived with a bad CRC (u16 LE), and the replies by attempt (first send,
+    same-cycle resend, later-cycle retry) and kind (none, empty within 400 us, empty later, with data within
+    400 us, with data later), 3 × 5 u16 LE. Then DualSense audio: USB audio packets received (u32 LE), the
+    streaming interface's alt setting, the slots the grip stream sends to (bit per slot), and the left haptic
+    channel's level after the gate (u16 LE). Then two histograms in ms buckets 0-2, 2-4, 4-8, 8-12, 12-16,
+    16-24, 24-32, 32+ (8 × u16 LE each): each `0x88` frame's wait in the relay ring before its first send, and the
+    gap between frames made for one controller within a stream. Last, the controller's "ran dry" events (u16 LE
+    each): after the last frame, mid-stream, and the mid-stream ones within 500 ms of the stream start. Then the
+    current stream's send timing (i32 LE, us): each frame's first send against a steady sample clock from the first
+    one, as the earliest, latest and last value, and the last value minus the earliest at the last mid-stream "ran
+    dry". Then relay entries other than `0x88` sent while a stream ran, and relay turns skipped because the previous
+    poll got no reply while the ring held an entry (u32 LE each), the poll count (u16 LE, wraps), and the times
+    the DualSense audio endpoint was found wedged and re-armed (u16 LE).
   - `0xB0 <len> <payload>` (status-blob version ≥ 30): one type's mapping profiles, answering ops
     `0x2C`-`0x34`: `[1][type][active][profiles][sources]`, then for each profile its `sources` target codes
     and the two trackpad -> stick bytes (`profiles × (sources + 2)` bytes), then the gesture

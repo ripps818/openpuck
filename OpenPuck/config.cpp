@@ -67,6 +67,7 @@ uint16_t g_audioHapticGain = 0;
 uint8_t g_audioHapticStyle = AUDIO_STYLE_WAVE;
 uint16_t g_audioSpeaker = 0;
 uint8_t g_hapticLimitKnee = HAPTIC_LIMIT_KNEE_DEFAULT;
+uint8_t g_hapticLift = HAPTIC_LIFT_DEFAULT;
 uint8_t g_padClick = PAD_CLICK_DEFAULT;
 uint8_t g_padTick = PAD_TICK_DEFAULT;
 uint8_t g_padTickGain = PAD_TICKGAIN_DEFAULT;
@@ -74,14 +75,15 @@ uint8_t g_typeLimitKnee[ET_COUNT] = { HAPTIC_LIMIT_KNEE_DEFAULT,
 				      HAPTIC_LIMIT_KNEE_DEFAULT,
 				      HAPTIC_LIMIT_KNEE_DEFAULT,
 				      HAPTIC_LIMIT_KNEE_DEFAULT };
-// Per-type haptic settings (see config.h). The Switch starts on tones: the wave style's two full-scale bands made
-// it rough at its grip strength.
+// Per-type haptic settings (see config.h). Every type starts on wave, the Switch too: its two HD bands play at their
+// own frequencies, left and right apart. It stays smooth with the Switch wave capped at 100% grip strength (past
+// that the grips grind) and the limiter knee at 85.
 uint8_t g_typeHaptic[HAP_COUNT][ET_COUNT] = {
 	/* HAP_KNEE  */ { HAPTIC_LIMIT_KNEE_DEFAULT, HAPTIC_LIMIT_KNEE_DEFAULT,
 			  HAPTIC_LIMIT_KNEE_DEFAULT,
 			  HAPTIC_LIMIT_KNEE_DEFAULT },
 	/* HAP_STYLE */
-	{ AUDIO_STYLE_WAVE, AUDIO_STYLE_TONE, AUDIO_STYLE_WAVE,
+	{ AUDIO_STYLE_WAVE, AUDIO_STYLE_WAVE, AUDIO_STYLE_WAVE,
 	  AUDIO_STYLE_WAVE },
 	/* HAP_CLICK */
 	{ PAD_CLICK_DEFAULT, PAD_CLICK_DEFAULT, PAD_CLICK_DEFAULT,
@@ -92,6 +94,9 @@ uint8_t g_typeHaptic[HAP_COUNT][ET_COUNT] = {
 	/* HAP_TICKGAIN */
 	{ PAD_TICKGAIN_DEFAULT, PAD_TICKGAIN_DEFAULT, PAD_TICKGAIN_DEFAULT,
 	  PAD_TICKGAIN_DEFAULT },
+	/* HAP_LIFT */
+	{ HAPTIC_LIFT_DEFAULT, HAPTIC_LIFT_DEFAULT, HAPTIC_LIFT_DEFAULT,
+	  HAPTIC_LIFT_DEFAULT },
 };
 struct TypeHapticSpec {
 	uint8_t min, max;
@@ -103,6 +108,7 @@ static const TypeHapticSpec kTypeHaptic[HAP_COUNT] = {
 	/* HAP_CLICK */ { PAD_CLICK_MIN, PAD_CLICK_MAX, 0xF },
 	/* HAP_TICK  */ { 0, PAD_TICK_MAX, 0xF },
 	/* HAP_TICKGAIN */ { PAD_CLICK_MIN, PAD_CLICK_MAX, 0xF },
+	/* HAP_LIFT  */ { 0, HAPTIC_LIFT_MAX, (1u << ET_SWITCH) | (1u << ET_DS5) },
 };
 static bool typeHapticInRange(uint8_t setting, uint8_t value)
 {
@@ -193,6 +199,7 @@ void applyActiveType()
 						   RUMBLE_STYLE_NORMAL;
 	g_rumbleScale = g_typeRumbleScale[g_etype];
 	g_hapticLimitKnee = g_typeHaptic[HAP_KNEE][g_etype];
+	g_hapticLift = g_typeHaptic[HAP_LIFT][g_etype];
 	g_audioHapticStyle = g_typeHaptic[HAP_STYLE][ET_DS5];
 	g_padClick = g_typeHaptic[HAP_CLICK][g_etype];
 	g_padTick = g_typeHaptic[HAP_TICK][g_etype];
@@ -284,8 +291,31 @@ void cfgExtWrite(uint8_t index, uint8_t value)
 		g_cfgExt[index] = value;
 }
 
+static bool g_cfgSavePending;
+
+void saveCfgSoon()
+{
+	if (ps5AudioStreaming())
+		g_cfgSavePending = true;
+	else
+		saveCfg();
+}
+
+void cfgSaveTask()
+{
+	if (g_cfgSavePending && !ps5AudioStreaming())
+		saveCfg();
+}
+
+void cfgSaveFlush()
+{
+	if (g_cfgSavePending)
+		saveCfg();
+}
+
 void saveCfg()
 {
+	g_cfgSavePending = false;
 	cfgExtWrite(3u, (uint8_t)(g_audioHapticGain / 2));
 	cfgExtWrite(4u, g_audioHaptics);
 	cfgExtWrite(11u, g_typeHaptic[HAP_STYLE][ET_DS5]);

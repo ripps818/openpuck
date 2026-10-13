@@ -30,12 +30,15 @@ void __set_PRIMASK(uint32_t){}
 bool blocked[4]={};
 bool haptic82Blocked(int s){return blocked[s];}
 bool hapticLinkUp(int s){return !blocked[s];}
+uint8_t ps5Mask=0;
+uint8_t ps5WaveMask(){return ps5Mask;}
 struct {bool sleep=false;bool suspended(){return sleep;}} USBDevice;
 unsigned long g_rumble80Ms[4]={};bool g_rumble80On[4]={};
 // fork: merged legacy/audio rumble path (hapticUpdateRumble)
 #define RUMBLE_THROTTLE_MS 20u
 uint8_t g_audioHaptics=1;
 uint8_t g_hapticLimitKnee=100; // 100 = limiter off: these checks are about the HD rumble path, not the knee
+uint8_t g_hapticLift=0; // soft boost off, likewise; its own checks turn it on
 #define ET_SWITCH 1
 #define AUDIO_STYLE_RUMBLE 0
 #define AUDIO_STYLE_TONE 1
@@ -54,8 +57,11 @@ bool relayEnqueue(uint8_t rid,const uint8_t *p,uint8_t n,bool hap,uint8_t slot){
 }
 #define PCM_SAMPLES 31u
 #define PCM_RATE_HZ 4000u
+#define PCM_FMT_ULAW_4K 9u
+#define PCM_FMT_ULAW_8K 8u
+#define RUMBLE_TEST_AMP 0x8000u
 uint32_t micros(){return now*1000u;}
-void hapticPcmStart(uint8_t slot){if(keepPcm)messages.push_back({0x86,slot,{2,2,9}});}
+void hapticPcmStart(uint8_t slot,uint8_t format){if(keepPcm)messages.push_back({0x86,slot,{2,2,format}});}
 ''' + h[h.index('static inline uint8_t hapticPcmFrameLen'):h.index('// G.711')] + '''bool hapticPcmSend(uint8_t slot,const uint8_t *l,const uint8_t *r,uint8_t n){assert(n && n<=31);std::vector<uint8_t> f(1,n);f.insert(f.end(),l,l+31);f.insert(f.end(),r,r+31);if(keepPcm)messages.push_back({0x88,slot,f});return true;}
 uint8_t hapticUlaw(float x){return x>0.001f?1:(x<-0.001f?2:0);}
 ''' + h[h.index('static inline float hapticSoftLimit'):h.index('void hapticSwitchHd(')] + '''void hapticCancelPendingOn(int slot){
@@ -131,19 +137,50 @@ test = '''int main(){
  now+=50;g_hdPadScale=0;{auto before=messages.size();hapticHdTask();assert(messages.size()==before+1 && side(before)==HSIDE_LPAD && gain(before)==-128);}
  // grips stream both bands as 0x88 PCM frames, pads keep their tones
  reset();keepPcm=true;hapticSwitchPitch(0,30000,20000,0,0,160,320,160,320);hapticHdTask();
- assert(messages.size()==2 && messages[0].rid==0x83 && messages[0].p[0]==HSIDE_LPAD && messages[1].rid==0x86);
- now+=8;hapticHdTask();{size_t f=0;for(auto &m:messages){assert(!(m.rid==0x83 && m.p[0]>=HSIDE_LGRIP && int8_t(m.p[1])!=-128));if(m.rid==0x88){++f;assert(m.p.size()==63);}}assert(f==1);}
- {auto &m=messages.back();assert(m.rid==0x88);bool left=false,right=false;for(int i=1;i<32;i++)left|=m.p[i]!=0;for(int i=32;i<63;i++)right|=m.p[i]!=0;assert(left && !right);}
- // grip strength scales the stream; 0 silences it (the first frame may still hold a sample from before).
- // The third frame is 3 samples, so playback starts at 96 buffered samples instead of 124.
- g_rumbleScale=0;now+=16;hapticHdTask();{auto &m=messages.back();assert(m.rid==0x88 && m.p[0]==3);for(int i=0;i<3;i++)assert(m.p[1+i]==0 && m.p[32+i]==0);}
+ // the stream starts HD_PCM_LEAD (62) samples ahead, so two full frames go out with the 0x86 at once
+ assert(messages.size()==4 && messages[0].rid==0x83 && messages[0].p[0]==HSIDE_LPAD && messages[1].rid==0x86 && messages[2].rid==0x88 && messages[3].rid==0x88);
+ for(auto &m:messages){assert(!(m.rid==0x83 && m.p[0]>=HSIDE_LGRIP && int8_t(m.p[1])!=-128));if(m.rid==0x88)assert(m.p.size()==63 && m.p[0]==31);}
+ {auto &m=messages.back();bool left=false,right=false;for(int i=1;i<32;i++)left|=m.p[i]!=0;for(int i=32;i<63;i++)right|=m.p[i]!=0;assert(left && !right);}
+ // grip strength scales the stream; 0 silences it. The third frame is 3 samples, so playback starts at 65
+ // buffered samples, 1 ms after the effect instead of 24 ms
+ g_rumbleScale=0;now+=1;hapticHdTask();{auto &m=messages.back();assert(m.rid==0x88 && m.p[0]==3);for(int i=0;i<3;i++)assert(m.p[1+i]==0 && m.p[32+i]==0);}
  {std::vector<int> n;for(auto &m:messages)if(m.rid==0x88)n.push_back(m.p[0]);assert((n==std::vector<int>{31,31,3}));}
  now+=8;hapticHdTask();assert(messages.back().rid==0x88 && messages.back().p[0]==31);
+ // the format goes out once per stream, never restated mid-stream
+ for(int k=0;k<15;k++){hapticSwitchPitch(0,30000,20000,0,0,160,320,160,320);now+=100;hapticHdTask();}
+ {int f=0;for(auto &m:messages)if(m.rid==0x86 && m.p[0]==2)f++;assert(f==1);}
  g_rumbleScale=100;
  // a silent gap keeps the stream alive; past the hang it just stops sending frames (no 0x86 op 1)
  hapticSwitchHd(0,0,0,0,0);now+=100;hapticHdTask();assert(g_hdPcmState[0].on && messages.back().rid==0x88);
+ // an effect after silence restarts its side's bands in step, so its envelope doesn't depend on when it lands
+ assert(g_hdPcmState[0].quiet[0] && g_hdPcmState[0].quiet[1]);
+ hapticSwitchPitch(0,30000,20000,0,0,160,170,160,320);now+=2;hapticHdTask();
+ {auto &p=g_hdPcmState[0];assert(!p.quiet[0] && p.quiet[1] && fabsf(p.phase[1]/p.phase[0]-170.0f/160.0f)<0.001f);}
+ hapticSwitchHd(0,0,0,0,0);now+=100;hapticHdTask();
  now+=500;hapticHdTask();assert(!g_hdPcmState[0].on);
  for(auto &m:messages)assert(!(m.rid==0x86 && m.p[0]==1));
+ // pan test: starts on the left, is on the right half a period (1 s) in, stops after 4 s
+ reset();hapticTestHdPan();hapticHdTask();assert(g_hdRumble[0].bands[0]>30000 && g_hdRumble[0].bands[2]<100);
+ now+=1000;hapticHdTask();assert(g_hdRumble[0].bands[0]<100 && g_hdRumble[0].bands[2]>30000 && g_hdRumble[0].bands[3]>30000);
+ now+=3100;hapticHdTask();for(int k=0;k<4;k++)assert(g_hdRumble[0].bands[k]==0);
+ // outside Switch Pro HD mode the pan streams PCM itself, skips a slot the DualSense audio feeds, plays silence
+ // through the hang, and stops without the op 1 cut
+ reset();keepPcm=true;g_usbMode=1;ps5Mask=2;hapticTestHdPan();hapticHdTask();
+ {int s0=0,s1=0;for(auto &m:messages){if(m.rid==0x86&&m.slot==0)s0++;if(m.slot==1)s1++;}assert(s0==1 && s1==0 && g_hdPcmState[0].on);}
+ now+=4100;hapticHdTask();assert(g_hdPcmState[0].on);
+ now+=500;hapticHdTask();assert(!g_hdPcmState[0].on);
+ for(auto &m:messages)assert(!(m.rid==0x86 && m.p[0]==1));
+ g_usbMode=4;ps5Mask=0;keepPcm=false;
+ // soft boost: off passes through; quiet passages rise 2:1 toward 20% of full scale up to the cap; loud ones
+ // and near-silence are left alone; the envelope falls slowly, so the gain does not jump back between peaks
+ {HapticLift lf={};assert(hapticLiftGain(&lf,0.01f)==1.0f);
+  g_hapticLift=3;lf={};assert(fabsf(hapticLiftGain(&lf,0.01f)-4.0f)<0.01f);
+  lf={};assert(fabsf(hapticLiftGain(&lf,0.05f)-2.0f)<0.01f);
+  lf={};assert(hapticLiftGain(&lf,0.5f)==1.0f);
+  lf={};assert(fabsf(hapticLiftGain(&lf,0.001f)-2.0f)<0.05f);
+  g_hapticLift=1;lf={};assert(fabsf(hapticLiftGain(&lf,0.01f)-2.0f)<0.01f);
+  lf={};hapticLiftGain(&lf,0.5f);assert(hapticLiftGain(&lf,0.0f)==1.0f && lf.env>0.49f);
+  g_hapticLift=0;}
  reset();hdrBuildLevels();hdrReset(0);uint8_t b[4]={};uint16_t lo,hi;uint8_t packet[9]={};
  assert(hdrDecode(0,0,b,&lo,&hi)==0 && lo==0 && hi==0);
  uint32_t w=(1u<<30)|(1u<<25)|(3u<<20);for(int i=0;i<4;i++)b[i]=(w>>(8*i))&255;

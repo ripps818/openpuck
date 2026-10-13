@@ -109,6 +109,7 @@ for(const id of ["mDiv","mFric"]){
 }
 // per-type back/QAM/A-B-swap/haptics handlers are wired in buildTypeCfgs()
 $("#rumbleTest").onclick=async()=>{ if(S.dev){ await send([0x16]); log("test rumble sent"); } };
+$("#rumbleHdTest").onclick=async()=>{ if(S.dev){ await send([0x36]); log("HD pan test sent"); } };
 for(const [id,bit] of SC_BITS)$('#'+id).onclick=()=>{if(S.lastSw)setField(240,S.lastSw[46]^bit);};
 $("#hdPadScale").addEventListener("change",()=>setField(231,+$("#hdPadScale").value/2));
 $("#qamSelect").addEventListener("change",()=>setField(239,+$("#qamSelect").value));

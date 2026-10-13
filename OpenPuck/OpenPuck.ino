@@ -132,8 +132,10 @@ void modeSwitchReboot(uint8_t mode)
 	if (modeValid(mode))
 		saveMode(
 			mode); // 0xFF / invalid => keep the current mode (bond-import reboot)
-	// a profile switch waits a few seconds before it is written; the reboot must not drop it
+	// a profile switch waits a few seconds before it is written, and a setting changed while DualSense audio
+	// streams waits for the stream to stop; the reboot must not drop either
 	btnmapFlush();
+	cfgSaveFlush();
 	if (USBDevice.mounted())
 		USBDevice.detach();
 
@@ -451,6 +453,7 @@ void loop()
 	usbMountTask(); // dynamic mount/unmount of connected controllers (no-op unless enabled)
 	btnmapTask(
 		millis()); // button profile edits made on the RF path or over USB are written here
+	cfgSaveTask();
 	faultDiagSetStage(8);
 	usbTxPump(); // drain queued device->host reports HERE, in loop -- never off-loop (jitters the RF poll)
 	puckCmdLogDrain(); // print captured USB feature commands (diagnostic; no-op unless g_cmdCapture)
@@ -497,6 +500,7 @@ void loop()
 	usbMountTask(); // dynamic mount/unmount of connected controllers (no-op unless enabled)
 	btnmapTask(
 		millis()); // button profile edits made on the RF path or over USB are written here
+	cfgSaveTask();
 	faultDiagSetStage(8);
 	usbTxPump(); // drain queued device->host reports HERE, in loop -- never off-loop (jitters the RF poll)
 	puckCmdLogDrain(); // print captured USB feature commands (diagnostic; no-op unless g_cmdCapture)

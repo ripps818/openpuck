@@ -1,4 +1,5 @@
 #include "btnmap.h"
+#include "config.h" // ps5AudioStreaming()
 #include "storage.h"
 #include <Adafruit_LittleFS.h>
 #include <InternalFileSystem.h>
@@ -471,7 +472,8 @@ void btnmapTouch(uint32_t holdMs)
 
 void btnmapTask(uint32_t now)
 {
-	if (!g_bmDirty)
+	// a flash write breaks a running DualSense audio stream (see saveCfgSoon); the edit waits for it to stop
+	if (!g_bmDirty || ps5AudioStreaming())
 		return;
 	if (!g_bmArmed) {
 		g_bmArmed = true;

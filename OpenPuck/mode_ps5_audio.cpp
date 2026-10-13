@@ -31,8 +31,17 @@ static uint8_t g_uac1EpIn = 0x88;
 static uint8_t g_uac1AltSetting = 0;
 static uint8_t g_uac1AltSettingIn = 0;
 
-CFG_TUD_MEM_SECTION static uint32_t g_isoOutBuf32[UAC1_ISO_EP_BUFSIZE / 4];
-static uint8_t *g_isoOutBuf = (uint8_t *)g_isoOutBuf32;
+// Two buffers: the next packet's transfer is armed before this one is processed. The nRF5x driver drops an ISO
+// OUT packet without an error when no transfer is armed at its SOF, and the DSP for one packet plus a radio
+// TX with interrupts off can run past the 1 ms frame. Each dropped packet cut 1 ms out of the wave: a tick.
+CFG_TUD_MEM_SECTION static uint32_t g_isoOutBuf32[2][UAC1_ISO_EP_BUFSIZE / 4];
+static uint8_t g_isoOutIdx = 0;
+// last ISO OUT packet (or alt 1 selected), for the stall watchdog (isoWatch)
+static volatile uint32_t s_isoLastMs;
+static inline uint8_t *isoOutBuf(uint8_t i)
+{
+	return (uint8_t *)g_isoOutBuf32[i & 1];
+}
 // Never written: every mic packet is silence.
 CFG_TUD_MEM_SECTION static uint32_t g_isoInBuf32[UAC1_ISO_IN_EP_BUFSIZE / 4];
 static uint8_t *g_isoInBuf = (uint8_t *)g_isoInBuf32;
@@ -332,6 +341,7 @@ static void processAudioSamples(const uint8_t *data, uint32_t len)
 	// the auto gain's peak envelope and gain
 	static Biquad s_spkAa[2] = {}, s_spkCut[2] = {};
 	static float s_spkGain = 0, s_spkPeak = 0, s_spkAgc = 1;
+	static HapticLift s_lift = {};
 	uint8_t waveMask = s_waveMask;
 	float waveScale = s_waveScale, spkScale = s_spkScale;
 	uint8_t dec = s_streamDec;
@@ -343,6 +353,7 @@ static void processAudioSamples(const uint8_t *data, uint32_t len)
 		s_fill = 0;
 		s_queued = 0;
 		s_spkGain = 0;
+		s_lift = {};
 	}
 
 	uint32_t num_frames = len / 8;
@@ -395,10 +406,11 @@ static void processAudioSamples(const uint8_t *data, uint32_t len)
 		}
 		// soft limit, not hapticUlaw's clamp: a sharp hit peaks above the 20 ms envelope the haptic gain
 		// follows, and a clipped peak plays as a pop
-		s_pcmL[s_fill] =
-			hapticUlaw(hapticSoftLimit(al * waveScale + sp));
-		s_pcmR[s_fill] =
-			hapticUlaw(hapticSoftLimit(ar * waveScale + sp));
+		float wl = al * waveScale, wr = ar * waveScale;
+		float lift = hapticLiftGain(
+			&s_lift, fabsf(wl) > fabsf(wr) ? fabsf(wl) : fabsf(wr));
+		s_pcmL[s_fill] = hapticUlaw(hapticSoftLimit(wl * lift + sp));
+		s_pcmR[s_fill] = hapticUlaw(hapticSoftLimit(wr * lift + sp));
 		if (++s_fill < hapticPcmFrameLen(s_queued, rate))
 			continue;
 		for (uint8_t b = 0; b < NSLOT; b++)
@@ -625,19 +637,28 @@ static void toneUpdate(ToneSide *t, uint8_t side, uint16_t env, uint16_t ref,
 }
 
 // Grip stream (wave haptics and/or the speaker): stream while either is above its gate and for WAVE_HANG_MS
-// after, so a short pause does not pay the controller's pre-buffer again. The format is re-sent every
-// WAVE_FMT_MS: it persists on the controller, but one that power-cycled mid-stream comes back without it. The
-// stream runs at SPEAKER_RATE_HZ while the speaker is enabled, else at 4 kHz (the same unless OPK_SPEAKER_8K);
-// the controller refuses a new format while a stream plays, so a rate change stops the stream and the next tick
-// restarts it.
+// after, so a short pause does not pay the controller's pre-buffer again. The format goes out once per stream:
+// re-sending it mid-stream made the controller stutter once a second. A controller whose link drops comes back
+// without it, so its slot leaves the stream and rejoins with a fresh format. The stream runs at SPEAKER_RATE_HZ
+// while the speaker is enabled, else at 4 kHz (the same unless OPK_SPEAKER_8K); the controller refuses a new
+// format while a stream plays, so a rate change stops the stream and the next tick restarts it.
 #define WAVE_HANG_MS 300u
-#define WAVE_FMT_MS 1000u
+
+bool ps5AudioStreaming()
+{
+	return g_uac1AltSetting == 1;
+}
+
+uint8_t ps5WaveMask()
+{
+	return s_waveMask;
+}
 
 static void waveUpdate(bool active, bool speaker, float waveScale,
 		       float spkScale, uint32_t now)
 {
 	static bool s_on = false;
-	static uint32_t s_lastActive = 0, s_fmtMs[NSLOT] = {};
+	static uint32_t s_lastActive = 0;
 	const uint8_t dec =
 		(uint8_t)(48000u / (speaker ? SPEAKER_RATE_HZ : PCM_RATE_HZ));
 	if (dec != s_streamDec) {
@@ -658,23 +679,20 @@ static void waveUpdate(bool active, bool speaker, float waveScale,
 	uint8_t mask = 0;
 	for (uint8_t u = 0; s_on && u < g_usbMountCount; u++) {
 		int bond = audioBond(u);
-		if (bond >= 0)
+		if (bond >= 0 && hapticLinkUp(bond))
 			mask |= (uint8_t)(1u << bond);
 	}
-	for (uint8_t b = 0; b < NSLOT; b++) {
-		if (!(mask & (1u << b)))
-			continue;
-		if (!(s_waveMask & (1u << b)) ||
-		    now - s_fmtMs[b] >= WAVE_FMT_MS) {
+	for (uint8_t b = 0; b < NSLOT; b++)
+		if ((mask & (1u << b)) && !(s_waveMask & (1u << b)))
 			hapticPcmStart(b, speaker ? PCM_FMT_SPEAKER :
 						    PCM_FMT_ULAW_4K);
-			s_fmtMs[b] = now;
-		}
-	}
 	s_waveScale = waveScale;
 	s_spkScale = spkScale;
 	s_waveMask = mask;
+	g_pcmDiag.waveMask = mask;
 }
+
+static void isoWatch(uint32_t now);
 
 void ps5AudioTask(void)
 {
@@ -686,6 +704,7 @@ void ps5AudioTask(void)
 	static ToneSide s_toneL = {}, s_toneR = {};
 
 	uint32_t now = millis();
+	isoWatch(now);
 	if ((uint32_t)(now - s_lastTickMs) < HAPTIC_TICK_MS)
 		return;
 	s_lastTickMs = now;
@@ -713,6 +732,7 @@ void ps5AudioTask(void)
 	uint16_t gate = (tone || wave) ? TONE_GATE : HAPTIC_GATE;
 	uint16_t envL = hapticEnvelope(hapticLevel(sqL, frames), &s_envL, gate);
 	uint16_t envR = hapticEnvelope(hapticLevel(sqR, frames), &s_envR, gate);
+	g_pcmDiag.audioEnvL = envL;
 	// Split style: below SPLIT_HZ drives the rumble, the rest the tones, each with that output's gate.
 	uint16_t loL = hapticEnvelope(hapticLevel(sqLoL, frames), &s_envLoL,
 				      HAPTIC_GATE);
@@ -742,11 +762,14 @@ void ps5AudioTask(void)
 	bool spkOn = g_audioSpeaker && spkEnv;
 	// wave plays the haptic channels as sent, like a real DualSense, so it skips the auto gain. 100% (and Auto)
 	// is 40% of full scale: half matched a real pad in FFXIV, but felt too strong across other games (2026-10-05).
+	// Past 250% a full-scale track overdrives the grips (IMU: they flatten above ~0.7 and clip past full scale),
+	// so more gain stays with the tone and rumble styles.
+	uint16_t waveGain = g_audioHapticGain ? g_audioHapticGain : 100;
+	if (waveGain > 250)
+		waveGain = 250;
 	waveUpdate((wave && (envL || envR)) || spkOn, g_audioSpeaker != 0,
-		   (wave && g_audioHaptics) ?
-			   (g_audioHapticGain ? g_audioHapticGain : 100) /
-				   (250.0f * 32768.0f) :
-			   0.0f,
+		   (wave && g_audioHaptics) ? waveGain / (250.0f * 32768.0f) :
+					      0.0f,
 		   spkOn ? g_audioSpeaker / (50.0f * 32768.0f) : 0.0f, now);
 
 	// A style that stops using an output stops whatever it left playing (a tone cuts once; a rumble stops below).
@@ -792,7 +815,7 @@ static const tusb_desc_endpoint_t s_iso_ep_in = {
 	.bInterval = 1,
 };
 
-// SET_CUR data for controls we don't apply (sampling rate, unknown selectors). Kept apart from g_isoOutBuf,
+// SET_CUR data for controls we don't apply (sampling rate, unknown selectors). Kept apart from the ISO OUT buffers,
 // which the ISO OUT DMA may be filling when the host configures the mic mid-stream.
 static uint8_t s_ctrlScratch[8];
 
@@ -850,8 +873,12 @@ static bool uac1_control_xfer_cb(uint8_t rhport, uint8_t stage,
 		uint8_t alt = tu_u16_low(request->wValue);
 		if (itf == g_uac1ItfAs) {
 			g_uac1AltSetting = alt;
+			g_pcmDiag.audioAlt = alt;
 			if (alt == 1) {
-				usbd_edpt_xfer(rhport, g_uac1EpOut, g_isoOutBuf,
+				s_isoLastMs = millis();
+				g_isoOutIdx = 0;
+				usbd_edpt_xfer(rhport, g_uac1EpOut,
+					       isoOutBuf(0),
 					       UAC1_ISO_EP_BUFSIZE);
 			}
 		} else if (itf == g_uac1ItfAsIn) {
@@ -925,15 +952,51 @@ static bool uac1_control_xfer_cb(uint8_t rhport, uint8_t stage,
 	return false;
 }
 
+// A flash write while the stream plays can leave the ISO OUT endpoint wedged: the driver still counts a transfer
+// as pending, so every re-arm is refused and the host's packets are dropped until the next bus reset (measured:
+// alt 1, 1000 packets/s sent, none received). The host sends a packet every frame while alt 1 is selected, so
+// a 50 ms gap means the endpoint is stuck: close, reopen and re-arm it, in the usbd task that owns it.
+#define ISO_STALL_MS 50u
+static volatile bool s_isoRecovering;
+
+static void isoRecover(void *param)
+{
+	(void)param;
+	usbd_edpt_close(0, g_uac1EpOut);
+	usbd_edpt_open(0, &s_iso_ep_out);
+	g_isoOutIdx = 0;
+	if (g_uac1AltSetting == 1)
+		usbd_edpt_xfer(0, g_uac1EpOut, isoOutBuf(0),
+			       UAC1_ISO_EP_BUFSIZE);
+	s_isoLastMs = millis();
+	s_isoRecovering = false;
+}
+
+static void isoWatch(uint32_t now)
+{
+	// signed: the usbd task can stamp a packet after the caller read now
+	if (g_uac1AltSetting != 1 || s_isoRecovering ||
+	    (int32_t)(now - s_isoLastMs) < (int32_t)ISO_STALL_MS)
+		return;
+	s_isoRecovering = true;
+	g_pcmDiag.isoRecover++;
+	usbd_defer_func(isoRecover, NULL, false);
+}
+
 static bool uac1_xfer_cb(uint8_t rhport, uint8_t ep_addr, xfer_result_t result,
 			 uint32_t xferred_bytes)
 {
 	if (ep_addr == g_uac1EpOut && result == XFER_RESULT_SUCCESS) {
-		if (xferred_bytes > 0 && g_uac1AltSetting == 1)
-			processAudioSamples(g_isoOutBuf, xferred_bytes);
-		if (g_uac1AltSetting == 1)
-			usbd_edpt_xfer(rhport, g_uac1EpOut, g_isoOutBuf,
-				       UAC1_ISO_EP_BUFSIZE);
+		g_pcmDiag.audioPkts++;
+		s_isoLastMs = millis();
+		if (g_uac1AltSetting != 1)
+			return true;
+		uint8_t *got = isoOutBuf(g_isoOutIdx);
+		g_isoOutIdx ^= 1;
+		usbd_edpt_xfer(rhport, g_uac1EpOut, isoOutBuf(g_isoOutIdx),
+			       UAC1_ISO_EP_BUFSIZE);
+		if (xferred_bytes > 0)
+			processAudioSamples(got, xferred_bytes);
 		return true;
 	}
 	if (ep_addr == g_uac1EpIn) {
