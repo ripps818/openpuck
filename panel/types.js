@@ -32,7 +32,7 @@ export const TYPE_DEFS = [
   {key:"DS5", name:"DS5", labels:{1:"Cross",2:"Circle",3:"Square",4:"Triangle",5:"L1",6:"R1",7:"L3",8:"R3",9:"Create",10:"Options",11:"PS",19:"L2",20:"R2",...DPAD,16:"Touchpad Click",17:"Mute"}, padTargets:PS_PADS},
 ];
 // Grip strength (percent) and haptic style a type starts with: the firmware's g_typeRumbleScaleDefault and kHapticStyleDefault
-const typeDefaults=def=>({rumble:200,style:3,click:26,tick:0,tickGain:11,...def.haptics});
+const typeDefaults=def=>({rumble:200,style:3,click:26,tick:0,tickGain:11,knee:85,...def.haptics});
 // movement-tick spacing: 0 leaves the ticks to the controller (fixed strength), 1..4 have the puck play them, a wider to a
 // narrower distance apart
 export const PAD_TICK_LABELS=["Controller's own","Sparse","Normal","Dense","Densest"];
@@ -111,7 +111,7 @@ function typeResetFields(et){
     [hapField(HAP.TICKGAIN,et),typeDefaults(TYPE_DEFS[et]).tickGain,30]];
   // firmware before protocol 30 has one limiter for both types, and the style only on the DualSense
   const perType=S.lastP && S.lastP[0]>=30;
-  if(sw||ds5) f.push(perType ? [hapField(HAP.KNEE,et),70,30] : [115,70,27]);
+  if(sw||ds5) f.push(perType ? [hapField(HAP.KNEE,et),typeDefaults(TYPE_DEFS[et]).knee,30] : [115,70,27]);
   const style=typeDefaults(TYPE_DEFS[et]).style;
   if(sw) f.push([hapField(HAP.STYLE,et),style,30]);
   if(ds5) f.push([31,1,0],perType ? [hapField(HAP.STYLE,et),style,30] : [88,style,22],[30,0,0],[114,0,26],[116,0,29]);
@@ -313,6 +313,9 @@ export function initTypes(){
         sl.addEventListener("input",()=>{ vspan.textContent=(+sl.value===0)?"Auto":sl.value+"%"; });
         sl.addEventListener("change",()=>setField(30, (+sl.value)/2));
         rec.audioGain=sl; rec.audioGainV=vspan;
+        const gnote=document.createElement("p"); gnote.className="note";
+        gnote.textContent="The Wave style stops getting stronger at 250%: past that a full-strength haptic track overdrives the grips and they grind. Higher gains still apply to the Tone, Split and Rumble styles.";
+        gAud.appendChild(gnote);
         // Controller speaker (protocol v26): the DualSense speaker channels played on the grips
         const sel=document.createElement("select");
         for(const v of [0,25,50,75,100,150,200]){ const o=document.createElement("option"); o.value=v; o.textContent=v?v+"%":"Off (default)"; sel.appendChild(o); }
