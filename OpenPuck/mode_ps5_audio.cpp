@@ -328,11 +328,14 @@ static void processAudioSamples(const uint8_t *data, uint32_t len)
 	static int8_t s_signL = 1, s_signR = 1;
 	static Biquad s_lpL = {}, s_lpR = {};
 	bool split = g_audioHapticStyle == AUDIO_STYLE_SPLIT;
+	// The band split, its energies and the zero crossings feed only the tone, split and rumble styles; wave reads
+	// the raw energy alone, so it skips them (about a third of the per-sample work at 48 kHz)
+	bool bands = g_audioHapticStyle != AUDIO_STYLE_WAVE;
 	// grip stream: decimation phase, fill of the frame being built, samples sent, and that frame
 	static Biquad s_aaL[2] = {}, s_aaR[2] = {};
 	static uint8_t s_dec = 0, s_fill = 0;
 	static uint16_t s_queued = 0;
-	static uint8_t s_pcmL[PCM_SAMPLES], s_pcmR[PCM_SAMPLES];
+	static uint8_t s_frame[PCM_FRAME_LEN];
 	// speaker: anti-alias and low-cut sections, its gain eased toward s_spkScale (~12 ms) so the gate fades, and
 	// the auto gain's peak envelope and gain
 	static Biquad s_spkAa[2] = {}, s_spkCut[2] = {};
@@ -363,14 +366,19 @@ static void processAudioSamples(const uint8_t *data, uint32_t len)
 		sq_r += (int32_t)s[3] * s[3];
 		float mono = 0.5f * ((float)s[0] + (float)s[1]);
 		sq_spk += mono * mono;
-		float ll = splitLow(&s_lpL, s[2]), lr = splitLow(&s_lpR, s[3]);
-		float hl = s[2] - ll, hr = s[3] - lr;
-		lo_l += ll * ll;
-		lo_r += lr * lr;
-		hi_l += hl * hl;
-		hi_r += hr * hr;
-		zeroCross(split ? (int32_t)hl : s[2], &s_signL, &zc_l, &act_l);
-		zeroCross(split ? (int32_t)hr : s[3], &s_signR, &zc_r, &act_r);
+		if (bands) {
+			float ll = splitLow(&s_lpL, s[2]),
+			      lr = splitLow(&s_lpR, s[3]);
+			float hl = s[2] - ll, hr = s[3] - lr;
+			lo_l += ll * ll;
+			lo_r += lr * lr;
+			hi_l += hl * hl;
+			hi_r += hr * hr;
+			zeroCross(split ? (int32_t)hl : s[2], &s_signL, &zc_l,
+				  &act_l);
+			zeroCross(split ? (int32_t)hr : s[3], &s_signR, &zc_r,
+				  &act_r);
+		}
 		if (!waveMask)
 			continue;
 		float al = biquad(&s_aaL[1], HAP_LP,
