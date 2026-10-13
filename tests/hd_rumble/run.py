@@ -177,11 +177,12 @@ test = '''int main(){
  // soft boost: off passes through; quiet passages rise 2:1 toward 20% of full scale up to the cap; loud ones
  // and near-silence are left alone; the envelope falls slowly, so the gain does not jump back between peaks
  {HapticLift lf={};assert(hapticLiftGain(&lf,0.01f)==1.0f);
-  g_hapticLift=3;lf={};assert(fabsf(hapticLiftGain(&lf,0.01f)-4.0f)<0.01f);
+  g_hapticLift=4;lf={};assert(fabsf(hapticLiftGain(&lf,0.01f)-4.0f)<0.01f);
   lf={};assert(fabsf(hapticLiftGain(&lf,0.05f)-2.0f)<0.01f);
   lf={};assert(hapticLiftGain(&lf,0.5f)==1.0f);
   lf={};assert(fabsf(hapticLiftGain(&lf,0.001f)-2.0f)<0.05f);
-  g_hapticLift=1;lf={};assert(fabsf(hapticLiftGain(&lf,0.01f)-2.0f)<0.01f);
+  g_hapticLift=2;lf={};assert(fabsf(hapticLiftGain(&lf,0.01f)-2.0f)<0.01f);
+  g_hapticLift=1;lf={};assert(fabsf(hapticLiftGain(&lf,0.01f)-1.5f)<0.01f);
   lf={};hapticLiftGain(&lf,0.5f);assert(hapticLiftGain(&lf,0.0f)==1.0f && lf.env>0.49f);
   g_hapticLift=0;}
  reset();hdrBuildLevels();hdrReset(0);uint8_t b[4]={};uint16_t lo,hi;uint8_t packet[9]={};

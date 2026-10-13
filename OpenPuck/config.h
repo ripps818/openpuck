@@ -248,8 +248,8 @@ extern uint16_t g_audioSpeaker;
 //             controller, which plays them at a fixed strength; 1..4 make the puck play them itself, a wider to a
 //             narrower distance apart (padTickSpacing).
 //  HAP_TICKGAIN: gain of the ticks the puck plays, in HAP_CLICK's steps.
-//  HAP_LIFT:  soft boost of the grip PCM stream (DualSense wave, Switch HD wave): 0 off, 1..3 raise quiet passages
-//             by up to 2x / 3x / 4x (hapticLiftGain). Switch and DualSense. g_hapticLift is the active type's copy.
+//  HAP_LIFT:  soft boost of the grip PCM stream (DualSense wave, Switch HD wave): 0 off, 1..4 raise quiet passages
+//             by up to 1.5x / 2x / 3x / 4x (hapticLiftGain). Switch and DualSense. g_hapticLift is the active type's copy.
 // Click, tick and tick gain apply to every type.
 enum {
 	HAP_KNEE,
@@ -270,7 +270,7 @@ enum {
 #define PAD_TICK_MAX 4
 #define PAD_TICKGAIN_DEFAULT 11
 #define HAPTIC_LIFT_DEFAULT 1
-#define HAPTIC_LIFT_MAX 3
+#define HAPTIC_LIFT_MAX 4
 extern uint8_t g_typeHaptic[HAP_COUNT][ET_COUNT];
 extern uint8_t g_hapticLimitKnee;
 extern uint8_t g_hapticLift;

@@ -153,7 +153,7 @@ export async function resetTypeDefaults(et){
 // The release before it (29) has one limiter for all types (field 115) and the style on the DualSense only (field 88).
 export const HAP={KNEE:0,STYLE:1,CLICK:2,TICK:3,TICKGAIN:4,LIFT:5};
 // per setting, in HAP order: the backup key and its range
-export const HAP_KEYS=[["limiter",50,100],["hapticStyle",0,3],["padClick",0,31],["padTick",0,4],["padTickGain",0,31],["softBoost",0,3]];
+export const HAP_KEYS=[["limiter",50,100],["hapticStyle",0,3],["padClick",0,31],["padTick",0,4],["padTickGain",0,31],["softBoost",0,4]];
 export const hapField=(k,et)=>120+4*k+et;
 export const hapIndex=(k,et)=>214+4*k+et;
 export const hapValue=(p,k,et)=>p[hapIndex(k,et)];
@@ -321,10 +321,10 @@ export function initTypes(){
         const wrap=document.createElement("div"); wrap.className="hide"; wrap.append(row(gHapt,"Grip limiter",sel),note); gHapt.appendChild(wrap);
         rec.limiter=sel; rec.limiterWrap=wrap;
       }
-      // Soft boost: raises quiet passages of the stream to the grips, up to 2x / 3x / 4x
+      // Soft boost: raises quiet passages of the stream to the grips, up to 1.5x / 2x / 3x / 4x
       if(sw||ds5){
         const sel=document.createElement("select");
-        for(const [v,lbl] of [[0,"Off"],[1,"Low (up to 2×)"],[2,"Medium (up to 3×)"],[3,"High (up to 4×)"]]){ const o=document.createElement("option"); o.value=v; o.textContent=lbl+(v===typeDefaults(def).lift?" (default)":""); sel.appendChild(o); }
+        for(const [v,lbl] of [[0,"Off"],[1,"Gentle (up to 1.5×)"],[2,"Low (up to 2×)"],[3,"Medium (up to 3×)"],[4,"High (up to 4×)"]]){ const o=document.createElement("option"); o.value=v; o.textContent=lbl+(v===typeDefaults(def).lift?" (default)":""); sel.appendChild(o); }
         sel.addEventListener("change",()=>setField(hapField(HAP.LIFT,et),+sel.value));
         const note=document.createElement("p"); note.className="note";
         note.textContent="Raises quiet haptics, like soft footsteps, so you can feel them. Strong hits are left as they are. The grips play even very soft vibration, but a hand barely notices it below a few percent of full strength. Applies to the Wave style.";

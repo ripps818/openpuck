@@ -243,7 +243,7 @@ static inline float hapticSoftLimit(float y)
 }
 // Soft boost (HAP_LIFT, g_hapticLift): an upward compressor for the grip PCM stream. The grips play 2% of full scale
 // faithfully (IMU), but a hand barely feels it, so soft footsteps vanish. Below HAPTIC_LIFT_T the level is raised
-// 2:1 toward it, capped at 1 + level (2x / 3x / 4x); louder passages pass unchanged on to the limiter. One envelope
+// 2:1 toward it, capped per level (1.5x / 2x / 3x / 4x); louder passages pass unchanged on to the limiter. One envelope
 // for both grips keeps the left/right balance. Below HAPTIC_LIFT_FLOOR the boost fades out, so dither and noise
 // in a quiet track stay quiet. The envelope rises at once and falls over ~80 ms at 4 kHz, slower than a cycle of
 // the lowest band, so the gain does not ripple within a wave.
@@ -258,7 +258,8 @@ static inline float hapticLiftGain(HapticLift *s, float peak)
 	s->env = peak > s->env ? peak : s->env * HAPTIC_LIFT_RELEASE;
 	if (!g_hapticLift || s->env >= HAPTIC_LIFT_T)
 		return 1.0f;
-	float cap = 1.0f + g_hapticLift;
+	static const float caps[] = { 1.0f, 1.5f, 2.0f, 3.0f, 4.0f };
+	float cap = caps[g_hapticLift < 4 ? g_hapticLift : 4];
 	float g = s->env > 1e-6f ? sqrtf(HAPTIC_LIFT_T / s->env) : cap;
 	if (g > cap)
 		g = cap;

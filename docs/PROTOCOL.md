@@ -562,7 +562,7 @@ Messages:
     | 2 | trackpad click gain step | all | 0-31 = -20 to -1 dB, then +1 to +12 dB (0 dB is skipped: gain byte 0 is the legacy haptic stop) | 26 (+7 dB) |
     | 3 | movement-tick spacing | all | 0 = the controller plays its own ticks, 1-4 = the puck plays them, 11000 / 5500 / 2500 / 1500 units of pad travel apart | 0 |
     | 4 | movement-tick gain step | all | as setting 2 | 11 (-9 dB) |
-    | 5 | soft boost of the grip wave stream | Switch, DS5 | `0` off, `1`-`3` raise quiet passages by up to 2× / 3× / 4× | 1 |
+    | 5 | soft boost of the grip wave stream | Switch, DS5 | `0` off, `1`-`4` raise quiet passages by up to 1.5× / 2× / 3× / 4× | 1 (1.5×) |
 
     Soft boost is an upward compressor on the PCM stream to the grips (Wave style). It follows the louder grip's
     peak level (instant rise, ~80 ms fall) and, below 20% of full scale, raises it 2:1 toward that level, capped

@@ -61,8 +61,8 @@ int main()
 		assert(g_typeHaptic[HAP_KNEE][et] == 85 && g_typeHaptic[HAP_CLICK][et] == 26 && g_typeHaptic[HAP_TICK][et] == 0 && g_typeHaptic[HAP_TICKGAIN][et] == 11);
 		assert(g_typeHaptic[HAP_STYLE][et] == AUDIO_STYLE_WAVE && g_typeHaptic[HAP_LIFT][et] == 1);
 	}
-	// soft boost: 0..3 on the Switch and DualSense only
-	assert(typeHapticSet(HAP_LIFT, ET_SWITCH, 0) && typeHapticSet(HAP_LIFT, ET_DS5, 3) && !typeHapticSet(HAP_LIFT, ET_DS5, 4) && !typeHapticSet(HAP_LIFT, ET_XBOX, 2));
+	// soft boost: 0..4 on the Switch and DualSense only
+	assert(typeHapticSet(HAP_LIFT, ET_SWITCH, 0) && typeHapticSet(HAP_LIFT, ET_DS5, 4) && !typeHapticSet(HAP_LIFT, ET_DS5, 5) && !typeHapticSet(HAP_LIFT, ET_XBOX, 2));
 	typeHapticSet(HAP_LIFT, ET_SWITCH, 1); typeHapticSet(HAP_LIFT, ET_DS5, 1);
 	// the setter takes in-range values for the types that have the setting, and refreshes the live copies
 	applied = 0;
