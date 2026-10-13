@@ -468,6 +468,11 @@ PCM streaming, measured with the controller's IMU over USB (2026-10-03):
   - The nRF5x USB driver drops an ISO OUT packet without an error when no transfer is armed at its SOF. The audio
     callback re-armed only after its DSP, so a slow packet lost the next one: 1 ms cut from the wave, felt as a
     tick. The callback now arms a second buffer first; every packet arrives.
+  - A flash write (a settings save) while the stream plays can wedge the ISO OUT endpoint: the driver keeps a
+    transfer pending, refuses every re-arm, and drops every packet until a bus reset. A game then loses the Wave
+    style for good (style switches in the panel did this). Settings changed while the audio interface is at alt 1
+    apply at once and are saved once it leaves alt 1 (or before a reboot). A watchdog also re-arms the endpoint
+    when alt 1 has gone 50 ms without a packet.
 - A stream that has gone silent is left to run dry. A `0x86` op 1 or a `-128 dB` `0x83` cut sent to an idle actuator
   plays as a click, so OpenPuck sends them only while something may still be playing.
 
@@ -705,7 +710,7 @@ Messages:
     `[rowStart][rowCount][rowCount × 9-byte rows][the 29 v1 trailer bytes][enabled mask: 5 B LE]`
     `[default mask: 5 B LE]`. In v2 the journal-builder index is a candidate index (channel `4 + 2i`), and
     the startup channel is the one the next boot uses (a saved channel that is no longer enabled is skipped).
-  - `0xB1 198 <payload>`: grip PCM stream counters, answering `0x35`: `[ver=1]`, then `made sent acked requeued
+  - `0xB1 200 <payload>`: grip PCM stream counters, answering `0x35`: `[ver=1]`, then `made sent acked requeued
     lost evicted` (u32 LE): `0x88` frames built, transmissions (an immediate resend counts again), frames
     answered, put back for a later cycle, unanswered after every retry, and pushed out of a full relay ring
     unsent. Then the controller's `0x44` stream events by id `0..15` (u16 LE; `0x02` = ran dry), polls/s and
@@ -722,7 +727,8 @@ Messages:
     current stream's send timing (i32 LE, us): each frame's first send against a steady sample clock from the first
     one, as the earliest, latest and last value, and the last value minus the earliest at the last mid-stream "ran
     dry". Then relay entries other than `0x88` sent while a stream ran, and relay turns skipped because the previous
-    poll got no reply while the ring held an entry (u32 LE each), and the poll count (u16 LE, wraps).
+    poll got no reply while the ring held an entry (u32 LE each), the poll count (u16 LE, wraps), and the times
+    the DualSense audio endpoint was found wedged and re-armed (u16 LE).
   - `0xB0 <len> <payload>` (status-blob version ≥ 30): one type's mapping profiles, answering ops
     `0x2C`-`0x34`: `[1][type][active][profiles][sources]`, then for each profile its `sources` target codes
     and the two trackpad -> stick bytes (`profiles × (sources + 2)` bytes), then the gesture

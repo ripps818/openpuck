@@ -285,8 +285,31 @@ void cfgExtWrite(uint8_t index, uint8_t value)
 		g_cfgExt[index] = value;
 }
 
+static bool g_cfgSavePending;
+
+void saveCfgSoon()
+{
+	if (ps5AudioStreaming())
+		g_cfgSavePending = true;
+	else
+		saveCfg();
+}
+
+void cfgSaveTask()
+{
+	if (g_cfgSavePending && !ps5AudioStreaming())
+		saveCfg();
+}
+
+void cfgSaveFlush()
+{
+	if (g_cfgSavePending)
+		saveCfg();
+}
+
 void saveCfg()
 {
+	g_cfgSavePending = false;
 	cfgExtWrite(3u, (uint8_t)(g_audioHapticGain / 2));
 	cfgExtWrite(4u, g_audioHaptics);
 	cfgExtWrite(11u, g_typeHaptic[HAP_STYLE][ET_DS5]);

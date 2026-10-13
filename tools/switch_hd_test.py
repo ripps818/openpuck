@@ -289,6 +289,8 @@ class PcmDiag:
                         d["other"] = int.from_bytes(body[188:192], "little")
                         d["skip"] = int.from_bytes(body[192:196], "little")
                         d["pollcount"] = int.from_bytes(body[196:198], "little")
+                    if len(body) >= 200:
+                        d["isorecover"] = int.from_bytes(body[198:200], "little")
                     return d
         sys.exit("[FATAL] no 0xB1 reply: this firmware predates op 0x35")
 
@@ -324,6 +326,9 @@ class PcmDiag:
             print("[DIAG] other relays sent %d, relay skipped after a missed poll %d, polls %d" % (
                 after["other"] - before["other"], after["skip"] - before["skip"],
                 (after["pollcount"] - before["pollcount"]) & 0xFFFF))
+        if "isorecover" in after and "isorecover" in before:
+            print("[DIAG] DualSense audio endpoint re-armed after a stall: %d" % (
+                after["isorecover"] - before["isorecover"]))
         kinds = ("none", "empty<400", "empty>=400", "data<400", "data>=400")
         for a, name in enumerate(("first send", "resend", "later retry")):
             row = [after["outcome"][5 * a + o] - before["outcome"][5 * a + o] for o in range(5)]

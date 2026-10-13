@@ -723,14 +723,14 @@ static void webusbSendMotion(uint8_t slot)
 //   [queue delay buckets 0..7: u16][made-gap buckets 0..7: u16][ran dry: end, mid-stream, at start: u16]
 static void webusbSendPcmDiag()
 {
-	static uint8_t f[2 + 198];
+	static uint8_t f[2 + 200];
 	uint8_t *p = f + 3;
 	auto put = [&](uint32_t v, uint8_t n) {
 		for (uint8_t i = 0; i < n; i++)
 			*p++ = (uint8_t)(v >> (8 * i));
 	};
 	f[0] = 0xB1;
-	f[1] = 198;
+	f[1] = 200;
 	f[2] = 1;
 	const PcmDiag d = g_pcmDiag;
 	const uint32_t c[6] = { d.made,	    d.sent, d.acked,
@@ -770,6 +770,7 @@ static void webusbSendPcmDiag()
 	put(d.otherRelays, 4);
 	put(d.flushSkip, 4);
 	put(g_connPoll, 2);
+	put(d.isoRecover, 2);
 	if (tud_vendor_write_available() >= sizeof f) {
 		usb_web.write(f, sizeof f);
 		usb_web.flush();
@@ -1172,7 +1173,7 @@ void webusbPoll()
 			}
 
 			else if (op == 0x28) {
-				saveCfg();
+				saveCfgSoon();
 				g_blobRequest = true;
 			} else if (op == 0x16) {
 				hapticTestRumble();
@@ -1196,7 +1197,7 @@ void webusbPoll()
 						<< (8u * i);
 				if (mask != g_rfChannelMask &&
 				    rfRecoverySetChannelMask(mask))
-					saveCfg();
+					saveCfgSoon();
 				g_rfStatusPage = 0;
 				g_rfStatusRequest = true;
 			}
@@ -1457,6 +1458,7 @@ void webusbPoll()
 				// 0x23: plain clean reboot. After a committed 0x22 the boot path applies the staged
 				// image; unarmed it is just a normal restart.
 			} else if (op == 0x23) {
+				cfgSaveFlush();
 				usb_web.flush();
 				delay(40);
 				faultDiagArmIntentionalReset();
@@ -1508,7 +1510,7 @@ void webusbPoll()
 						if (et == g_etype)
 							applyActiveType();
 					}
-					saveCfg();
+					saveCfgSoon();
 					g_blobRequest = true;
 					memmove(buf, buf + need, n - need);
 					n -= need;
@@ -1519,7 +1521,7 @@ void webusbPoll()
 					typeHapticSet((uint8_t)((f - 120) / 4),
 						      (uint8_t)((f - 120) % 4),
 						      v);
-					saveCfg();
+					saveCfgSoon();
 					g_blobRequest = true;
 					memmove(buf, buf + need, n - need);
 					n -= need;
@@ -1879,7 +1881,7 @@ void webusbPoll()
 					break;
 				}
 				if (persist)
-					saveCfg();
+					saveCfgSoon();
 				if (!rfStatusOnly)
 					g_blobRequest = true;
 			} else if (op == 0x03) {

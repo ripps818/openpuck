@@ -32,6 +32,7 @@ uint8_t g_createAsTouch;
 uint8_t g_etype = ET_NONE, g_shortcutFlags = SHORTCUT_ENABLED, g_usbMode = MODE_STEAM;
 int applied = 0;
 void applyActiveType() { ++applied; btnmapUpdateGestureMask(); }
+bool ps5AudioStreaming() { return false; }
 
 static const std::vector<uint8_t> &file() { return files["/btnmap.bin"]; }
 // the older settings as a fresh install has them
