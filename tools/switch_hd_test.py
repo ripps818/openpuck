@@ -267,7 +267,7 @@ class PcmDiag:
                 continue
             while len(buf) >= 2 and len(buf) >= 2 + buf[1]:
                 marker, body, buf = buf[0], buf[2:2 + buf[1]], buf[2 + buf[1]:]
-                if marker == 0xB1 and len(body) >= 134 and body[0] == 1:
+                if marker == 0xB1 and len(body) >= 172 and body[0] == 1:
                     d = {n: int.from_bytes(body[1 + 4 * i:5 + 4 * i], "little")
                          for i, n in enumerate(PCM_DIAG_NAMES)}
                     d["events"] = [int.from_bytes(body[25 + 2 * i:27 + 2 * i], "little") for i in range(16)]
@@ -280,6 +280,15 @@ class PcmDiag:
                     d["audio"] = int.from_bytes(body[126:130], "little")
                     d["alt"], d["wavemask"] = body[130], body[131]
                     d["envl"] = int.from_bytes(body[132:134], "little")
+                    d["qdelay"] = [int.from_bytes(body[134 + 2 * i:136 + 2 * i], "little") for i in range(8)]
+                    d["gap"] = [int.from_bytes(body[150 + 2 * i:152 + 2 * i], "little") for i in range(8)]
+                    d["dry"] = [int.from_bytes(body[166 + 2 * i:168 + 2 * i], "little") for i in range(3)]
+                    if len(body) >= 198:
+                        d["late"] = [int.from_bytes(body[172 + 4 * i:176 + 4 * i], "little", signed=True)
+                                     for i in range(4)]
+                        d["other"] = int.from_bytes(body[188:192], "little")
+                        d["skip"] = int.from_bytes(body[192:196], "little")
+                        d["pollcount"] = int.from_bytes(body[196:198], "little")
                     return d
         sys.exit("[FATAL] no 0xB1 reply: this firmware predates op 0x35")
 
@@ -300,6 +309,21 @@ class PcmDiag:
             after["crcbad"] - before["crcbad"]))
         print("[DIAG] DualSense audio: %d packets, alt %d, stream slots 0x%02x, left level %d" % (
             after["audio"] - before["audio"], after["alt"], after["wavemask"], after["envl"]))
+        names = ("0-2", "2-4", "4-8", "8-12", "12-16", "16-24", "24-32", "32+")
+        for key, label in (("qdelay", "queue delay"), ("gap", "made gap")):
+            row = [after[key][i] - before[key][i] for i in range(8)]
+            print("[DIAG] %s (ms): %s" % (label, "  ".join("%s %d" % (n, v) for n, v in zip(names, row) if v) or
+                                         "none"))
+        dry = [after["dry"][i] - before["dry"][i] for i in range(3)]
+        print("[DIAG] ran dry: end of stream %d, mid-stream %d (%d within 500 ms of the start)" % tuple(dry))
+        if "late" in after and "late" in before:
+            lo, hi, last, atdry = after["late"]
+            print("[DIAG] send timing vs a steady clock (ms): span %.1f (early %.1f, late %.1f), last %.1f%s" % (
+                (hi - lo) / 1000, -lo / 1000, hi / 1000, last / 1000,
+                ", %.1f past the earliest at the last mid-stream dry" % (atdry / 1000) if dry[1] else ""))
+            print("[DIAG] other relays sent %d, relay skipped after a missed poll %d, polls %d" % (
+                after["other"] - before["other"], after["skip"] - before["skip"],
+                (after["pollcount"] - before["pollcount"]) & 0xFFFF))
         kinds = ("none", "empty<400", "empty>=400", "data<400", "data>=400")
         for a, name in enumerate(("first send", "resend", "later retry")):
             row = [after["outcome"][5 * a + o] - before["outcome"][5 * a + o] for o in range(5)]
