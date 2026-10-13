@@ -314,7 +314,7 @@ export function initTypes(){
       // Grip limiter (protocol v27, per controller type from v30): the Switch's HD rumble grips and the DualSense's wave haptics/speaker
       if(sw||ds5){
         const sel=document.createElement("select");
-        for(const v of [50,60,70,80,85,90,100]){ const o=document.createElement("option"); o.value=v; o.textContent=v===100?"Off (hard clip)":v+"%"+(v===85?" (default)":""); sel.appendChild(o); }
+        for(const v of [50,60,70,80,85,90,95,100]){ const o=document.createElement("option"); o.value=v; o.textContent=v===100?"Off (hard clip)":v+"%"+(v===85?" (default)":""); sel.appendChild(o); }
         sel.addEventListener("change",()=>setField(perTypeHaptics()?hapField(HAP.KNEE,et):115,+sel.value));
         const note=document.createElement("p"); note.className="note";
         note.textContent="Grip vibration above this level is rounded off toward full strength instead of clipping, which plays as a pop. Lower is smoother on the strongest hits, higher keeps more of their punch. It shapes the waveform streamed to the grips (the Wave style, and the DualSense speaker). Each controller type has its own.";
