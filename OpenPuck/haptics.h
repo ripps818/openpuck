@@ -63,8 +63,11 @@ extern uint8_t g_rumbleStyle; // RUMBLE_STYLE_*
 #define RUMBLE_TEST_AMP 0x8000u
 #define RUMBLE_TEST_MS 500u
 void hapticTestRumble();
-// Switch Pro HD test: a 160 + 320 Hz tone panned left-right-left twice, through the haptic style in use
+// Grip test: a 160 + 320 Hz tone panned left-right-left twice. In Switch Pro HD mode it goes through the Switch's
+// haptic style; in other modes it streams to the grips as PCM.
 void hapticTestHdPan();
+// slots the DualSense audio wave stream feeds (mode_ps5_audio.cpp)
+uint8_t ps5WaveMask();
 // turn on IMU streaming on every linked controller (WebUSB op 0x29)
 void hapticImuOn();
 

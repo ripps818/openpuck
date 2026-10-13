@@ -680,9 +680,11 @@ Messages:
     47 of the `0xAE` payload, so a switch made on the controller shows on the next poll.
   - `0x35`: grip PCM stream counters since boot, replying with an `0xB1` frame (debug; read by
     `tools/switch_hd_test.py --diag`). No status-blob version gates it: older firmware ignores the op.
-  - `0x36`: Switch Pro HD pan test. A 160 + 320 Hz tone panned left-right-left on a 2 s cycle for 4 s,
-    through the HD path and the Switch haptic style. Does nothing outside Switch Pro mode with HD rumble.
-    Older firmware ignores the op. No reply.
+  - `0x36`: grip pan test. A 160 + 320 Hz tone panned left-right-left on a 2 s cycle for 4 s. In Switch Pro
+    mode with HD rumble it goes through the HD path and the Switch haptic style; in any other mode the puck streams
+    it to the grips as PCM (`0x86`/`0x88`), skipping a controller the DualSense audio stream already feeds.
+    Firmware before this change does nothing outside Switch Pro HD mode, and older firmware ignores the op. No
+    reply.
   - `0x20`–`0x24`: staged firmware update (begin/data/end/reboot/abort), acked with `0xAB` frames
   - `0x25 0x57 0x49 0x50 0x45`: **full board wipe** (`"WIPE"` magic, debug panel only). Erases the app
     region + LittleFS (settings + bonds) + bootloader-settings page and reboots app-less, so the board mounts

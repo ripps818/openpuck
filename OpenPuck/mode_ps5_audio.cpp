@@ -639,6 +639,16 @@ static void toneUpdate(ToneSide *t, uint8_t side, uint16_t env, uint16_t ref,
 // format while a stream plays, so a rate change stops the stream and the next tick restarts it.
 #define WAVE_HANG_MS 300u
 
+bool ps5AudioStreaming()
+{
+	return g_uac1AltSetting == 1;
+}
+
+uint8_t ps5WaveMask()
+{
+	return s_waveMask;
+}
+
 static void waveUpdate(bool active, bool speaker, float waveScale,
 		       float spkScale, uint32_t now)
 {
