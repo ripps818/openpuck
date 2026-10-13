@@ -352,7 +352,7 @@ export function applyBlob(p){
         const gain = p[195]*2;
         if(document.activeElement!==rec.audioGain){
           rec.audioGain.value = gain;
-          rec.audioGainV.textContent = (gain===0)?"Auto":gain + "%";
+          rec.audioGainV.textContent = rec.audioGainLabel(gain);
         }
       }
       if(document.activeElement!==rec.led){ rec.led.value=led; rec.ledV.textContent=(led===0)?"Auto":led+"%"; }

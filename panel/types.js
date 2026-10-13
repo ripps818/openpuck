@@ -271,7 +271,7 @@ export function initTypes(){
       // Grip limiter (protocol v27, per controller type from v30): the Switch's HD rumble grips and the DualSense's wave haptics/speaker
       if(def.key==="DS5"||def.key==="SWITCH"){
         const sel=document.createElement("select");
-        for(const v of [50,60,70,80,90,100]){ const o=document.createElement("option"); o.value=v; o.textContent=v===100?"Off (hard clip)":v+"%"+(v===70?" (default)":""); sel.appendChild(o); }
+        for(const v of [50,60,70,80,85,90,100]){ const o=document.createElement("option"); o.value=v; o.textContent=v===100?"Off (hard clip)":v+"%"+(v===85?" (default)":""); sel.appendChild(o); }
         sel.addEventListener("change",()=>setField(perTypeHaptics()?hapField(HAP.KNEE,et):115,+sel.value));
         const note=document.createElement("p"); note.className="note";
         note.textContent="Grip vibration above this level is rounded off toward full strength instead of clipping, which plays as a pop. Lower is smoother on the strongest hits, higher keeps more of their punch. It shapes the waveform streamed to the grips (the Wave style, and the DualSense speaker). Each controller type has its own.";
@@ -305,14 +305,17 @@ export function initTypes(){
         rec.createTouch=ct;
         ct.onclick=()=>setField(116, ct.classList.contains("active")?0:1);
         // Audio Haptics gain
-        // 0 = Auto (firmware default): the loudest recent haptic plays at full strength; in Wave style Auto = 100%, a real DualSense's strength
+        // 0 = Auto (firmware default): the loudest recent haptic plays at full strength; in Wave style Auto = 100%
         const sl=document.createElement("input"); sl.type="range"; sl.min=0; sl.max=500; sl.step=10;
         const vspan=document.createElement("span"); vspan.className="val";
         row(gAud,"Audio Haptics Gain",sl,vspan);
-        sl.value=0; vspan.textContent="Auto";
-        sl.addEventListener("input",()=>{ vspan.textContent=(+sl.value===0)?"Auto":sl.value+"%"; });
+        // Wave skips the auto gain, so there Auto is a fixed 100%
+        const gainLabel=v=>+v?v+"%":+sty.value===3?"Auto (100%)":"Auto";
+        sl.value=0; vspan.textContent=gainLabel(0);
+        sl.addEventListener("input",()=>{ vspan.textContent=gainLabel(sl.value); });
+        sty.addEventListener("change",()=>{ vspan.textContent=gainLabel(sl.value); });
         sl.addEventListener("change",()=>setField(30, (+sl.value)/2));
-        rec.audioGain=sl; rec.audioGainV=vspan;
+        rec.audioGain=sl; rec.audioGainV=vspan; rec.audioGainLabel=gainLabel;
         const gnote=document.createElement("p"); gnote.className="note";
         gnote.textContent="The Wave style stops getting stronger at 250%: past that a full-strength haptic track overdrives the grips and they grind. Higher gains still apply to the Tone, Split and Rumble styles.";
         gAud.appendChild(gnote);
