@@ -127,7 +127,7 @@ static bool boardCommand(uint8_t op)
 //                 (HAP_* in config.h: grip limiter knee, haptic style, trackpad click strength, movement-tick
 //                 spacing and strength), WebUSB field 120 + 4 * setting + type; p[205] / p[209] stay the DualSense's style and
 //                 the active type's knee for older panels]
-#define WB_PAYLEN 238
+#define WB_PAYLEN 242
 // The blob send is drop-on-full (never blocks loop), so the vendor TX FIFO MUST be able to hold a whole blob
 // -- otherwise tud_vendor_write_available() never reaches the frame size and EVERY frame is dropped (blank
 // panel / stale mappings). The Makefile sets -DCFG_TUD_VENDOR_TX_BUFSIZE=256; guard it here so a build without

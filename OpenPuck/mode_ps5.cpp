@@ -89,6 +89,249 @@ static const uint8_t PS5_PAIRING_TAIL[9] = { 0x08, 0x25, 0x00, 0x1E, 0x00,
 #define PS5_STALL 0xFFFFu
 static void ps5Build(uint8_t usbSlot, uint8_t slot, uint8_t out[63]);
 
+// Adaptive-trigger effect a game set through output report 0x02. The Steam Controller has no trigger motors,
+// but games read the effect's state back from the input report: Stellar Blade's gun fires on the weapon
+// status, not on the R2 value, so a pad that never reports it can't shoot.
+struct TrigFx {
+	// input-report effect nibble: 0 none/other, 1 feedback, 2 weapon, 3 vibration
+	uint8_t kind;
+	// R2/L2 values where the effect's zone starts and where a weapon snaps
+	uint8_t startAt, snapAt;
+	// zone the motor rests in while the trigger is released
+	uint8_t restZone;
+	// effect strength 1..8, and a vibration effect's frequency in Hz
+	uint8_t force, hz;
+	uint8_t status;
+	// what trigFeel last played: the status, the trigger value at the last tick, and whether a vibration tone
+	// runs
+	uint8_t feltStatus, tickAt;
+	bool toneOn;
+	unsigned long tickMs, toneMs;
+};
+static TrigFx g_trig[NSLOT][2];
+static uint8_t g_ps5HostTs[NSLOT][4];
+
+// Effect zones 0-9 against the analog trigger, measured on a real DualSense: a zone-z boundary is crossed at
+// about 36*z - 25 (weapon 4..7 went to status 1 at 121 and snapped at 228). A zone-8 end lies past full travel
+// there, so the snap point is capped where a full pull still reaches it.
+static uint8_t trigZoneAt(uint8_t z)
+{
+	int v = 36 * z - 25;
+	return (uint8_t)(v < 0 ? 0 : v > 250 ? 250 : v);
+}
+
+static uint8_t trigLowZone(uint16_t mask)
+{
+	for (uint8_t z = 0; z < 10; z++)
+		if (mask & (1u << z))
+			return z;
+	return 9;
+}
+
+// strongest of the ten 3-bit per-zone strengths a feedback or vibration block packs into b[3..6]
+static uint8_t trigZoneForce(const uint8_t *b, uint16_t mask)
+{
+	uint32_t f = b[3] | (uint32_t)b[4] << 8 | (uint32_t)b[5] << 16 |
+		     (uint32_t)b[6] << 24;
+	uint8_t hi = 0;
+	for (uint8_t z = 0; z < 10; z++) {
+		uint8_t v = (f >> (3 * z)) & 7;
+		if ((mask & (1u << z)) && v > hi)
+			hi = v;
+	}
+	return (uint8_t)(hi + 1);
+}
+
+static uint8_t trigHighZone(uint16_t mask)
+{
+	for (int z = 9; z >= 0; z--)
+		if (mask & (1u << z))
+			return (uint8_t)z;
+	return 9;
+}
+
+// Block layouts per Nielk1's DualSense trigger-effect notes: 0x2x are the official effects with a 10-bit
+// zone mask in b[1..2]; 0x01/0x02/0x06 are the older "simple" forms with raw 0-255 positions.
+static void trigSet(TrigFx *t, const uint8_t *b)
+{
+	uint16_t mask = (uint16_t)(b[1] | (b[2] << 8)) & 0x3FF;
+	uint8_t kind = 0, startAt = 0, snapAt = 255, restZone = 9, force = 1,
+		hz = 0;
+	switch (b[0]) {
+	case 0x21:
+	case 0x26:
+		if (!mask)
+			break;
+		kind = b[0] == 0x21 ? 1 : 3;
+		restZone = trigLowZone(mask);
+		startAt = trigZoneAt(restZone);
+		force = trigZoneForce(b, mask);
+		hz = b[9];
+		break;
+	case 0x25:
+		if (!mask)
+			break;
+		kind = 2;
+		restZone = trigLowZone(mask);
+		startAt = trigZoneAt(restZone);
+		snapAt = trigZoneAt(trigHighZone(mask));
+		force = (uint8_t)((b[3] & 7) + 1);
+		break;
+	case 0x01:
+		kind = 1;
+		startAt = b[1];
+		restZone = (uint8_t)(b[1] * 10 / 256);
+		force = (uint8_t)(1 + b[2] * 7 / 255);
+		break;
+	case 0x02:
+		kind = 2;
+		startAt = b[1];
+		snapAt = b[2] > 250 ? 250 : b[2];
+		restZone = (uint8_t)(b[1] * 10 / 256);
+		force = (uint8_t)(1 + b[3] * 7 / 255);
+		break;
+	case 0x06:
+		kind = 3;
+		restZone = (uint8_t)(b[3] * 10 / 256);
+		startAt = b[3];
+		force = (uint8_t)(1 + b[2] * 7 / 255);
+		hz = b[1];
+		break;
+	}
+	// Games re-send the same effect with every output report; only a new kind of effect restarts the status,
+	// or a held weapon would lose its latched snap and replay its feel each frame.
+	if (kind != t->kind)
+		t->status = 0;
+	t->kind = kind;
+	t->startAt = startAt;
+	t->snapAt = snapAt;
+	t->restZone = restZone;
+	t->force = force;
+	t->hz = hz;
+}
+
+// Returns the input-report byte: motor zone in the low nibble, status in the high one. A real weapon reports
+// 1 inside its zone and 2 from the snap until the trigger is let back out past the zone's start.
+static uint8_t trigReport(TrigFx *t, uint8_t v)
+{
+	if (!t->kind)
+		return 0x09;
+	if (!v || v < t->startAt)
+		t->status = 0;
+	else if (t->kind == 2 && (t->status == 2 || v >= t->snapAt))
+		t->status = 2;
+	else
+		t->status = 1;
+	int z = (v + 43) / 36;
+	if (v >= 250)
+		z = 9;
+	if (!t->status || z < t->restZone)
+		z = t->restZone;
+	return (uint8_t)((t->status << 4) | (z > 9 ? 9 : z));
+}
+
+// The Steam Controller has no trigger motors, so an effect is played on the actuators the panel picks (R2 on the
+// right side, L2 on the left): a 0x82 tick every TRIG_TICK_STEP of trigger travel deeper into a feedback or
+// weapon zone, the stronger click script when a weapon snaps, and a vibration effect as a 0x83 tone while the
+// trigger is in its zone. Ticks and clicks only play on movement, so a trigger held under load (aiming) stays
+// quiet. One tick per zone (~36 counts) was too sparse to feel before the snap. Ticks stay above the trackpad
+// ticks (-9 dB default) at any strength: the thumbs are rarely on the pads while the triggers are in use.
+#define TRIG_TICK_STEP 12
+#define TRIG_TICK_MIN_MS 12u
+#define TRIG_TICK_DB(force) (-5 + (force) / 2)
+// The snap is the click script above a tick plus a short tone, so the break stands out from the ticks before
+// it (the script alone at -1 dB read as one more tick; +6 dB with a 0 dB tone was too strong at force 8 on
+// the pads and grips together). The pads alone felt it too softly, so their copy plays louder.
+#define TRIG_SNAP_DB(force) (-2 + (force) / 2)
+#define TRIG_SNAP_TONE_DB(force) (-14 + (force))
+#define TRIG_SNAP_PAD_DB 4
+#define TRIG_SNAP_PAD_TONE_DB 6
+#define TRIG_SNAP_HZ 140u
+#define TRIG_SNAP_MS 60u
+#define TRIG_TONE_MS 120u
+#define TRIG_TONE_REFRESH_MS 50u
+// 0x82 gain byte for a level in dB: 0 is the legacy haptic stop, so it plays at -1 instead
+static uint8_t trigGain(int db)
+{
+	if (db > 12)
+		db = 12;
+	return (uint8_t)(int8_t)(db ? db : -1);
+}
+
+// p is an 0x82 {side, script, gain} or 0x83 {side, gain, ...}; the pads' copy plays padDb louder
+static void trigSend(uint8_t slot, uint8_t trig, uint8_t rid, const uint8_t *p,
+		     uint8_t n, int padDb = 0)
+{
+	uint8_t buf[9];
+	uint8_t g = rid == 0x82 ? 2 : 1;
+	memcpy(buf, p, n);
+	if (g_trigHaptics & TRIG_HAPTICS_PADS) {
+		buf[0] = trig ? HSIDE_LPAD : HSIDE_RPAD;
+		if (padDb)
+			buf[g] = trigGain((int8_t)p[g] + padDb);
+		relayEnqueueFront(rid, buf, n, true, slot);
+	}
+	if (g_trigHaptics & TRIG_HAPTICS_GRIPS) {
+		buf[0] = trig ? HSIDE_LGRIP : HSIDE_RGRIP;
+		buf[g] = p[g];
+		relayEnqueueFront(rid, buf, n, true, slot);
+	}
+}
+
+static void trigTone(uint8_t slot, uint8_t trig, int8_t gain, uint16_t hz,
+		     uint16_t ms, int padDb = 0)
+{
+	const uint8_t p[9] = { 0,
+			       (uint8_t)gain,
+			       (uint8_t)(hz & 0xFF),
+			       (uint8_t)(hz >> 8),
+			       (uint8_t)(ms & 0xFF),
+			       (uint8_t)(ms >> 8),
+			       0,
+			       0,
+			       0 };
+	trigSend(slot, trig, 0x83, p, sizeof p, padDb);
+}
+
+static void trigFeel(uint8_t slot, uint8_t trig, TrigFx *t, uint8_t rep,
+		     uint8_t v)
+{
+	uint8_t st = rep >> 4;
+	unsigned long now = millis();
+	bool live = g_trigHaptics && t->kind && hapticLinkUp(slot) &&
+		    !haptic82Blocked(slot);
+	bool tone = live && t->kind == 3 && st == 1;
+	if (live && t->kind == 2 && st == 2 && t->feltStatus != 2) {
+		const uint8_t snap[3] = { 0, 0x02,
+					  trigGain(TRIG_SNAP_DB(t->force)) };
+		trigSend(slot, trig, 0x82, snap, sizeof snap, TRIG_SNAP_PAD_DB);
+		trigTone(slot, trig, (int8_t)TRIG_SNAP_TONE_DB(t->force),
+			 TRIG_SNAP_HZ, TRIG_SNAP_MS, TRIG_SNAP_PAD_TONE_DB);
+	} else if (live && (t->kind == 1 || t->kind == 2) && st == 1 &&
+		   (t->feltStatus == 0 || v >= t->tickAt + TRIG_TICK_STEP) &&
+		   now - t->tickMs >= TRIG_TICK_MIN_MS) {
+		const uint8_t tick[3] = { 0, 0x01,
+					  trigGain(TRIG_TICK_DB(t->force)) };
+		trigSend(slot, trig, 0x82, tick, sizeof tick);
+		t->tickAt = v;
+		t->tickMs = now;
+	}
+	// easing off lets the next squeeze tick again after one step
+	if (v < t->tickAt)
+		t->tickAt = v;
+	if (tone && (!t->toneOn || now - t->toneMs >= TRIG_TONE_REFRESH_MS)) {
+		uint16_t hz = t->hz < 40 ? 40 : t->hz > 250 ? 250 : t->hz;
+		trigTone(slot, trig, (int8_t)(-20 + 2 * t->force), hz,
+			 TRIG_TONE_MS);
+		t->toneOn = true;
+		t->toneMs = now;
+	} else if (!tone && t->toneOn) {
+		trigTone(slot, trig, -128, 100, 30);
+		t->toneOn = false;
+	}
+	t->feltStatus = st;
+}
+
 static uint16_t ps5GetCommon(uint8_t slot, uint8_t rid, hid_report_type_t type,
 			     uint8_t *buf, uint16_t reqlen)
 {
@@ -228,6 +471,14 @@ static void ps5SetCommon(uint8_t slot, uint8_t rid, hid_report_type_t type,
 	hapticSteamRumble((uint16_t)p[3] * 257u, (uint16_t)p[2] * 257u,
 			  (uint8_t)bond);
 	// DualSense: left=low, right=high
+	// p[0] bit 2/3: right/left trigger effect blocks at p[10]/p[21] are valid
+	if (pn >= 32 && (p[0] & 0x04))
+		trigSet(&g_trig[bond][0], p + 10);
+	if (pn >= 32 && (p[0] & 0x08))
+		trigSet(&g_trig[bond][1], p + 21);
+	// a real pad echoes the host timestamp back in its input report
+	if (pn >= 36)
+		memcpy(g_ps5HostTs[bond], p + 32, 4);
 }
 #define PS5CB(N)                                                               \
 	static uint16_t ps5Get##N(uint8_t r, hid_report_type_t t, uint8_t *bf, \
@@ -299,11 +550,15 @@ static void ps5Build(uint8_t usbSlot, uint8_t slot, uint8_t out[63])
 	out[28] = (uint8_t)((ps5SensorTimestamp >> 8) & 0xFF);
 	out[29] = (uint8_t)((ps5SensorTimestamp >> 16) & 0xFF);
 	out[30] = (uint8_t)((ps5SensorTimestamp >> 24) & 0xFF);
-	// Values a real pad sends where we have no source: sensor temperature, two constant bytes, and a second
-	// clock that runs alongside the sensor timestamp.
+	// Values a real pad sends where we have no source: sensor temperature and a second clock that runs
+	// alongside the sensor timestamp.
 	out[31] = 0x02;
-	out[41] = 0x09;
-	out[42] = 0x09;
+	out[41] = trigReport(&g_trig[slot][0], g_in[slot].rt);
+	out[42] = trigReport(&g_trig[slot][1], g_in[slot].lt);
+	trigFeel(slot, 0, &g_trig[slot][0], out[41], g_in[slot].rt);
+	trigFeel(slot, 1, &g_trig[slot][1], out[42], g_in[slot].lt);
+	memcpy(out + 43, g_ps5HostTs[slot], 4);
+	out[47] = (uint8_t)(g_trig[slot][0].kind | (g_trig[slot][1].kind << 4));
 	memcpy(out + 48, out + 27, 4);
 	uint16_t tlx, tly, trx, trry;
 	steamPadsToTouch(b, PS5_TOUCH_H, g_in[slot].lpx, g_in[slot].lpy,

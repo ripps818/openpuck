@@ -51,6 +51,15 @@ void slotSticks(uint8_t, int16_t *a, int16_t *b, int16_t *c, int16_t *d) { *a = 
 uint32_t padDpadButtons(const PuckInput &) { return 0; }
 void padStickBlend(uint32_t, int16_t, int16_t, int16_t, int16_t, int16_t *, int16_t *, int16_t *, int16_t *) {}
 void padClickEdge(uint8_t, uint32_t) {}
+#define HSIDE_LPAD 0
+#define HSIDE_RPAD 1
+#define HSIDE_LGRIP 3
+#define HSIDE_RGRIP 4
+uint8_t g_trigHaptics;
+bool hapticLinkUp(int) { return false; }
+bool haptic82Blocked(int) { return true; }
+bool relayEnqueueFront(uint8_t, const uint8_t *, uint8_t, bool, int) { return false; }
+unsigned long millis() { return 0; }
 void psImuPack(uint8_t *, const PuckInput &) {}
 void steamPadsToTouch(uint32_t, uint16_t, int16_t, int16_t, int16_t, int16_t, uint16_t *a, uint16_t *b, uint16_t *c, uint16_t *d) { *a = *b = *c = *d = 0; }
 static bool packLeft, packRight; // the touch contacts a PlayStation builder packs
@@ -110,6 +119,7 @@ slices = [
     # PS3
     cut(ps3, 'static void ds3Imu(', '// Neutral input report'),
     # DualSense and DS4
+    cut(ps5, 'struct TrigFx {', 'static uint16_t ps5GetCommon('),
     cut(ps5, '// usbSlot drives the per-HID sequence counter', '// Dynamic-mount mode: begin() is unused'),
     cut(hg, '// usbSlot drives the per-HID counters', '// Dynamic-mount mode: begin() is unused'),
 ]

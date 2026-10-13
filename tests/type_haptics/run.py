@@ -64,6 +64,9 @@ int main()
 	// soft boost: 0..4 on the Switch and DualSense only
 	assert(typeHapticSet(HAP_LIFT, ET_SWITCH, 0) && typeHapticSet(HAP_LIFT, ET_DS5, 4) && !typeHapticSet(HAP_LIFT, ET_DS5, 5) && !typeHapticSet(HAP_LIFT, ET_XBOX, 2));
 	typeHapticSet(HAP_LIFT, ET_SWITCH, 1); typeHapticSet(HAP_LIFT, ET_DS5, 1);
+	// trigger haptics: off / trackpads / grips / both, DualSense only, trackpads by default
+	assert(g_typeHaptic[HAP_TRIG][ET_DS5] == TRIG_HAPTICS_PADS && typeHapticSet(HAP_TRIG, ET_DS5, TRIG_HAPTICS_BOTH) && !typeHapticSet(HAP_TRIG, ET_DS5, 4) && !typeHapticSet(HAP_TRIG, ET_SWITCH, 1));
+	typeHapticSet(HAP_TRIG, ET_DS5, TRIG_HAPTICS_PADS);
 	// the setter takes in-range values for the types that have the setting, and refreshes the live copies
 	applied = 0;
 	assert(typeHapticSet(HAP_KNEE, ET_SWITCH, 50) && typeHapticSet(HAP_KNEE, ET_DS5, 100) && g_typeHaptic[HAP_KNEE][ET_SWITCH] == 50 && applied == 2);
@@ -121,11 +124,11 @@ int main()
 	landed = 0xFF; assert(padTickCtrlDue(2, &landed) == PAD_CTRL_TAKE);
 
 	// the status blob carries the grid from byte 216, setting-major
-	uint8_t p[240]; memset(p, 0xEE, sizeof p);
+	uint8_t p[244]; memset(p, 0xEE, sizeof p);
 	for (int k = 0; k < HAP_COUNT; k++) for (int et = 0; et < ET_COUNT; et++) g_typeHaptic[k][et] = (uint8_t)(10 * k + et);
 	blobFill(p);
 	for (int k = 0; k < HAP_COUNT; k++) for (int et = 0; et < ET_COUNT; et++) assert(p[216 + 4 * k + et] == 10 * k + et);
-	assert(p[239] == 53 && p[211] == 0xEE); // the last byte of the grid; the strength bytes below it are not part of it
+	assert(p[243] == 63 && p[211] == 0xEE); // the last byte of the grid; the strength bytes below it are not part of it
 	return 0;
 }
 '''

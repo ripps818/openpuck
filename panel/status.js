@@ -336,6 +336,11 @@ export function applyBlob(p){
         rec.liftWrap.classList.toggle("hide",!cap);
         if(cap && document.activeElement!==rec.lift) rec.lift.value=hapValue(p,HAP.LIFT,et);
       }
+      if(rec.trig){
+        const cap=perType && p.length>hapIndex(HAP.TRIG,et);
+        rec.trigWrap.classList.toggle("hide",!cap);
+        if(cap && document.activeElement!==rec.trig) rec.trig.value=hapValue(p,HAP.TRIG,et);
+      }
       if(rec.limiter){
         const cap=p[0]>=27 && p.length>207;
         rec.limiterWrap.classList.toggle("hide",!cap);

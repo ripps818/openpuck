@@ -374,3 +374,43 @@ Controller" ([Proton#5900](https://github.com/ValveSoftware/Proton/issues/5900))
 description when it is 62 characters or fewer; "DualSense wireless controller (PS5) Direct Wireless Controller" is
 exactly 62. GE-Proton's patch 0174 names Direct-profile endpoints "DualSense wireless controller (PS5) Internal Mono
 Speaker".
+
+## 10. Adaptive triggers
+
+The Steam Controller 2 has no trigger motors, but games read a trigger effect's state back from the input report,
+and some act on it: Stellar Blade's gun (hold L2, fire with R2) only fires on the weapon effect's "snapped"
+status, so with the game's adaptive triggers on, a pad that never reports it can't shoot. DualSense mode emulates
+that status and plays the effect on the haptic actuators (`TrigFx`, `trigSet`, `trigReport`, `trigFeel` in
+`mode_ps5.cpp`; test `tests/trigger_fx`).
+
+Measured on a real DualSense over USB (2026-10-13), offsets in the input report after the report ID:
+
+| Byte | Meaning |
+|---|---|
+| 41 / 42 | R2 / L2: high nibble status, low nibble motor zone 0-9. Idle (no effect) `0x09` |
+| 43-46 | echo of the host timestamp from output report `0x02` bytes 32-35 (zero until a host sends one) |
+| 47 | active effect, R2 low nibble, L2 high: `0` none, `1` feedback, `2` weapon, `3` vibration |
+
+- With an effect set, the motor zone rests at the effect's start zone and follows the trigger as it is pulled; on
+  release it steps back down at about one zone per 10 ms.
+- Weapon (`0x25`, zones 4-7): status `0` before the zone, `1` from R2 ≈ 121, `2` from R2 ≈ 228 (the snap), and
+  `2` holds until the trigger is let back out past the zone's start. Feedback (`0x21`) reports `1` under load.
+- Zone boundaries against the analog value fit `36·z − 25`. A zone-8 weapon end would lie past full travel by
+  that fit, so the emulation caps the snap point at 250, where a full pull still reaches it.
+- Output report `0x02`: byte 0 bit 2 / bit 3 mark the R2 / L2 effect blocks valid, 11 bytes each at bytes 10 and
+  21 (mode byte first). Block layouts follow Nielk1's notes: `0x21` feedback, `0x25` weapon, `0x26` vibration with
+  a 10-bit zone mask in bytes 1-2 and 3-bit strengths; `0x01` / `0x02` / `0x06` are the older "simple" forms
+  with raw positions; `0x05` is off. Games re-send the same effect with every report, so only a change of effect
+  kind resets the status.
+
+The feel plays on the actuators the DualSense tab's **Trigger haptics** picks (trackpads by default; grips, or
+both), R2 on the right and L2 on the left:
+
+- a `0x82` tick (script 1) every 12 counts of travel deeper into a feedback or weapon zone, 4-8 dB above the
+  trackpad ticks' default because the thumbs are rarely on the pads while the triggers are in use;
+- at a weapon's snap, the click script (2) plus a 60 ms 140 Hz `0x83` tone, louder on the trackpads than the grips
+  (the pads alone felt it too softly at the grips' level);
+- a vibration effect as an `0x83` tone at its frequency (40-250 Hz) while the trigger is in its zone.
+
+Gains follow the effect's strength. A trigger held still plays nothing, so a long aim under feedback stays quiet.
+Bow, galloping and machine effects (`0x22`, `0x23`, `0x27`) report as no effect and play nothing.
