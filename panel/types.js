@@ -5,7 +5,7 @@ import { MODE_NAMES, MODE_ORDER } from './status.js';
 import { openNav } from './nav.js';
 import { iconEl } from './icons.js';
 import { glyphSelect } from './glyphselect.js';
-import { buildPadClick, buildProfileCards, profileOp, profilesCapable, setPadStick } from './profiles.js';
+import { buildPadClick, buildProfileCards, padClickLock, profileOp, profilesCapable, setPadStick } from './profiles.js';
 
 // Per-emulated-type config (must match firmware ET_* order: Xbox=0, Switch=1, DS4=2, DS5=3). Each type lists
 // only the remap targets that exist on that controller. Field id sent to firmware = 40 + et*9 + k
@@ -32,7 +32,7 @@ export const TYPE_DEFS = [
   {key:"DS5", name:"DS5", labels:{1:"Cross",2:"Circle",3:"Square",4:"Triangle",5:"L1",6:"R1",7:"L3",8:"R3",9:"Create",10:"Options",11:"PS",19:"L2",20:"R2",...DPAD,16:"Touchpad Click",17:"Mute"}, padTargets:PS_PADS},
 ];
 // Grip strength (percent) and haptic style a type starts with: the firmware's g_typeRumbleScaleDefault and kHapticStyleDefault
-const typeDefaults=def=>({rumble:200,style:3,click:26,tick:0,tickGain:11,knee:85,lift:1,trig:1,...def.haptics});
+const typeDefaults=def=>({rumble:200,style:3,click:26,tick:0,tickGain:11,knee:85,lift:1,trig:1,dpad:1,...def.haptics});
 // movement-tick spacing: 0 leaves the ticks to the controller (fixed strength), 1..4 have the puck play them, a wider to a
 // narrower distance apart
 export const PAD_TICK_LABELS=["Controller's own","Sparse","Normal","Dense","Densest"];
@@ -56,7 +56,7 @@ function padTouchOptions(def, pad){
   const o = [[0,off]];
   if(off !== "Off") o.push([PAD_DISABLED,"Disabled"]);
   o.push([1,"Left stick","stickL"],[2,"Right stick","stickR"]);
-  if(def.key==="SWITCH") o.push([3,"D-pad on touch (Switch Pro)"],[4,"D-pad on click (Switch Pro)"]);
+  o.push([3,"D-pad on touch"],[4,"D-pad on click"]);
   return o;
 }
 function mkSelect(def, includeNone){
@@ -73,7 +73,9 @@ function mkSelect(def, includeNone){
 // [swQamSelect][shortcutFlags][8 unused]
 export function swStatusApply(s){
   const capable=!!s;
-  $("#swClickControls").classList.toggle("hide",!capable);
+  // firmware with the per-type D-pad click feedback shows it on every tab instead
+  const perTypeDpad=!!(S.lastP && S.lastP.length>hapIndex(HAP.DPAD,3));
+  $("#swClickControls").classList.toggle("hide",!capable || perTypeDpad);
   $("#swBonds").textContent=S.lastP && S.lastP.length>60?S.lastP[60]:"—";
   $("#swStorage").textContent=capable?(["Unavailable","Ready","Initialized","Save failed"][s[39]]||"Unknown"):"Not reported";
   const storageBad=capable && (s[39]===0 || s[39]===3);
@@ -114,6 +116,7 @@ function typeResetFields(et){
   if(sw||ds5) f.push(perType ? [hapField(HAP.KNEE,et),typeDefaults(TYPE_DEFS[et]).knee,30] : [115,70,27]);
   if((sw||ds5) && S.lastP && S.lastP.length>hapIndex(HAP.LIFT,et)) f.push([hapField(HAP.LIFT,et),typeDefaults(TYPE_DEFS[et]).lift,30]);
   if(ds5 && S.lastP && S.lastP.length>hapIndex(HAP.TRIG,et)) f.push([hapField(HAP.TRIG,et),typeDefaults(TYPE_DEFS[et]).trig,30]);
+  if(S.lastP && S.lastP.length>hapIndex(HAP.DPAD,et)) f.push([hapField(HAP.DPAD,et),typeDefaults(TYPE_DEFS[et]).dpad,30]);
   const style=typeDefaults(TYPE_DEFS[et]).style;
   if(sw) f.push([hapField(HAP.STYLE,et),style,30]);
   if(ds5) f.push([31,1,0],perType ? [hapField(HAP.STYLE,et),style,30] : [88,style,22],[30,0,0],[114,0,26],[116,0,29]);
@@ -152,9 +155,9 @@ export async function resetTypeDefaults(et){
 // Protocol 30 keeps the per-type settings in one grid (firmware HAP_* in config.h): WebUSB field
 // 120 + 4 * setting + type, status blob byte 216 + 4 * setting + type (index 214 + ... here, the header being cut).
 // The release before it (29) has one limiter for all types (field 115) and the style on the DualSense only (field 88).
-export const HAP={KNEE:0,STYLE:1,CLICK:2,TICK:3,TICKGAIN:4,LIFT:5,TRIG:6};
+export const HAP={KNEE:0,STYLE:1,CLICK:2,TICK:3,TICKGAIN:4,LIFT:5,TRIG:6,DPAD:7};
 // per setting, in HAP order: the backup key and its range
-export const HAP_KEYS=[["limiter",50,100],["hapticStyle",0,3],["padClick",0,31],["padTick",0,4],["padTickGain",0,31],["softBoost",0,4],["triggerHaptics",0,3]];
+export const HAP_KEYS=[["limiter",50,100],["hapticStyle",0,3],["padClick",0,31],["padTick",0,4],["padTickGain",0,31],["softBoost",0,4],["triggerHaptics",0,3],["dpadClick",0,1]];
 export const hapField=(k,et)=>120+4*k+et;
 export const hapIndex=(k,et)=>214+4*k+et;
 export const hapValue=(p,k,et)=>p[hapIndex(k,et)];
@@ -164,8 +167,6 @@ export const RUMBLE_SCALES=Array.from({length:246},(_,i)=>10+i*2);
 const HD_PAD_SCALES=Array.from({length:251},(_,i)=>i*2);
 
 export function initTypes(){
-  for(const o of mkSelect(TYPE_DEFS[1],true).options){const c=o.cloneNode(true);if(+c.value===18)c.textContent="Take screenshot";$("#qamSelect").appendChild(c);}
-  glyphSelect($("#qamSelect"));
   $("#swClickFeedback").onchange=()=>setField(230,+$("#swClickFeedback").value);
   (function buildTypeCfgs(){
     const host=document.getElementById("typeCfgs"), tabs=document.getElementById("mapTabs");
@@ -205,7 +206,7 @@ export function initTypes(){
       // with profiles the whole card is replaced: its Create switch is a preset now
       gBtn.classList.add("prof-legacy");
       relabel(ab,iconEl("A"),iconEl("B"),plus(),iconEl("X"),iconEl("Y")," swap");
-      // Trackpads: a column per pad, what touching it does and what its click acts as; then what they share
+      // Trackpads: a column per pad, what touching it does and what its click acts as. Their haptics have their own card below.
       const gPad=group("Trackpads"); gPad.classList.add("span");
       const cols=document.createElement("div"); cols.className="mapsrc"; gPad.appendChild(cols);
       for(let pad=0; pad<2; pad++){
@@ -214,7 +215,7 @@ export function initTypes(){
         const sel=document.createElement("select");
         for(const [v,lbl,glyph] of padTouchOptions(def,pad)){ const o=document.createElement("option"); o.value=v; o.textContent=lbl; if(v!==PAD_DISABLED) o.dataset.glyph=glyph||(v===4?(pad?"padClickR":"padClickL"):(pad?"padR":"padL")); sel.appendChild(o); }
         row(col,"Touch",glyphSelect(sel));
-        sel.addEventListener("change",()=>setPadStick(et,pad,+sel.value,PAD_STICK_FIELD0+et*2+pad));
+        sel.addEventListener("change",()=>{ padClickLock(et); setPadStick(et,pad,+sel.value,PAD_STICK_FIELD0+et*2+pad); });
         rec.padStick.push(sel);
         buildPadClick(et,pad,col);
       }
@@ -222,13 +223,25 @@ export function initTypes(){
         note.textContent={
           XBOX:"In Xbox 360 mode the right trackpad moves a mouse pointer while its Touch is Mouse, and a click acts as set here: by default the right pad is the left mouse button and the left pad the right one. Disabled stops the pointer; the click is separate. The Original Xbox has no mouse.",
           SWITCH:"A click does nothing in the Switch modes unless you map it to a button here. The D-pad modes read the trackpad themselves, so they work whatever Click is set to.",
-        }[def.key] || "A trackpad that is disabled or drives a stick no longer reports as a touchpad, but its click still presses the touchpad unless you map Click to something else.";
+        }[def.key] || "A trackpad that is disabled, drives a stick or acts as a D-pad no longer reports as a touchpad, but its click still presses the touchpad unless you map Click to something else.";
+        note.textContent+=" On D-pad on click, the click presses the D-pad instead.";
         gPad.appendChild(note); }
+      // one grid cell for Trackpad feedback and the small cards under it (Adaptive triggers, Lights), balancing the Rumble column
+      const stackL=document.createElement("div"); stackL.className="stack";
+      const gPadH=group("Trackpad feedback"); gPad.after(stackL); stackL.append(gPadH);
       // 1 = controller's own haptics (ticks while moving + clicks), 2 = clicks only, 0 = off
       const pad=document.createElement("select");
       for(const [v,lbl] of [[1,"On"],[2,"Clicks only"],[0,"Off"]]){ const o=document.createElement("option"); o.value=v; o.textContent=lbl; pad.appendChild(o); }
-      row(gPad,"Trackpad haptics",pad);
+      row(gPadH,"Trackpad haptics",pad);
       pad.addEventListener("change",()=>setField(40+et*9+6, +pad.value));
+      // D-pad click feedback (every type): a pulse when a trackpad in a D-pad mode is clicked
+      { const sel=document.createElement("select");
+        for(const [v,lbl] of [[1,"On (default)"],[0,"Off"]]){ const o=document.createElement("option"); o.value=v; o.textContent=lbl; sel.appendChild(o); }
+        sel.addEventListener("change",()=>setField(hapField(HAP.DPAD,et),+sel.value));
+        const note=document.createElement("p"); note.className="note";
+        note.textContent="A short pulse on a trackpad that is a D-pad each time its direction changes, so sliding from down to down-right is felt without lifting your finger, and on each click while Trackpad haptics is Off (with it on, every click already pulses).";
+        const wrap=document.createElement("div"); wrap.className="hide"; wrap.append(row(gPadH,"D-pad feedback",sel),note); gPadH.appendChild(wrap);
+        rec.dpad=sel; rec.dpadWrap=wrap; }
       // Click strength (protocol v30): the slider position is the firmware's step, weak -> strong.
       // Movement ticks: the controller plays its own at a fixed strength (spacing 0); any other spacing has the puck play them at the tick strength.
       { const gHap=document.createElement("div"); gHap.className="hide";
@@ -247,8 +260,8 @@ export function initTypes(){
         tickG.addEventListener("change",()=>setField(hapField(HAP.TICKGAIN,et), +tickG.value));
         const note=document.createElement("p"); note.className="note";
         note.textContent="Click strength applies to the clicks the puck sends itself: Clicks only, the PlayStation modes and the Switch D-pad click feedback. Movement ticks only play with Trackpad haptics On. The controller plays its own ticks and clicks at a fixed strength; choose a spacing and the puck plays both instead, ticks at the Tick strength and clicks at the Click strength, pausing the ticks around a click. Back on Controller's own they return at once. Clicks only has no ticks. Tick spacing and strength are untested on the Steam Controller 2.";
-        gHap.append(row(gPad,"Click strength",click,clickV),row(gPad,"Tick spacing",tick,tickV),row(gPad,"Tick strength",tickG,tickGV),note);
-        gPad.appendChild(gHap);
+        gHap.append(row(gPadH,"Click strength",click,clickV),row(gPadH,"Tick spacing",tick,tickV),row(gPadH,"Tick strength",tickG,tickGV),note);
+        gPadH.appendChild(gHap);
         Object.assign(rec,{padHap:gHap,padClick:click,padClickV:clickV,padClickFmt:fmtClick,padTick:tick,padTickV:tickV,padTickG:tickG,padTickGV:tickGV}); }
       // the Xbox pointer's speed is one setting shared with Lizard mode: setTab() moves its card in or out of here
       if(def.key==="XBOX"){ rec.mouseHost=document.createElement("div"); rec.mouseHost.className="pad-mouse"; gPad.appendChild(rec.mouseHost); }
@@ -256,11 +269,12 @@ export function initTypes(){
       // same order on the Switch and DS5 tabs. A Switch game sends one signal, HD rumble, so its haptics strength is
       // the grip rumble strength. A DualSense game sends motor rumble and audio haptics apart, each with its own.
       const gRum=group("Rumble");
-      // one grid cell for Rumble and the small cards under it (Adaptive triggers, Lights), so they stack at any column count
+      // one grid cell for Rumble and the Haptics card under it, so they stack at any column count
       const stack=document.createElement("div"); stack.className="stack"; gRum.before(stack); stack.append(gRum);
       const rumble=toggle(gRum,"Rumble","on");
       const sw=def.key==="SWITCH", ds5=def.key==="DS5";
       const gHapt=(sw||ds5)?group("Haptics"):null;
+      if(gHapt) stack.append(gHapt);
       if(ds5){
         const aud=toggle(gHapt,"Haptics","on");
         rec.audioHaptics=aud;
@@ -337,7 +351,7 @@ export function initTypes(){
       // Adaptive triggers: where the DualSense trigger effects are felt; its own group, as it isn't part of the grip stream
       if(ds5){
         const gTrig=group("Adaptive triggers"); gTrig.classList.add("hide");
-        stack.append(gTrig);
+        stackL.append(gTrig);
         const sel=document.createElement("select");
         for(const [v,lbl] of [[0,"Off"],[1,"Trackpads"],[2,"Grips"],[3,"Trackpads and grips"]]){ const o=document.createElement("option"); o.value=v; o.textContent=lbl+(v===typeDefaults(def).trig?" (default)":""); sel.appendChild(o); }
         sel.addEventListener("change",()=>setField(hapField(HAP.TRIG,et),+sel.value));
@@ -347,7 +361,7 @@ export function initTypes(){
         rec.trig=sel; rec.trigWrap=gTrig;
       }
       // LED brightness
-      { const gLed=group("Lights"); stack.append(gLed);
+      { const gLed=group("Lights"); stackL.append(gLed);
         const sl=document.createElement("input"); sl.type="range"; sl.min=0; sl.max=100; sl.step=5;
         const vspan=document.createElement("span"); vspan.className="val";
         row(gLed,"LED brightness",sl,vspan);
@@ -375,10 +389,10 @@ export function initTypes(){
       rec.abSwap=ab; rec.pad=pad; rec.rumble=rumble;
       // Switch Pro-only settings get their own card on the Switch profile
       if(def.key==="SWITCH"){
-        const g=group("Switch Pro mode only"); g.classList.add("span"); gPad.after(g);
-        for(const id of ["qamSelectRow","swGyroMapBlock","swGyroOld"]) g.appendChild(document.getElementById(id));
-        // the D-pad click feedback and the HD trackpad strength belong with the trackpads
-        for(const id of ["swClickControls","hdPadBlock"]) gPad.appendChild(document.getElementById(id));
+        const g=group("Switch Pro mode only"); g.classList.add("span"); rec.prof.cards[2].after(g); // right below the Button map card
+        for(const id of ["swGyroMapBlock","swGyroOld"]) g.appendChild(document.getElementById(id));
+        // the D-pad click feedback and the HD trackpad strength belong with the trackpad feedback
+        for(const id of ["swClickControls","hdPadBlock"]) gPadH.appendChild(document.getElementById(id));
       }
       host.appendChild(sec); typeEls.push(rec);
     });

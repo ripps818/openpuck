@@ -112,7 +112,6 @@ $("#rumbleTest").onclick=async()=>{ if(S.dev){ await send([0x16]); log("test rum
 $("#rumbleHdTest").onclick=async()=>{ if(S.dev){ await send([0x36]); log("HD pan test sent"); } };
 for(const [id,bit] of SC_BITS)$('#'+id).onclick=()=>{if(S.lastSw)setField(240,S.lastSw[46]^bit);};
 $("#hdPadScale").addEventListener("change",()=>setField(231,+$("#hdPadScale").value/2));
-$("#qamSelect").addEventListener("change",()=>setField(239,+$("#qamSelect").value));
 $("#rumbleScale").addEventListener("change", ()=>setField(22, (+$("#rumbleScale").value)/2));
 $("#trigInner").addEventListener("change", ()=>setField(102, +$("#trigInner").value));
 $("#trigOuter").addEventListener("change", ()=>setField(103, +$("#trigOuter").value));

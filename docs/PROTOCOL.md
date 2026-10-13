@@ -531,9 +531,9 @@ Messages:
     controller is live). The fields other than `97` answer with the first page.
     Switch Pro / HD rumble / shortcuts (blob version ≥ 23): `190`-`229` were the removed Switch Pro
     back-button profiles and are ignored (still answered with a status blob), `230` trackpad D-pad click
-    feedback, `231` HD trackpad strength as percent/2, `239` Quick Access + Select target, `240` shortcut
+    feedback (now the Switch's entry of per-type setting 7, which `0xAE` byte 38 also reports), `231` HD trackpad strength as percent/2, `239` Quick Access + Select target of the Switch (now its entry of the per-type targets below, field `152 + type`), `240` shortcut
     flags (bit0 QAM modifier, bits 1-2 unused (were profiles / D-pad haptic shortcuts; cleared), bit3
-    confirmation pulses, bit4 QAM + Select, bit5 enabled). `241`-`252` were the removed D-pad haptic
+    confirmation pulses, bit4 (was QAM + Select enable; unused now), bit5 enabled). `241`-`252` were the removed D-pad haptic
     shortcut presets / strength steps / slots and are ignored.
     Per-type grip strength (blob version >= 25): `108`-`111` as percent/2 for emulated types 0-3 (Xbox,
     Switch, DS4, DS5); `104`-`107` (a per-type rumble style during development) are ignored. Status blob
@@ -549,7 +549,7 @@ Messages:
     DualSense audio haptics and speaker and Switch HD rumble grips; from version 30 each type has its own (below),
     field 115 still sets both the Switch's and the DualSense's, and status blob `p[209]` (payload byte 207) reports
     the active type's.
-    Per-type haptic settings (blob version >= 30): one grid of seven settings by four types (Xbox, Switch, DS4, DS5).
+    Per-type haptic settings (blob version >= 30): one grid of eight settings by four types (Xbox, Switch, DS4, DS5).
     Setting `k` of type `t` is field `120 + 4k + t` and status blob `p[216 + 4k + t]` (payload byte `214 + 4k + t`),
     and the config file keeps the same grid in its tail. A write that is out of range, or for a type without the
     setting, is ignored. A config from the v29 release has no grid: the limiter and the DualSense style start from
@@ -564,6 +564,7 @@ Messages:
     | 4 | movement-tick gain step | all | as setting 2 | 11 (-9 dB) |
     | 5 | soft boost of the grip wave stream | Switch, DS5 | `0` off, `1`-`4` raise quiet passages by up to 1.5× / 2× / 3× / 4× | 1 (1.5×) |
     | 6 | where adaptive-trigger effects are felt | DS5 | `0` off, `1` trackpads, `2` grips, `3` both | 1 |
+    | 7 | trackpad D-pad feedback | all | `0` off, `1` a click pulse on a pad in a D-pad mode each time its direction changes, and on each click while Trackpad haptics is Off | 1 (the Switch's starts from field 230's old value) |
 
     Soft boost is an upward compressor on the PCM stream to the grips (Wave style). It follows the louder grip's
     peak level (instant rise, ~80 ms fall) and, below 20% of full scale, raises it 2:1 toward that level, capped
@@ -571,9 +572,21 @@ Messages:
     noise in a quiet track stays quiet. The grips play down to ~0.5% of full scale in proportion (IMU), but a
     hand barely feels a few percent. Firmware before it sends a shorter status blob (no `p[236..239]`).
 
+    Quick Access + Select target, per controller type: field `152 + type` (0-20, a remap target code, `0` none, `18`
+    the Switch's Capture button) and status blob `p[248 + type]` (payload byte `246 + type`). Default `0` for every
+    type. The chord acts whenever the active type has a target, with no other switch; bit 4 of the shortcut flags
+    (field 240), which used to enable it, is ignored. The target replaces both Quick Access and Select for the
+    host. The config file keeps the four bytes at the end of its tail, and the Switch's still in the old
+    `swQamSelect` byte. A file from before keeps the Switch's target only if its bit 4 was set (`18` when no target
+    was saved).
+
     Trigger haptics plays a game's adaptive-trigger effects (ticks into a resistance zone, a weapon's snap, trigger
     vibration) on the chosen actuators; the trigger status itself is always reported. See DUALSENSE_HAPTICS.md §10.
     Firmware before it sends a shorter status blob (no `p[240..243]`).
+
+    D-pad feedback skips the click pulse while Trackpad haptics is On or Clicks only, because every click already
+    pulses then; the pulse for a direction change plays either way. On D-pad on click, going from none to a
+    direction is the click itself, so only a change between directions adds a pulse. Firmware before it is Switch-only (field 230) and sends a shorter status blob (no `p[244..247]`).
 
     Ticks and clicks apply with Trackpad haptics On; Clicks only has no ticks. With a tick spacing set, the puck
     plays both as `0x82` pulses at the gains above and sets the controller's tick spacing (controller setting 14)
@@ -803,8 +816,9 @@ Status blob payload:
 
 Later fields are appended (the version byte says how far the payload goes). From version 20 the tail carries
 the per-emulated-type trackpad-to-stick mapping at payload bytes 187..194 — two bytes per type
-(`{left pad, right pad}`), each `0` off / `1` left stick / `2` right stick (`3` / `4` the Switch Pro D-pad on
-touch / on click, from version 23; `5` disabled, from version 30). Set with
+(`{left pad, right pad}`), each `0` off / `1` left stick / `2` right stick (`3` / `4` the D-pad on touch / on
+click, from version 23 for the Switch Pro and in every emulated mode since; `5` disabled, from version 30). A pad on
+D-pad on click spends its click on the D-pad, so the click's own mapping doesn't fire with it. Set with
 `0x02 <80 + type*2 + pad> <value>`. Fields 40..75 are the per-type config block, so the mapping starts at 80.
 A mapped pad **blends** with its stick: while the pad is touched each axis reports whichever of the two
 sources is deflected further from center (signed); an untouched pad contributes nothing and the physical

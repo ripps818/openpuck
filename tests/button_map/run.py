@@ -38,7 +38,7 @@ head = r'''
 
 // ---- globals the builders read ----
 PuckInput g_in[NSLOT];
-uint8_t g_abSwap, g_back[4], g_qamMap, g_shortcutFlags, g_swQamSelect = 18, g_padStick[2];
+uint8_t g_abSwap, g_back[4], g_qamMap, g_shortcutFlags, g_qamSelect, g_padStick[2];
 uint8_t g_trigInner = 0, g_trigOuter = 100, g_swGyroLegacy;
 bool g_touchpadDisabled;
 uint32_t g_gestureMask;
@@ -48,7 +48,8 @@ int8_t g_usbToBond[NSLOT] = { 0, 1, 2, 3 };
 // ---- stubs: everything that is not button mapping ----
 uint8_t swStick(int16_t, bool) { return 0x80; }
 void slotSticks(uint8_t, int16_t *a, int16_t *b, int16_t *c, int16_t *d) { *a = *b = *c = *d = 0; }
-uint32_t padDpadButtons(const PuckInput &) { return 0; }
+uint32_t padDpadBits(uint32_t, int16_t, int16_t, int16_t, int16_t) { return 0; }
+uint32_t padDpadApply(uint32_t raw, int16_t, int16_t, int16_t, int16_t) { return raw; }
 void padStickBlend(uint32_t, int16_t, int16_t, int16_t, int16_t, int16_t *, int16_t *, int16_t *, int16_t *) {}
 void padClickEdge(uint8_t, uint32_t) {}
 #define HSIDE_LPAD 0
@@ -100,7 +101,7 @@ static void xinputSend(uint8_t, uint16_t b, uint8_t lt, uint8_t rt, int16_t, int
 slices = [
     # shared PlayStation packers: psButtonsFromSteam and the code tables behind it
     (r / 'OpenPuck/remap.cpp').read_text(),
-    cut(gu, 'uint32_t psButtonsFromSteam('),
+    cut(gu, 'uint32_t remapHostButtons('),
     # Xbox 360
     cut(xi, 'enum {\n\tXB_DUP', '// ===================== XInput custom TinyUSB class driver'),
     cut(xi, 'static void rfXboxGamepad(', '// Right pad -> mouse on a second HID-mouse interface'),
@@ -173,7 +174,7 @@ static void runOg(uint32_t raw)
 {
 	load(raw);
 	XboxOgInputReport rp;
-	xboxOgBuildReport(rp, rep);
+	xboxOgBuildReport(rp, rep, 0);
 	printf("btn=%02x a=%02x b=%02x x=%02x y=%02x blk=%02x wht=%02x lt=%02x rt=%02x", rp.buttons, rp.a, rp.b,
 	       rp.x, rp.y, rp.black, rp.white, rp.left_trigger, rp.right_trigger);
 }

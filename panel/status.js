@@ -9,7 +9,7 @@ import { syncMapNav, syncNav } from './nav.js';
 import { syncMotionCap } from './motion.js';
 import { repaintGlyphSelects } from './glyphselect.js';
 import { fillIcon } from './icons.js';
-import { profilesCapable, profilesNoteBlob, profilesNoteSw, syncProfileVisibility } from './profiles.js';
+import { QAM_SELECT_INDEX0, padClickLock, profilesCapable, profilesNoteBlob, profilesNoteSw, syncProfileVisibility } from './profiles.js';
 
 export const MODE_NAMES = ["Steam","Xbox 360","Switch HORIPAD","Lizard","Switch Pro","PS5 DualSense","PS4 DualShock","PS5 DualSense (single HID)","PS4 DualShock (single HID)","PS3 DualShock","Original Xbox","DirectInput","SInput"];
 // display order for mode lists (MODE_NAMES is indexed by the firmware's mode number); single-HID after their base
@@ -45,9 +45,7 @@ export function applySw(s){
   profilesNoteSw(s);
   $("#shortcutToggles").classList.toggle("hide",!s);
   $("#hdPadBlock").classList.toggle("hide",!s);
-  $("#qamSelectRow").classList.toggle("hide",!s);
   if(!s) return;
-  if(!held($("#qamSelect"))){ $("#qamSelect").value=s[45]; repaintGlyphSelects(); }
   if(document.activeElement!==$("#hdPadScale")) $("#hdPadScale").value=s[40]*2;
   const flags=s[46],enabled=!!(flags&32);
   // scQam shows the modifier as its glyph (.ic-mod, like the chord labels) instead of on/off
@@ -336,6 +334,16 @@ export function applyBlob(p){
         rec.liftWrap.classList.toggle("hide",!cap);
         if(cap && document.activeElement!==rec.lift) rec.lift.value=hapValue(p,HAP.LIFT,et);
       }
+      if(rec.prof && rec.prof.qamSelect){
+        const cap=p.length>QAM_SELECT_INDEX0+et;
+        rec.prof.qamSelect.closest(".row").classList.toggle("hide",!cap);
+        if(cap && !held(rec.prof.qamSelect)){ rec.prof.qamSelect.value=p[QAM_SELECT_INDEX0+et]; repaintGlyphSelects(); }
+      }
+      if(rec.dpad){
+        const cap=perType && p.length>hapIndex(HAP.DPAD,et);
+        rec.dpadWrap.classList.toggle("hide",!cap);
+        if(cap && document.activeElement!==rec.dpad) rec.dpad.value=hapValue(p,HAP.DPAD,et);
+      }
       if(rec.trig){
         const cap=perType && p.length>hapIndex(HAP.TRIG,et);
         rec.trigWrap.classList.toggle("hide",!cap);
@@ -373,6 +381,7 @@ export function applyBlob(p){
         // with profiles the selects show the profile being edited (renderProfiles), not the active one
         if(padStickCap && !profCap && !held(sel)) sel.value=p[185+et*2+pad];
       });
+      padClickLock(et);
       // dot marks the type matching the current puck mode
       rec.activeDot.style.display = (et===activeEt) ? "" : "none";
     });
@@ -456,4 +465,4 @@ export function applyBlob(p){
   repaintGlyphSelects();
   syncNav(); // cards above may have appeared or hidden (lizard, triggers, RF, logging build)
 }
-export const SC_BITS=[['scQam',1],['scFeedback',8],['scCapture',16],['scEnabled',32]];
+export const SC_BITS=[['scQam',1],['scFeedback',8],['scEnabled',32]];

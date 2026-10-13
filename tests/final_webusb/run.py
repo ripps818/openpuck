@@ -5,9 +5,13 @@ a=s.index('\t\t\t\tcase 231:');b=s.index('// Switch Pro gyro mapping',a)
 head='''#include <stdint.h>
 #include <cassert>
 #include "triton.h"
-uint8_t g_shortcutFlags=61,g_rumblePresets[3]={5,0,8},g_rumbleSlot=2,g_swQamSelect=18,g_strengthSlots[2]={255,255},g_rumbleStyle=8;
+uint8_t g_shortcutFlags=61,g_rumblePresets[3]={5,0,8},g_rumbleSlot=2,g_typeQamSelect[4]={0,18,0,0},g_strengthSlots[2]={255,255},g_rumbleStyle=8;
 uint16_t g_strengthSteps[2][3]={{200,300,500},{200,300,500}},g_hdPadScale=300,g_rumbleScale=200;
-int applied=0,stored=0;void applyActiveType(){++applied;}void rumbleStoreActive(){++stored;}
+int applied=0,stored=0;void applyActiveType(){++applied;}
+#define ET_SWITCH 1
+#define ET_COUNT 4
+#define QAM_SELECT_MAX 20
+bool typeQamSelectSet(uint8_t et,uint8_t v){if(et>=ET_COUNT||v>QAM_SELECT_MAX)return false;g_typeQamSelect[et]=v;applyActiveType();return true;}void rumbleStoreActive(){++stored;}
 void field(uint8_t f,uint8_t v){switch(f){
 '''
 body='''}}int main(){
@@ -16,7 +20,7 @@ body='''}}int main(){
  // removed settings are ignored: rumble style (39 / 104..107), shortcut presets / steps / slots (241..252)
  stored=0;field(39,5);field(104,5);assert(g_rumbleStyle==8 && stored==0);
  for(int f=241;f<=252;f++){field(f,1);}assert(g_rumblePresets[0]==5 && g_strengthSteps[0][0]==200 && g_rumbleSlot==2);
- field(239,0);assert(g_swQamSelect==0);field(239,18);field(239,21);assert(g_swQamSelect==18);
+ field(239,0);assert(g_typeQamSelect[ET_SWITCH]==0);field(239,18);field(239,21);assert(g_typeQamSelect[ET_SWITCH]==18);
  for(int i=232;i<=238;i++){field(i,0);}
 }'''
 with tempfile.TemporaryDirectory() as td:

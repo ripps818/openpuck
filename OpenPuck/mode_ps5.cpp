@@ -509,7 +509,7 @@ static ps5_setcb_t const PS5_SETCB[NSLOT] = { ps5Set0, ps5Set1, ps5Set2,
 // usbSlot drives the per-HID sequence counter; bond is the controller whose decoded input feeds the report.
 static void ps5Build(uint8_t usbSlot, uint8_t slot, uint8_t out[63])
 {
-	uint32_t b = psButtonsFromSteam(g_in[slot].buttons);
+	uint32_t b = psButtonsFromSteam(slot, padDpadApplyIn(g_in[slot]));
 	padClickEdge(slot, b & (TB_LPADC | TB_RPADC));
 	// A pad mapped to a stick must NOT also report as a touchpad contact -- the host would read the same
 	// finger twice (stick deflection AND a cursor drag). A disabled pad reports none either.

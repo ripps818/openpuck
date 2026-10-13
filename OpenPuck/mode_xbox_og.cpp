@@ -534,9 +534,10 @@ static Adafruit_USBD_XboxOg g_xboxOgInterface;
 
 XboxOgController g_xboxOgCtl;
 
-static void xboxOgBuildReport(XboxOgInputReport &report, const uint8_t *raw)
+static void xboxOgBuildReport(XboxOgInputReport &report, const uint8_t *raw,
+			      uint8_t slot)
 {
-	uint32_t buttons = remapButtons(shortcutHostButtons(btnsOf(raw)));
+	uint32_t buttons = remapHostButtons(slot, padDpadApplyRaw(raw));
 
 	xboxOgNeutralReport(report);
 	if (buttons & TB_DUP)
@@ -670,7 +671,7 @@ void XboxOgController::onReport45(int slot, const uint8_t *rep, bool fresh,
 	uint32_t generation = g_xboxOgGeneration;
 	XboxOgInputReport report;
 
-	xboxOgBuildReport(report, rep);
+	xboxOgBuildReport(report, rep, (uint8_t)slot);
 	xboxOgPublishBondReport(report, slot, generation);
 }
 

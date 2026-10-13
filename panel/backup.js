@@ -5,7 +5,7 @@ import { CHORD_DPAD_FIELD } from './status.js';
 import { HAP_KEYS, PAD_STICK_FIELD0, TYPE_DEFS, hapField, hapValue } from './types.js';
 import { LZ_MAX, lizardCapable, lzReadProfile, lzWriteProfile, readLizard } from './lizard.js';
 import { modalDone, modalOpen, modalStage } from './firmware.js';
-import { LZ_TYPE, profilesCapable, profilesLoad } from './profiles.js';
+import { LZ_TYPE, QAM_SELECT_FIELD0, QAM_SELECT_INDEX0, profilesCapable, profilesLoad } from './profiles.js';
 
 // ---- Backup / clone ----
 // A backup file is { magic, version, bonds[4], config{} }. bonds come from the 0x09 export (0xA7 frame); the
@@ -24,6 +24,7 @@ export function buildBackup(p, bp){
     if(p[0]>=21 && p.length>192) t.padStick=[p[185+et*2],p[186+et*2]];
     if(p[0]>=25 && p.length>213) t.rumbleScale=p[210+et]*2;
     if(p[0]>=30) HAP_KEYS.forEach(([key],k)=>{ t[key]=hapValue(p,k,et); });
+    if(p.length>QAM_SELECT_INDEX0+et) t.qamSelect=p[QAM_SELECT_INDEX0+et];
     types.push(t); }
   const cfg={ mode:p[1], mDiv:p[2], mFric:p[3], persistMode:p[22], chord:[p[23],p[24],p[25]], types };
   // D-pad chords only exist from protocol v18, the Switch gyro mapping from v19; omit the keys entirely on
@@ -113,6 +114,7 @@ export async function importBackup(file){
   if(hc.rumbleScale!==undefined && (!isInt(hc.rumbleScale,10,500) || !S.lastP || S.lastP[0]<21)){ log("import: invalid or unsupported rumble strength");return; }
   if(Array.isArray(hc.types) && hc.types.some(t=>t && t.rumbleScale!==undefined && (!isInt(t.rumbleScale,10,500) || t.rumbleScale%2))){ log("import: invalid per-type rumble strength");return; }
   if(Array.isArray(hc.types) && hc.types.some(t=>t && HAP_KEYS.some(([key,lo,hi])=>t[key]!==undefined && !isInt(t[key],lo,hi)))){ log("import: invalid per-type haptic setting");return; }
+  if(Array.isArray(hc.types) && hc.types.some(t=>t && t.qamSelect!==undefined && !isInt(t.qamSelect,0,20))){ log("import: invalid Quick Access + Select target");return; }
   if((hc.swDpadHaptics!==undefined && !isInt(hc.swDpadHaptics,0,1)) ||
      (hc.hdPadScale!==undefined && (!isInt(hc.hdPadScale,0,500) || hc.hdPadScale%2)) ||
      (hc.swQamSelect!==undefined && !isInt(hc.swQamSelect,0,20)) ||
@@ -152,7 +154,8 @@ export async function importBackup(file){
   // mapping fields would only reach the active profile, so they are skipped then
   const profN=(Array.isArray(c.profiles) && profilesCapable())?c.profiles.length:0;
   const hapN=(S.lastP && S.lastP[0]>=30 && Array.isArray(c.types))?c.types.slice(0,typeN).reduce((n,t)=>n+HAP_KEYS.filter(([key])=>t && t[key]!==undefined).length,0):0;
-  const total=baseN + typeN*9 + padStickN + hapN + profN*4 + (profN && c.profileGesture?1:0) + lizardN + 4 + 1 + (c.swDpadHaptics!==undefined?1:0) + (c.rumbleScale!==undefined?1:0) + (c.hdPadScale!==undefined?1:0) + (c.swQamSelect!==undefined?1:0) + (c.shortcutFlags!==undefined?1:0);
+  const qamN=(S.lastP && S.lastP.length>QAM_SELECT_INDEX0 && Array.isArray(c.types))?c.types.slice(0,typeN).filter((t,et)=>t && t.qamSelect!==undefined && S.lastP.length>QAM_SELECT_INDEX0+et).length:0;
+  const total=baseN + typeN*9 + padStickN + hapN + qamN + profN*4 + (profN && c.profileGesture?1:0) + lizardN + 4 + 1 + (c.swDpadHaptics!==undefined?1:0) + (c.rumbleScale!==undefined?1:0) + (c.hdPadScale!==undefined?1:0) + (c.swQamSelect!==undefined?1:0) + (c.shortcutFlags!==undefined?1:0);
   let step=0, stage="";
   const tick=()=>modalStage(stage, Math.min(99,Math.floor(step*100/total)));
   try{
@@ -203,7 +206,8 @@ export async function importBackup(file){
         await sf(40+et*9+8, t.rumble!==undefined?t.rumble:1);
         if(!mapped && Array.isArray(t.padStick)){ await sf(PAD_STICK_FIELD0+et*2, t.padStick[0]); await sf(PAD_STICK_FIELD0+et*2+1, t.padStick[1]); }
         if(typeRumble && t.rumbleScale!==undefined) await sf(108+et, t.rumbleScale/2);
-        if(S.lastP && S.lastP[0]>=30) for(let k=0; k<HAP_KEYS.length; k++){ const v=t[HAP_KEYS[k][0]]; if(v!==undefined) await sf(hapField(k,et), v); } }
+        if(S.lastP && S.lastP[0]>=30) for(let k=0; k<HAP_KEYS.length; k++){ const v=t[HAP_KEYS[k][0]]; if(v!==undefined) await sf(hapField(k,et), v); }
+        if(t.qamSelect!==undefined && S.lastP && S.lastP.length>QAM_SELECT_INDEX0+et) await sf(QAM_SELECT_FIELD0+et, t.qamSelect); }
       log("settings replayed ("+(baseN+typeN*9)+" fields)");
     } else { log("settings replayed ("+baseN+" fields — no per-type config in this backup)"); }
     if(c.swDpadHaptics!==undefined) await sf(230,c.swDpadHaptics);

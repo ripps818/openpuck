@@ -445,20 +445,9 @@ static void jcInputPrefix(uint8_t slot, uint8_t *out)
 {
 	uint8_t bond = jcBondOf(
 		slot); // input data comes from the mapped controller; timer/state stay per USB slot
-	uint32_t b = g_in[bond].buttons | padDpadButtons(g_in[bond]);
-	bool qamSelect = switchSelectShortcut(bond, b);
-	b = shortcutHostButtons(b);
-	// QAM + Select is the screenshot shortcut: QAM does not also act as its own mapping
-	if (qamSelect)
-		b &= ~(uint32_t)TB_QAM;
+	uint32_t b = padDpadApplyIn(g_in[bond]);
 	bool capture;
-	b = remapButtons(b, &capture);
-	if (qamSelect) {
-		const RemapTarget t =
-			remapTarget(g_swQamSelect, remapFacesSwapped(g_btnMap));
-		b |= t.tb;
-		capture |= t.capture;
-	}
+	b = remapHostButtons(bond, b, &capture);
 	uint32_t jc = 0;
 	if (b & TB_Y)
 		jc |= JC_BTN_Y;
@@ -986,36 +975,9 @@ void SwitchProController::mountSlots(uint8_t k)
 		USBDevice.addInterface(g_swPro[u]);
 	}
 }
-static void swDpadClickFeedback(uint8_t bond, uint32_t buttons)
-{
-	static uint32_t held[NSLOT] = {};
-	if (bond >= NSLOT)
-		return;
-	uint32_t clicks = buttons & (TB_LPADC | TB_RPADC);
-	uint32_t pressed = clicks & ~held[bond];
-	held[bond] = clicks;
-	if (!g_swDpadHaptics || shortcutHeld(buttons) || haptic82Blocked(bond))
-		return;
-	// PS_DISABLED comes after the D-pad modes, so it is not a range test
-	bool left = (pressed & TB_LPADC) && (buttons & TB_LPADT) &&
-		    (g_padStick[0] == PS_DPAD_TOUCH ||
-		     g_padStick[0] == PS_DPAD_CLICK);
-	bool right = (pressed & TB_RPADC) && (buttons & TB_RPADT) &&
-		     (g_padStick[1] == PS_DPAD_TOUCH ||
-		      g_padStick[1] == PS_DPAD_CLICK);
-	if (left || right) {
-		const uint8_t pulse[3] = { hsidePads(left, right), 2,
-					   padClickGain() };
-		// ahead of any queued HD-rumble frames, which would delay the click by their length
-		relayEnqueueFront(0x82, pulse, sizeof pulse, true, bond);
-	}
-}
-
 void SwitchProController::task()
 {
 	for (uint8_t s = 0; s < g_usbMountCount; s++) {
-		uint8_t bond = jcBondOf(s);
-		swDpadClickFeedback(bond, g_in[bond].buttons);
 		if (!g_swPro[s].ready())
 			continue;
 		// Deferred user-cal flash write (queued by the USB ISR; debounced so a calibration write-burst

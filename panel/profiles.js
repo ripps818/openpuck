@@ -29,7 +29,7 @@ const SOURCES = [
 ];
 const GROUPS = [
   ["Face buttons", [0,1,2,3]], ["Shoulders and triggers", [4,5,22,23]], ["Sticks", [6,7]],
-  ["Menu buttons", [8,9,10]], ["D-pad", [11,12,13,14]], ["Back buttons and Quick Access", [15,16,17,18,19]],
+  ["Menu buttons", [8,9,10]], ["D-pad", [11,12,13,14]], ["Back buttons", [15,16,17,18]], ["Quick Access", [19]],
 ];
 // the trackpad click targets (21/22) are in a type's list only where its mode does something with them: the
 // touchpad click on the PlayStation types, the mouse buttons on Xbox (TYPE_DEFS padTargets). "none" is 0.
@@ -165,6 +165,29 @@ export async function profilesDrain(){
 // ---- the UI: three cards per type, built by buildProfileCards (types.js) ----
 const recs = []; // by type: {strip, use, copy, copyFrom, reset, nintendo, title, sources[], gesture{...}, cards[]}
 
+// Quick Access + Select (the Select button held with Quick Access): what the game sees instead of either. One
+// setting per controller type, not part of a profile; the Switch's starts as Take screenshot. Firmware without
+// it sends a shorter status blob, which hides the row (status.js).
+export const QAM_SELECT_FIELD0 = 152, QAM_SELECT_INDEX0 = 246;
+function qamSelectRow(et, def, rec){
+  const r = document.createElement("div"); r.className = "row hide";
+  r.title = "While Quick Access and Select are held together the game sees this button instead of either.";
+  const l = document.createElement("label");
+  const plus = document.createElement("span"); plus.className = "ic-plus"; plus.textContent = "+";
+  l.append(iconEl("qam"), plus, iconEl("view"));
+  const s = document.createElement("select");
+  for(const [v, lbl, glyph] of targetOptions(def)){
+    if(v > 20) continue;
+    const o = document.createElement("option"); o.value = v;
+    o.textContent = v === 18 && def.key === "SWITCH" ? "Take screenshot" : lbl;
+    if(glyph) o.dataset.glyph = glyph;
+    s.appendChild(o);
+  }
+  r.append(l, glyphSelect(s));
+  s.addEventListener("change", () => setField(QAM_SELECT_FIELD0 + et, +s.value));
+  rec.qamSelect = s;
+  return r;
+}
 export function buildProfileCards(sec, et, def){
   const card = cls => { const c = document.createElement("div"); c.className = "card prof-card " + (cls || ""); sec.appendChild(c); return c; };
   const head = (c, text) => { const h = document.createElement("div"); h.className = "card-head"; const t = document.createElement("h2"); t.textContent = text; h.appendChild(t); c.appendChild(h); return t; };
@@ -254,6 +277,7 @@ export function buildProfileCards(sec, et, def){
       r.append(l, glyphSelect(s)); g.appendChild(r);
       s.addEventListener("change", () => profileOp([0x2D, et, sel0(et), i, +s.value]));
       rec.sources[i] = s;
+      if(i === SRC_QAM) g.appendChild(qamSelectRow(et, def, rec));
     }
     grid.appendChild(g);
   }
@@ -382,7 +406,22 @@ export function renderProfiles(et){
   // the trackpad -> stick selects of this type's Trackpads card show the selected profile's
   const pads = typeEls[et];
   if(pads && pads.padStick) pads.padStick.forEach((s, pad) => { if(!held(s)) s.value = st.pads[sel][pad]; });
+  padClickLock(et);
   renderGesture();
+}
+// A pad on one of the D-pad modes (3 touch, 4 click) spends its click on the D-pad, so the pad's Click target
+// has nothing left to do; grey it out rather than let it look like it would still apply.
+export function padClickLock(et){
+  const rec = recs[et], pads = typeEls[et];
+  if(!rec || !pads || !pads.padStick) return;
+  pads.padStick.forEach((s, pad) => {
+    const c = rec.sources[SRC_PADC + pad];
+    if(!c) return;
+    const lock = s.value === "3" || s.value === "4", row = c.closest(".row");
+    c.disabled = lock;
+    if(lock) row.title = "This trackpad is a D-pad, so its click presses the D-pad. Change Touch to use the click for something else.";
+    else row.removeAttribute("title");
+  });
 }
 // the switch buttons are puck-wide: every type's card shows them
 function renderGesture(){

@@ -203,39 +203,104 @@ void padStickBlend(uint32_t b, int16_t lpx, int16_t lpy, int16_t rpx,
 	}
 }
 
-uint32_t padDpadButtons(const PuckInput &in)
+static bool padIsDpad(uint8_t p)
 {
-	if (shortcutHeld(in.buttons))
+	return g_padStick[p] == PS_DPAD_TOUCH || g_padStick[p] == PS_DPAD_CLICK;
+}
+
+// The D-pad directions pad p (0 left, 1 right) is pointing at, or 0 when it isn't touched, is not on a D-pad
+// mode, or (on click) isn't clicked.
+static uint32_t padDpadOne(uint8_t p, uint32_t raw, int16_t px, int16_t py)
+{
+	static const uint32_t touched[2] = { TB_LPADT, TB_RPADT };
+	static const uint32_t clicked[2] = { TB_LPADC, TB_RPADC };
+	uint8_t mode = g_padStick[p];
+	if (!padIsDpad(p) || !(raw & touched[p]))
 		return 0;
-	const int16_t px[2] = { in.lpx, in.rpx };
-	const int16_t py[2] = { in.lpy, in.rpy };
-	const uint32_t touched[2] = { TB_LPADT, TB_RPADT };
-	const uint32_t clicked[2] = { TB_LPADC, TB_RPADC };
+	if (mode == PS_DPAD_CLICK && !(raw & clicked[p]))
+		return 0;
+	int32_t x = px, y = py;
+	int32_t ax = x < 0 ? -x : x, ay = y < 0 ? -y : y;
+	if (ax < 6000 && ay < 6000 && ax * ax + ay * ay < 36000000)
+		return 0;
 	uint32_t out = 0;
-	for (int p = 0; p < 2; p++) {
-		uint8_t mode = g_padStick[p];
-		if (mode != PS_DPAD_TOUCH && mode != PS_DPAD_CLICK)
-			continue;
-		if (!(in.buttons & touched[p]))
-			continue;
-		if (mode == PS_DPAD_CLICK && !(in.buttons & clicked[p]))
-			continue;
-		int32_t x = px[p], y = py[p];
-		int32_t ax = x < 0 ? -x : x, ay = y < 0 ? -y : y;
-		if (ax < 6000 && ay < 6000 && ax * ax + ay * ay < 36000000)
-			continue;
-		// tan(22.5 degrees) separates cardinal sectors from diagonals.
-		if (ax * 1000 >= ay * 414)
-			out |= x < 0 ? TB_DLF : TB_DRT;
-		if (ay * 1000 >= ax * 414)
-			out |= y < 0 ? TB_DDN : TB_DUP;
-	}
+	// tan(22.5 degrees) separates cardinal sectors from diagonals.
+	if (ax * 1000 >= ay * 414)
+		out |= x < 0 ? TB_DLF : TB_DRT;
+	if (ay * 1000 >= ax * 414)
+		out |= y < 0 ? TB_DDN : TB_DUP;
+	return out;
+}
+
+uint32_t padDpadBits(uint32_t raw, int16_t lpx, int16_t lpy, int16_t rpx,
+		     int16_t rpy)
+{
+	if (shortcutHeld(raw))
+		return 0;
+	uint32_t out = padDpadOne(0, raw, lpx, lpy) |
+		       padDpadOne(1, raw, rpx, rpy);
 	// Opposing pads must not produce an invalid D-pad combination.
 	if ((out & (TB_DLF | TB_DRT)) == (TB_DLF | TB_DRT))
 		out &= ~(TB_DLF | TB_DRT);
 	if ((out & (TB_DUP | TB_DDN)) == (TB_DUP | TB_DDN))
 		out &= ~(TB_DUP | TB_DDN);
 	return out;
+}
+
+uint32_t padDpadApply(uint32_t raw, int16_t lpx, int16_t lpy, int16_t rpx,
+		      int16_t rpy)
+{
+	uint32_t out = raw | padDpadBits(raw, lpx, lpy, rpx, rpy);
+	if (shortcutHeld(raw))
+		return out;
+	if (g_padStick[0] == PS_DPAD_CLICK)
+		out &= ~TB_LPADC;
+	if (g_padStick[1] == PS_DPAD_CLICK)
+		out &= ~TB_RPADC;
+	return out;
+}
+
+void padDpadClickFeedback(uint8_t slot)
+{
+	static uint32_t held[NSLOT] = {};
+	static uint32_t dir[NSLOT][2] = {};
+	if (slot >= NSLOT)
+		return;
+	const PuckInput &in = g_in[slot];
+	uint32_t buttons = in.buttons;
+	uint32_t clicks = buttons & (TB_LPADC | TB_RPADC);
+	uint32_t pressed = clicks & ~held[slot];
+	held[slot] = clicks;
+	bool held4 = shortcutHeld(buttons);
+	bool moved[2];
+	for (int p = 0; p < 2; p++) {
+		uint32_t now = held4 ? 0 :
+				       padDpadOne(p, buttons,
+						  p ? in.rpx : in.lpx,
+						  p ? in.rpy : in.lpy);
+		// A new direction pulses, so sliding from down to down-right is felt without lifting. Going from none
+		// to a direction on click is the click itself, which the click pulse below covers.
+		moved[p] = now && now != dir[slot][p] &&
+			   !(g_padStick[p] == PS_DPAD_CLICK && !dir[slot][p]);
+		dir[slot][p] = now;
+	}
+	if (!g_dpadClick || held4 || haptic82Blocked(slot))
+		return;
+	// With Trackpad haptics on, every click already pulses (the controller's own, or the puck's), so a click
+	// pulse here would play twice; direction changes are not clicks, so they always pulse.
+	bool left = moved[0], right = moved[1];
+	if (g_padHaptics == PAD_HAPTICS_OFF) {
+		left |= (pressed & TB_LPADC) && (buttons & TB_LPADT) &&
+			padIsDpad(0);
+		right |= (pressed & TB_RPADC) && (buttons & TB_RPADT) &&
+			 padIsDpad(1);
+	}
+	if (left || right) {
+		const uint8_t pulse[3] = { hsidePads(left, right), 2,
+					   padClickGain() };
+		// ahead of any queued PCM stream frames, which would delay the click by their length
+		relayEnqueueFront(0x82, pulse, sizeof pulse, true, slot);
+	}
 }
 
 void slotSticks(uint8_t slot, int16_t *lx, int16_t *ly, int16_t *rx,
@@ -378,9 +443,25 @@ void steamPadsToTouch(uint32_t b, uint16_t touchH, int16_t lpx, int16_t lpy,
 	}
 }
 
-uint32_t psButtonsFromSteam(uint32_t raw)
+uint32_t remapHostButtons(uint8_t slot, uint32_t raw, bool *capture)
 {
-	return remapButtons(shortcutHostButtons(raw));
+	uint32_t b = raw;
+	bool qamSelect = qamSelectShortcut(slot, b);
+	b = shortcutHostButtons(b);
+	// QAM + Select is its own shortcut: QAM does not also act as its own mapping
+	if (qamSelect)
+		b &= ~(uint32_t)TB_QAM;
+	bool cap = false;
+	b = remapButtons(b, &cap);
+	if (qamSelect) {
+		const RemapTarget t =
+			remapTarget(g_qamSelect, remapFacesSwapped(g_btnMap));
+		b |= t.tb;
+		cap |= t.capture;
+	}
+	if (capture)
+		*capture = cap;
+	return b;
 }
 // DualSense / DS4 buttons[1]: L1..R3, Create(Share), Options(Start). The analog trigger values come from
 // the per-slot `g_in[slot]` (pass lt/rt explicitly so a single shoulder byte never leaks across slots).

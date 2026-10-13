@@ -126,8 +126,9 @@ static bool boardCommand(uint8_t op)
 //                 profile per type, 2 bits each; v30: p[216 + 4 * setting + type] per-type haptic settings
 //                 (HAP_* in config.h: grip limiter knee, haptic style, trackpad click strength, movement-tick
 //                 spacing and strength), WebUSB field 120 + 4 * setting + type; p[205] / p[209] stay the DualSense's style and
-//                 the active type's knee for older panels]
-#define WB_PAYLEN 242
+//                 the active type's knee for older panels; p[248 + type] Quick Access + Select target per type, WebUSB
+//                 field 152 + type]
+#define WB_PAYLEN 250
 // The blob send is drop-on-full (never blocks loop), so the vendor TX FIFO MUST be able to hold a whole blob
 // -- otherwise tud_vendor_write_available() never reaches the frame size and EVERY frame is dropped (blank
 // panel / stale mappings). The Makefile sets -DCFG_TUD_VENDOR_TX_BUFSIZE=256; guard it here so a build without
@@ -401,6 +402,7 @@ static void webusbSendBlob()
 		p[212 + et] = (uint8_t)(g_typeRumbleScale[et] / 2);
 		for (uint8_t k = 0; k < HAP_COUNT; k++)
 			p[216 + 4 * k + et] = g_typeHaptic[k][et];
+		p[248 + et] = g_typeQamSelect[et];
 	}
 	// CRITICAL: usb_web.write() SPINS (`while (remain && _connected) yield();`) until the IN FIFO drains or the
 	// panel disconnects. If the panel holds the WebUSB interface open but stops reading its IN endpoint -- a
@@ -428,11 +430,11 @@ static void webusbSendSwitchFrame()
 	p[1] = WB_SW_PAYLEN;
 	p[2] = 1;
 	memset(p + 3, 0, 37);
-	p[40] = g_swDpadHaptics;
+	p[40] = g_typeHaptic[HAP_DPAD][ET_SWITCH];
 	p[41] = g_storageState;
 	p[42] = (uint8_t)(g_hdPadScale / 2);
 	memset(p + 43, 0, 4); // ex rumble presets + slot
-	p[47] = g_swQamSelect;
+	p[47] = g_typeQamSelect[ET_SWITCH];
 	p[48] = g_shortcutFlags;
 	// the status blob has no room left: this frame is read on every poll too, so a profile switched on the
 	// controller in Lizard mode shows without asking
@@ -1527,6 +1529,15 @@ void webusbPoll()
 					n -= need;
 					continue;
 				}
+				// Quick Access + Select target per type: field 152 + type
+				if (f >= 152 && f < 152 + ET_COUNT) {
+					typeQamSelectSet((uint8_t)(f - 152), v);
+					saveCfgSoon();
+					g_blobRequest = true;
+					memmove(buf, buf + need, n - need);
+					n -= need;
+					continue;
+				}
 				// fields 190..229 were the Switch Pro profiles (removed): ignored, but still answered
 				// so an older panel waiting on the status reply doesn't stall
 				if (f >= 190 && f < 230) {
@@ -1536,8 +1547,10 @@ void webusbPoll()
 					continue;
 				}
 				switch (f) {
+				// the Switch-only D-pad click feedback of older panels, now the Switch's per-type entry
 				case 230:
-					g_swDpadHaptics = v ? 1 : 0;
+					typeHapticSet(HAP_DPAD, ET_SWITCH,
+						      v ? 1 : 0);
 					break;
 				case 1:
 					g_mDiv = v < 4 ? 4 : v;
@@ -1715,9 +1728,9 @@ void webusbPoll()
 				case 251:
 				case 252:
 					break;
+				// the Switch-only target of older panels, now the Switch's per-type entry (field 153)
 				case 239:
-					if (v <= 20)
-						g_swQamSelect = v;
+					typeQamSelectSet(ET_SWITCH, v);
 					break;
 				case 39: // rumble style: no longer a setting (it follows the mode)
 					break;

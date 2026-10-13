@@ -72,15 +72,46 @@ void padStickBlend(uint32_t b, int16_t lpx, int16_t lpy, int16_t rpx,
 		   int16_t rpy, int16_t *lx, int16_t *ly, int16_t *rx,
 		   int16_t *ry);
 
-// g_in[slot] sticks with padStickBlend applied -- what every emulated mode should send to the host.
-uint32_t padDpadButtons(const PuckInput &in);
+// D-pad bits (TB_D*) from the trackpads set to a D-pad mode (PS_DPAD_TOUCH / PS_DPAD_CLICK). raw = TB_* buttons.
+uint32_t padDpadBits(uint32_t raw, int16_t lpx, int16_t lpy, int16_t rpx,
+		     int16_t rpy);
+static inline uint32_t padDpadButtons(const PuckInput &in)
+{
+	return padDpadBits(in.buttons, in.lpx, in.lpy, in.rpx, in.rpy);
+}
+// raw with the D-pad bits added, for every emulated mode's report builder ahead of the remap. A pad on
+// D-pad-on-click spends its click on the D-pad, so the click's own mapping (touchpad click, mouse button)
+// doesn't fire with it.
+uint32_t padDpadApply(uint32_t raw, int16_t lpx, int16_t lpy, int16_t rpx,
+		      int16_t rpy);
+static inline uint32_t padDpadApplyIn(const PuckInput &in)
+{
+	return padDpadApply(in.buttons, in.lpx, in.lpy, in.rpx, in.rpy);
+}
+// the same from a raw 0x45 report, for the modes that decode it in place (16/18 left pad, 22/24 right pad)
+static inline uint32_t padDpadApplyRaw(const uint8_t *r)
+{
+	return padDpadApply(btnsOf(r), (int16_t)s16off(r, 16),
+			    (int16_t)s16off(r, 18), (int16_t)s16off(r, 22),
+			    (int16_t)s16off(r, 24));
+}
+// The pulse for a click on a pad in a D-pad mode (the active type's D-pad click feedback). Called for every
+// controller each loop in the emulated modes.
+void padDpadClickFeedback(uint8_t slot);
 
+// g_in[slot] sticks with padStickBlend applied -- what every emulated mode should send to the host.
 void slotSticks(uint8_t slot, int16_t *lx, int16_t *ly, int16_t *rx,
 		int16_t *ry);
 
+// The host's buttons for one controller: the shortcut chords taken out, the button remap applied, and the
+// Quick Access + Select target added while that chord is held (capture reports the Switch's Capture button, for
+// the modes that have one). raw = TB_* buttons of the controller in `slot`.
+uint32_t remapHostButtons(uint8_t slot, uint32_t raw, bool *capture = nullptr);
 // PlayStation-layout button packing (shared by mode_ps5 + mode_hidgyro).
-uint32_t
-psButtonsFromSteam(uint32_t raw); // apply chord-guard + the button remap
+static inline uint32_t psButtonsFromSteam(uint8_t slot, uint32_t raw)
+{
+	return remapHostButtons(slot, raw);
+}
 // L1..R3 + Create/Options byte. lt/rt are the per-slot analog trigger values so the digital ZL/ZR trip
 // doesn't leak across slots when several slots are active.
 uint8_t psShouldersByte(uint32_t b, uint8_t lt, uint8_t rt);
