@@ -52,6 +52,10 @@
   .mapgrid .card{margin:0}
   .mapgrid .card.span{grid-column:1/-1}
   .mapgrid .stack{display:flex;flex-direction:column;gap:14px;min-width:0}
+  .multi-only.off{display:none}
+  .statgrid.cols3{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .statgrid.cols2{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .card h3.sub{font-size:12px;color:var(--mut);font-weight:600;margin:14px 0 6px}
   /* !important: .row and .card set display later in this sheet */
   .prof-off{display:none!important}
   .prof-strip{margin:0 0 10px}
@@ -264,56 +268,8 @@
     </div>
     </section>
     <section class="page hide" id="pgStatus">
-    <div class="card wide">
-      <h2>Link status</h2>
-
-      <!-- Per-controller tabs: visible only when 2+ controllers are bonded -->
-      <div class="slot-tabs" id="slotTabs" style="display:none"></div>
-
-      <!-- Per-slot: RF link / Battery / Signal / this controller's own link rates (blob v13) -->
-      <div class="statgrid per-slot-grid">
-        <div class="stat"><div class="k">RF link</div><div class="v" id="stLink">—</div></div>
-        <div class="stat"><div class="k">Battery</div><div class="v" id="stBatt">—</div></div>
-        <div class="stat"><div class="k">Signal</div><div class="v" id="stRssi">—</div></div>
-        <div class="stat"><div class="k">Polls/s</div><div class="v" id="stSlotPolls">—</div></div>
-        <div class="stat"><div class="k">Delivered</div><div class="v" id="stSlotF1">—</div></div>
-        <div class="stat"><div class="k">Fails/s (crc·noRx·relay)</div><div class="v" id="stSlotFail">—</div></div>
-      </div>
-
-      <!-- Global stats (sums over ALL controllers; the per-slot grid above shows the selected controller's own rates) -->
-      <div class="statgrid">
-        <div class="stat"><div class="k">RF Channel</div><div class="v" id="stTopChannel">—</div></div>
-        <div class="stat"><div class="k">Delivered (all)</div><div class="v" id="stRate">—</div></div>
-        <div class="stat"><div class="k">New reports (all)</div><div class="v" id="stNew">—</div></div>
-        <div class="stat"><div class="k">Polls/s (all)</div><div class="v" id="stPolls">—</div></div>
-        <div class="stat"><div class="k">Relay/s (all)</div><div class="v" id="stRelay">—</div></div>
-        <div class="stat"><div class="k">RF fails/s (crc·noRx·heal)</div><div class="v" id="stRfFail">—</div></div>
-        <div class="stat"><div class="k">Clock LF / HF</div><div class="v" id="stClock">—</div></div>
-        <div class="stat"><div class="k">µs per ms (ideal 1000)</div><div class="v" id="stUsPerMs">—</div></div>
-        <div class="stat"><div class="k">Loop</div><div class="v" id="stLoopState">—</div></div>
-        <div class="stat"><div class="k">usbd stack free (words)</div><div class="v" id="stUsbdStack">—</div></div>
-        <div class="stat logonly"><div class="k">Loop period</div><div class="v" id="stLoop">—</div></div>
-        <div class="stat logonly"><div class="k">Slowest stage</div><div class="v" id="stWorst">—</div></div>
-        <div class="stat logonly"><div class="k">Poll period act/want</div><div class="v" id="stPollPer">—</div></div>
-        <div class="stat"><div class="k">Build</div><div class="v" id="stBuild">—</div></div>
-        <div class="stat"><div class="k">Last reset</div><div class="v" id="stReset">—</div></div>
-      </div>
-      <p class="note" style="margin-top:6px"><strong>Reset detail:</strong> <span id="resetHist" style="font-family:ui-monospace,Menlo,monospace">—</span><br>
-        <em>watchdog (hang)</em>/<em>CPU lockup</em>/<em>HARDFAULT</em> = a fault worth reporting (issue #72); <em>reboot</em> = an intentional reset (mode change / config); <em>power-on</em> &amp; <em>pin/replug</em> = normal plug-in.</p>
-      <p class="note logonly">Polls/s ≈ 250 expected; it's capped by Loop period (≈4000 µs needed). "Slowest stage" is the loop section eating the most time per iteration.</p>
-      <div class="row debugonly" style="margin:14px 0 0;border-top:1px solid #272d3d;padding-top:14px"><button id="hapClear">Clear stuck buzz</button>
-        <span class="note" style="flex:1">If the controller's haptics get stuck/buzzing, this re-inits them (same as pressing Steam).</span>
-      </div>
-      <div class="row" style="margin:10px 0 0"><button id="ctlrOff">Turn off controller</button>
-        <span class="note" style="flex:1">Fires the controller power-off (0x9F "off!", x3) — the same path Steam's "turn off controller" and host-suspend use. Watch the link status to see it disconnect.</span>
-      </div>
-      <div class="row debugonly" style="margin:10px 0 0;border-top:1px solid #272d3d;padding-top:14px"><button id="stabBtn">Test stability</button>
-        <span class="v" id="stabStatus" style="flex:0 0 auto;min-width:120px">—</span>
-        <span class="note" style="flex:1">Buzzes the controllers every 10 s (keeps them awake) and times how long the puck stays up. On a reset it records the uptime and shows it by <em>Last reset</em>; it auto-resumes after the puck reconnects. The count is kept in this tab (a page refresh clears it).</span>
-      </div>
-    </div>
-
-    <div class="card">
+    <div class="mapgrid">
+    <div class="card span">
       <h2>Version</h2>
       <div class="statgrid">
         <div class="stat"><div class="k">Firmware build</div><div class="v" id="stVersionBuild">—</div></div>
@@ -324,6 +280,100 @@
       </div>
       <p class="note hide" id="swStorageWarning"></p>
       <p class="note">This section reflects the connected puck. Reconnect after flashing or changing modes to verify what is currently running.</p>
+    </div>
+
+    <div class="card span">
+      <h2>Controller</h2>
+
+      <!-- Per-controller tabs: visible only when 2+ controllers are bonded -->
+      <div class="slot-tabs" id="slotTabs" style="display:none"></div>
+
+      <!-- the selected controller's link -->
+      <div class="statgrid per-slot-grid">
+        <div class="stat"><div class="k">RF link</div><div class="v" id="stLink">—</div></div>
+        <div class="stat"><div class="k">Battery</div><div class="v" id="stBatt">—</div></div>
+        <div class="stat"><div class="k">Signal</div><div class="v" id="stRssi">—</div></div>
+      </div>
+      <div class="row" style="margin:14px 0 0"><button id="ctlrOff">Turn off controller</button>
+        <span class="note" style="flex:1">Fires the controller power-off (0x9F "off!", x3) — the same path Steam's "turn off controller" and host-suspend use. Watch the link status to see it disconnect.</span>
+      </div>
+      <div class="row debugonly" style="margin:14px 0 0;border-top:1px solid #272d3d;padding-top:14px"><button id="hapClear">Clear stuck buzz</button>
+        <span class="note" style="flex:1">If the controller's haptics get stuck/buzzing, this re-inits them (same as pressing Steam).</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Radio</h2>
+      <!-- the controller selected in the tabs above (blob v13 per-slot rates) -->
+      <h3 class="sub">Selected controller</h3>
+      <div class="statgrid cols3 per-slot-grid">
+        <div class="stat"><div class="k">Polls/s</div><div class="v" id="stSlotPolls">—</div></div>
+        <div class="stat"><div class="k">Delivered</div><div class="v" id="stSlotF1">—</div></div>
+        <div class="stat"><div class="k">Fails/s</div><div class="v" id="stSlotFail" title="crc · no reply · relay">—</div></div>
+      </div>
+      <p class="note" style="margin:4px 0 0">Fails: CRC errors · no reply · relay drops.</p>
+      <h3 class="sub">Puck</h3>
+      <div class="statgrid cols3">
+        <div class="stat"><div class="k">RF channel</div><div class="v" id="stTopChannel">—</div></div>
+        <div class="stat"><div class="k">Relay/s</div><div class="v" id="stRelay">—</div></div>
+        <div class="stat"><div class="k">Link heals/s</div><div class="v" id="stHeal">—</div></div>
+      </div>
+      <!-- puck-wide totals: only worth showing with more than one controller -->
+      <div class="multi-only">
+        <h3 class="sub">All controllers</h3>
+        <div class="statgrid cols2">
+          <div class="stat"><div class="k">Delivered</div><div class="v" id="stRate">—</div></div>
+          <div class="stat"><div class="k">New reports</div><div class="v" id="stNew">—</div></div>
+          <div class="stat"><div class="k">Polls/s</div><div class="v" id="stPolls">—</div></div>
+          <div class="stat"><div class="k">Fails/s (crc · no reply)</div><div class="v" id="stRfFailAll">—</div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="stack">
+    <div class="card">
+      <h2>Puck health</h2>
+      <div class="statgrid">
+        <div class="stat"><div class="k">Loop</div><div class="v" id="stLoopState">—</div></div>
+        <div class="stat"><div class="k">Clock LF / HF</div><div class="v" id="stClock">—</div></div>
+        <div class="stat"><div class="k">µs per ms (ideal 1000)</div><div class="v" id="stUsPerMs">—</div></div>
+        <div class="stat"><div class="k">usbd stack free (words)</div><div class="v" id="stUsbdStack">—</div></div>
+        <div class="stat logonly"><div class="k">Loop period</div><div class="v" id="stLoop">—</div></div>
+        <div class="stat logonly"><div class="k">Slowest stage</div><div class="v" id="stWorst">—</div></div>
+        <div class="stat logonly"><div class="k">Poll period act/want</div><div class="v" id="stPollPer">—</div></div>
+      </div>
+      <p class="note logonly">Polls/s ≈ 250 expected; it's capped by Loop period (≈4000 µs needed). "Slowest stage" is the loop section eating the most time per iteration.</p>
+    </div>
+
+    <div class="card">
+      <h2>Last reset</h2>
+      <div class="statgrid">
+        <div class="stat"><div class="k">Cause</div><div class="v" id="stReset">—</div></div>
+        <div class="stat"><div class="k">Chip reset flags</div><div class="v" id="resetBits" style="font-size:13px">—</div></div>
+      </div>
+      <p class="note" id="resetWhat" style="margin:10px 0 0">—</p>
+      <p class="note" style="margin:6px 0 0"><span id="resetHist" style="font-family:ui-monospace,Menlo,monospace">—</span></p>
+    </div>
+    </div>
+    <div class="card span debugonly">
+      <h2>Stability test</h2>
+      <div class="row"><button id="stabBtn">Test stability</button>
+        <span class="v" id="stabStatus" style="flex:0 0 auto;min-width:120px">—</span>
+        <span class="note" style="flex:1">Buzzes the controllers every 10 s (keeps them awake) and times how long the puck stays up. On a reset it records the uptime and shows it by <em>Last reset</em>; it auto-resumes after the puck reconnects. The count is kept in this tab (a page refresh clears it).</span>
+      </div>
+    </div>
+
+    <div class="card span debugonly" id="fakeCard">
+      <h2>Preview data (debug)</h2>
+      <div class="row"><label>Fake controllers</label><select id="fakeCtl">
+        <option value="0">Off (real data)</option><option value="2">2 controllers</option><option value="3">3 controllers</option><option value="4">4 controllers</option></select></div>
+      <div class="row"><label>Fake last reset</label><select id="fakeReset">
+        <option value="">Off (real data)</option><option value="poweron">Power-on</option><option value="usb">USB power woke it</option>
+        <option value="replug">Pin / replug</option><option value="reboot">Intentional reboot</option><option value="watchdog">Watchdog hang</option>
+        <option value="lockup">CPU lockup</option><option value="hardfault">HardFault</option><option value="debugger">Debugger</option>
+        <option value="unknown">Unrecognised flags</option></select></div>
+      <p class="note">Lays made-up data over the real status so the layout can be checked without a second controller or a crash. Nothing is sent to the puck; turn both off to see the real values again.</p>
+    </div>
     </div>
     </section>
     <section class="page hide" id="pgMode">
@@ -718,6 +768,8 @@
 const S = {
   // WebUSB device + endpoints
   dev:null, epIn:0, epOut:0,
+  // debug UI only: made-up controllers / last reset laid over the real status blob (realP = the blob as received)
+  fake:{controllers:0, reset:""}, realP:null,
   // a status blob arrived since this connect: the puck is past boot and takes commands
   blobSeen:false,
   // Pipe owners: each pauses the status-blob poll while it holds the shared bulk endpoint.
@@ -3920,7 +3972,36 @@ function applySw(s){
   for(const rec of typeEls)rec.qam.closest(".row").classList.toggle("hide",enabled && !!(flags&1));
   for(const el of document.querySelectorAll(".ic-mod")) fillIcon(el,(flags&1)?"qam":"back4");
 }
+// Debug UI (?debug=true): a made-up bonded controller list and Last reset laid over the real blob, so the Status
+// page can be laid out without a second controller. Real slots stay as they are; the fakes fill the rest.
+const FAKE_CTL = [[1,78,58],[1,41,71],[0,23,0],[1,92,49]]; // up, battery %, signal -dBm
+const FAKE_RESET = {poweron:[1,0], usb:[0,0x100000], replug:[2,1], reboot:[6,4], watchdog:[3,2,4], lockup:[4,8,4],
+  hardfault:[5,4], debugger:[0,0x40000], unknown:[0,0x80000000]}; // RR code, RESETREAS, hang stage
+function fakeBlob(p){
+  const q = new Uint8Array(Math.max(p.length, 179)); q.set(p);
+  const real = p.length>60 ? p[60] : 0, n = S.fake.controllers;
+  if (n > real) {
+    q[60] = n;
+    for (let s=real; s<n; s++) {
+      const [up,b,r] = FAKE_CTL[s];
+      q[61+s*3]=up; q[62+s*3]=b; q[63+s*3]=r;
+      const o = 143+s*9, polls = up?250:0;
+      q[o]=polls&255; q[o+1]=polls>>8; q[o+2]=up?248-s*30:0; q[o+3]=0; q[o+4]=up?118:0; q[o+5]=0;
+      q[o+6]=up?s:0; q[o+7]=up&&s?2:0; q[o+8]=up?1:0;
+    }
+  }
+  const rr = FAKE_RESET[S.fake.reset];
+  if (rr && q.length > 138) {
+    q[109]=rr[0]; for (let i=0;i<4;i++) q[110+i]=(rr[1]>>>(8*i))&255;
+    q[126]=rr[2]===undefined?0xFF:rr[2];
+    const hang = rr[2]!==undefined;
+    for (let i=0;i<4;i++){ q[131+i]=hang?[0x12,0x34,0x00,0x08][i]:0; q[135+i]=hang?[0x56,0x78,0x00,0x08][i]:0; }
+  }
+  return q;
+}
 function applyBlob(p){
+  S.realP = p;
+  if (S.fake.controllers || S.fake.reset) p = fakeBlob(p);
   for(const rec of typeEls) for(const sel of rec.padStick) for(const o of sel.options) if(+o.value>=3) o.disabled=p[0]<(+o.value===5?30:23);
   S.lastP=p; // remember for Export (carries every config field the panel shows)
   S.blobSeen=true; // the puck answers: it is done booting and takes commands
@@ -4040,6 +4121,9 @@ function applyBlob(p){
     renderCtlrChips([{slot:0, up:!!up, battery, rssi}]);
   }
 
+  // puck-wide totals: with one controller they repeat the Controller card, so they show only with more
+  { const multi = !(hasSlotsData && p.length >= 179) || (S.g_slotData||[]).filter(Boolean).length >= 2;
+    for (const el of document.querySelectorAll(".multi-only")) el.classList.toggle("off", !multi); }
   // global stats
   $("#stRate").textContent = up? f1+" /s" : "0 /s (idle)";
   $("#stNew").textContent = up? newps+" /s" : "0 /s (idle)";
@@ -4048,7 +4132,8 @@ function applyBlob(p){
   $("#stPolls").textContent = polls+" /s";
   { const crc=(p.length>117?p[117]:0), norx=(p.length>118?p[118]:0), heal=(p.length>119?p[119]:0);
     const rf=(p.length>130?(p[129]|(p[130]<<8)):0);
-    $("#stRfFail").innerHTML = crc+" · "+norx+" · "+heal + (rf?' · <span class="pill dn">ring '+rf+'</span>':"");
+    $("#stRfFailAll").textContent = crc+" · "+norx;
+    $("#stHeal").innerHTML = heal + (rf?' · <span class="pill dn">ring fault '+rf+'</span>':"");
     // ring fault = we caught+recovered a relay-ring corruption that would otherwise be an invisible IRQ-off
     // watchdog hang. Log each new one (persists across the device reset + panel reconnect).
     if(rf>(window._ringFault||0)) log("⚠ RING FAULT #"+rf+" recovered — caught a relay-ring desync/corruption (would have hung loop with IRQs off)");
@@ -4099,6 +4184,31 @@ function applyBlob(p){
   const RR_NAMES = ["unknown","power-on","pin/replug","watchdog (hang)","CPU lockup",
                     "HARDFAULT","reboot","soft reset","wake-from-off"];
   const RR_FAULT = new Set([3,4,5]); // watchdog / lockup / hardfault = a real crash worth reporting (#72)
+  // What each cause means, for the Last reset card: "ok" = a normal start, "bad" = a crash worth reporting
+  // (#72), "" = not explained by the firmware.
+  const RR_INFO = [
+    ["", "The firmware doesn't classify this reset."],
+    ["ok", "A normal start: the puck was powered on, or its supply dipped."],
+    ["ok", "A normal start: the reset pin was pressed or the puck was replugged."],
+    ["bad", "The firmware hung and the watchdog restarted it. This is a bug: the stage and PC/LR below show where it was stuck, so please report them."],
+    ["bad", "The CPU locked up (a fault while handling a fault) and restarted. This is a bug worth reporting."],
+    ["bad", "The firmware crashed (HardFault) and restarted itself. This is a bug worth reporting."],
+    ["ok", "An intentional restart: a mode switch, a setting that needs one, or a firmware update."],
+    ["", "A software reset the firmware didn't mark as intentional or as a crash."],
+    ["ok", "A normal start: it woke from power-off."],
+  ];
+  // nRF52840 POWER.RESETREAS bits: [bit, name, meaning when the firmware left the cause unclassified]
+  const RESETREAS_BITS = [
+    [0, "reset pin", "the reset pin was pressed or the puck was replugged"],
+    [1, "watchdog", "the watchdog restarted a hung firmware"],
+    [2, "soft reset", "the firmware restarted itself"],
+    [3, "CPU lockup", "the CPU locked up"],
+    [16, "wake from off", "it woke from power-off"],
+    [17, "wake (LPCOMP)", "it woke from power-off on the comparator"],
+    [18, "debugger", "a debugger reset it"],
+    [19, "wake (NFC)", "it woke from power-off on an NFC field"],
+    [20, "wake (USB power)", "it woke from power-off when USB power came on, a normal plug-in"],
+  ];
   if (p.length > 113) {
     const code = p[109];
     const raw = ((p[110]|(p[111]<<8)|(p[112]<<16)|(p[113]<<24))>>>0);
@@ -4106,18 +4216,33 @@ function applyBlob(p){
     // v12: which loop stage was stuck when the last watchdog/lockup hang fired (0xFF = last boot wasn't a hang)
     const STAGE_NAMES = ["webusb","ctrl.task","serial","rfdiag","rflink","haptic","led","usbmount","usbtx"];
     const hangStage = (p.length>126 ? p[126] : 0xFF);
+    const stageName = hangStage!==0xFF ? (STAGE_NAMES[hangStage]||("stage "+hangStage)) : "";
     let label = name;
-    if (hangStage!==0xFF) label += " @ "+(STAGE_NAMES[hangStage]||("stage "+hangStage));
-    $("#stReset").innerHTML = RR_FAULT.has(code) ? ('<span class="pill dn">'+label+'</span>') : label;
+    if (stageName) label += " @ "+stageName;
+    const bits = RESETREAS_BITS.filter(([b])=>raw & (1<<b));
+    let [sev, what] = RR_INFO[code] || ["", "Reset code "+code+"."];
+    let head = label;
+    // unclassified, but the chip's flags still say what happened
+    if (code === 0 && bits.length) {
+      head = bits.map(b=>b[1]).join(" + ");
+      what = "The firmware doesn't classify this one, but the chip's flags say "+bits.map(b=>b[2]).join(", and ")+".";
+      if (bits.every(([b])=>b>=16 && b!==18)) sev = "ok";
+    }
+    if (stageName) what += " Stuck in: "+stageName+".";
+    $("#stReset").innerHTML = '<span class="pill'+(sev==="ok"?" up":sev==="bad"?" dn":"")+'">'+head+'</span>';
+    $("#resetWhat").textContent = what;
+    $("#resetBits").textContent = (bits.length ? bits.map(b=>b[1]).join(", ") : (raw ? "unrecognised" : "none (power-on)"))
+      + "  (RESETREAS 0x"+raw.toString(16).padStart(8,"0")+")";
     // v12: PC/LR captured by the WDT pre-reset ISR (browser idx = firmware−2: hangPC@131, hangLR@135)
     const hpc=(p.length>134?((p[131]|(p[132]<<8)|(p[133]<<16)|(p[134]<<24))>>>0):0);
     const hlr=(p.length>138?((p[135]|(p[136]<<8)|(p[137]<<16)|(p[138]<<24))>>>0):0);
     const hx=v=>"0x"+v.toString(16).padStart(8,"0");
     const el = $("#resetHist");
-    if (el) el.textContent = "RESETREAS=0x"+raw.toString(16).padStart(8,"0")
-      + (hangStage!==0xFF ? "  hung in: "+(STAGE_NAMES[hangStage]||hangStage) : "")
-      + (hpc ? "  hang PC="+hx(hpc)+" LR="+hx(hlr) : "")
-      + (S.stabLastRun ? "  ·  stability: stayed up "+fmtDur(S.stabLastRun.secs)+" before this reset" : "");
+    if (el) {
+      el.textContent = (hpc ? "hang PC="+hx(hpc)+" LR="+hx(hlr) : "")
+        + (S.stabLastRun ? (hpc ? "  ·  " : "")+"stability test: stayed up "+fmtDur(S.stabLastRun.secs)+" before this reset" : "");
+      el.parentElement.classList.toggle("hide", !el.textContent);
+    }
     if (hpc && hpc!==window._hangPC){ window._hangPC=hpc; log("⚑ HANG PC="+hx(hpc)+" LR="+hx(hlr)+" — send me this; I'll map it to the stuck function"); }
     // append the queued reset to the running hang log, now that we have this boot's reason/PC/stack
     if (S.pendingHang){
@@ -4149,11 +4274,8 @@ function applyBlob(p){
 
   // per-type trackpad->stick mapping (blob v20, firmware p[187..194] -> JS p[185..192])
   const padStickCap=(p[0]>=20 && p.length>192);
-  const gitDirty=(p.length>38?p[38]:0); let buildId="";
+  let buildId="";
   for(let i=39;i<51 && i<p.length && p[i];i++) buildId+=String.fromCharCode(p[i]);
-  $("#stBuild").innerHTML = buildId
-    ? (buildId + (gitDirty ? ' <span class="pill dn">dirty</span>' : ' <span class="pill up">clean</span>'))
-    : "—";
   $("#updInstalled").textContent = buildId || "—"; // mirrored on the Firmware-update tab
   updateVersionUI();
   updateFwGate(); // (re)evaluate the firmware-tab gate on every blob — version is at p[0]
@@ -4960,6 +5082,9 @@ async function stopCapture(){
 initDiag();
 initIcons();
 if(!DEBUG_UI) for(const el of document.querySelectorAll(".debugonly")) el.style.display="none";
+// debug: made-up controllers / last reset on the Status page (applyBlob lays them over the real blob)
+for(const [id,key] of [["fakeCtl","controllers"],["fakeReset","reset"]]) $("#"+id).onchange=()=>{
+  S.fake[key]=key==="controllers"?+$("#"+id).value:$("#"+id).value; if(S.realP) applyBlob(S.realP); };
 initTypes();
 buildLizardProfiles();
 initRfHelp();
