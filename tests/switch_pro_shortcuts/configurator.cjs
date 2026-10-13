@@ -64,12 +64,14 @@ const own=(sec,q)=>[...sec.querySelectorAll(q)].filter(e=>!e.closest('.prof-card
  assert.deepEqual([...swapLab.querySelectorAll('.ic')].map(e=>e.dataset.ic),['A','B','X','Y']);assert(swapLab.textContent.endsWith(' swap'));
  assert.deepEqual([...createLab.querySelectorAll('.ic')].map(e=>e.dataset.ic),['view','padClick']);assert(/Create = .*touchpad click$/.test(createLab.textContent));}
 const typeRow=(et,label)=>own(secs[et],'.row').find(r=>r.querySelector('label') && r.querySelector('label').textContent===label);
-const scl=et=>typeRow(et,'Grip rumble strength').querySelector('select');
+// the Switch's grip strength is its Haptics card's Strength (HD rumble is its only signal); hidden by a wrapper
+const scl=et=>typeRow(et,et===1?'Strength':'Grip rumble strength').querySelector('select');
+const sclHidden=et=>scl(et).closest('.row').parentElement.classList.contains('hide');
 for(let et=0;et<4;et++)assert(!typeRow(et,'Rumble style'));
-assert(scl(1).parentElement.classList.contains('hide'));assert(!$('#rumbleScale').parentElement.classList.contains('hide'));
+assert(sclHidden(1));assert(!$('#rumbleScale').parentElement.classList.contains('hide'));
 const p25=p.concat(Array(10).fill(0));p25[0]=25;[100,75,50,100].forEach((v,i)=>p25[210+i]=v);
 p=p25;applyBlob(new Uint8Array(p25));
-assert($('#rumbleScale').parentElement.classList.contains('hide'));assert(!scl(0).parentElement.classList.contains('hide'));
+assert($('#rumbleScale').parentElement.classList.contains('hide'));assert(!sclHidden(0));
 assert.equal(scl(0).value,'200');assert.equal(scl(1).value,'150');
 scl(2).value='300';assert.deepEqual(await change(scl(2)),[2,110,150]);
 const b25=buildBackup(p25,[1].concat(Array(97).fill(0)));

@@ -399,12 +399,12 @@ assert.deepEqual(model[3].maps[2][0],4);assert.equal(model[3].active,2);assert.d
  assert.deepEqual(await fieldsOf(()=>change(tck[3],'2')),[[135,2]]);
  assert.deepEqual(await fieldsOf(()=>change(tkg[3],'5')),[[139,5]]);
  // Reset to defaults writes each type's own settings, not the shared fields
- // (the Switch starts on tones at 100% grip strength, the others on the wave at 200%)
- for(const [et,lim,sty,style,scale] of [[1,121,125,1,50],[3,123,127,3,100]]){
+ // (both start on the wave with an 85% limiter; the Switch at 100% grip strength, the others at 200%)
+ for(const [et,lim,sty,style,scale] of [[1,121,125,3,50],[3,123,127,3,100]]){
   setTab(et);const f=await fieldsOf(()=>$reset());
-  assert.deepEqual([f.find(x=>x[0]===lim),f.find(x=>x[0]===sty),f.find(x=>x[0]===108+et),f.find(x=>x[0]===128+et),f.find(x=>x[0]===132+et),f.find(x=>x[0]===136+et)],[[lim,70],[sty,style],[108+et,scale],[128+et,26],[132+et,0],[136+et,11]]);assert(!f.some(x=>x[0]===115||x[0]===88));}
+  assert.deepEqual([f.find(x=>x[0]===lim),f.find(x=>x[0]===sty),f.find(x=>x[0]===108+et),f.find(x=>x[0]===128+et),f.find(x=>x[0]===132+et),f.find(x=>x[0]===136+et)],[[lim,85],[sty,style],[108+et,scale],[128+et,26],[132+et,0],[136+et,11]]);assert(!f.some(x=>x[0]===115||x[0]===88));}
  const dflt=sel=>[...sel.options].filter(o=>o.textContent.includes('(default)')).map(o=>o.value);
- assert.deepEqual(dflt(typeEls[1].hdStyle),['1']);assert.deepEqual(dflt(typeEls[1].rumbleScl),['100']);assert.deepEqual(dflt(typeEls[3].rumbleScl),['200']);
+ assert.deepEqual(dflt(typeEls[1].hdStyle),['3']);assert.deepEqual(dflt(typeEls[1].rumbleScl),['100']);assert.deepEqual(dflt(typeEls[3].rumbleScl),['200']);
  // the backup carries the whole grid and replays it by field
  await apply();
  {const b=buildBackup(p,[1].concat(Array(97).fill(0)));
