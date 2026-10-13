@@ -53,7 +53,36 @@ export function applySw(s){
   for(const rec of typeEls)rec.qam.closest(".row").classList.toggle("hide",enabled && !!(flags&1));
   for(const el of document.querySelectorAll(".ic-mod")) fillIcon(el,(flags&1)?"qam":"back4");
 }
+// Debug UI (?debug=true): a made-up bonded controller list and Last reset laid over the real blob, so the Status
+// page can be laid out without a second controller. Real slots stay as they are; the fakes fill the rest.
+const FAKE_CTL = [[1,78,58],[1,41,71],[0,23,0],[1,92,49]]; // up, battery %, signal -dBm
+const FAKE_RESET = {poweron:[1,0], usb:[0,0x100000], replug:[2,1], reboot:[6,4], watchdog:[3,2,4], lockup:[4,8,4],
+  hardfault:[5,4], debugger:[0,0x40000], unknown:[0,0x80000000]}; // RR code, RESETREAS, hang stage
+export function fakeBlob(p){
+  const q = new Uint8Array(Math.max(p.length, 179)); q.set(p);
+  const real = p.length>60 ? p[60] : 0, n = S.fake.controllers;
+  if (n > real) {
+    q[60] = n;
+    for (let s=real; s<n; s++) {
+      const [up,b,r] = FAKE_CTL[s];
+      q[61+s*3]=up; q[62+s*3]=b; q[63+s*3]=r;
+      const o = 143+s*9, polls = up?250:0;
+      q[o]=polls&255; q[o+1]=polls>>8; q[o+2]=up?248-s*30:0; q[o+3]=0; q[o+4]=up?118:0; q[o+5]=0;
+      q[o+6]=up?s:0; q[o+7]=up&&s?2:0; q[o+8]=up?1:0;
+    }
+  }
+  const rr = FAKE_RESET[S.fake.reset];
+  if (rr && q.length > 138) {
+    q[109]=rr[0]; for (let i=0;i<4;i++) q[110+i]=(rr[1]>>>(8*i))&255;
+    q[126]=rr[2]===undefined?0xFF:rr[2];
+    const hang = rr[2]!==undefined;
+    for (let i=0;i<4;i++){ q[131+i]=hang?[0x12,0x34,0x00,0x08][i]:0; q[135+i]=hang?[0x56,0x78,0x00,0x08][i]:0; }
+  }
+  return q;
+}
 export function applyBlob(p){
+  S.realP = p;
+  if (S.fake.controllers || S.fake.reset) p = fakeBlob(p);
   for(const rec of typeEls) for(const sel of rec.padStick) for(const o of sel.options) if(+o.value>=3) o.disabled=p[0]<(+o.value===5?30:23);
   S.lastP=p; // remember for Export (carries every config field the panel shows)
   S.blobSeen=true; // the puck answers: it is done booting and takes commands
@@ -173,6 +202,9 @@ export function applyBlob(p){
     renderCtlrChips([{slot:0, up:!!up, battery, rssi}]);
   }
 
+  // puck-wide totals: with one controller they repeat the Controller card, so they show only with more
+  { const multi = !(hasSlotsData && p.length >= 179) || (S.g_slotData||[]).filter(Boolean).length >= 2;
+    for (const el of document.querySelectorAll(".multi-only")) el.classList.toggle("off", !multi); }
   // global stats
   $("#stRate").textContent = up? f1+" /s" : "0 /s (idle)";
   $("#stNew").textContent = up? newps+" /s" : "0 /s (idle)";
@@ -181,7 +213,8 @@ export function applyBlob(p){
   $("#stPolls").textContent = polls+" /s";
   { const crc=(p.length>117?p[117]:0), norx=(p.length>118?p[118]:0), heal=(p.length>119?p[119]:0);
     const rf=(p.length>130?(p[129]|(p[130]<<8)):0);
-    $("#stRfFail").innerHTML = crc+" · "+norx+" · "+heal + (rf?' · <span class="pill dn">ring '+rf+'</span>':"");
+    $("#stRfFailAll").textContent = crc+" · "+norx;
+    $("#stHeal").innerHTML = heal + (rf?' · <span class="pill dn">ring fault '+rf+'</span>':"");
     // ring fault = we caught+recovered a relay-ring corruption that would otherwise be an invisible IRQ-off
     // watchdog hang. Log each new one (persists across the device reset + panel reconnect).
     if(rf>(window._ringFault||0)) log("⚠ RING FAULT #"+rf+" recovered — caught a relay-ring desync/corruption (would have hung loop with IRQs off)");
@@ -232,6 +265,31 @@ export function applyBlob(p){
   const RR_NAMES = ["unknown","power-on","pin/replug","watchdog (hang)","CPU lockup",
                     "HARDFAULT","reboot","soft reset","wake-from-off"];
   const RR_FAULT = new Set([3,4,5]); // watchdog / lockup / hardfault = a real crash worth reporting (#72)
+  // What each cause means, for the Last reset card: "ok" = a normal start, "bad" = a crash worth reporting
+  // (#72), "" = not explained by the firmware.
+  const RR_INFO = [
+    ["", "The firmware doesn't classify this reset."],
+    ["ok", "A normal start: the puck was powered on, or its supply dipped."],
+    ["ok", "A normal start: the reset pin was pressed or the puck was replugged."],
+    ["bad", "The firmware hung and the watchdog restarted it. This is a bug: the stage and PC/LR below show where it was stuck, so please report them."],
+    ["bad", "The CPU locked up (a fault while handling a fault) and restarted. This is a bug worth reporting."],
+    ["bad", "The firmware crashed (HardFault) and restarted itself. This is a bug worth reporting."],
+    ["ok", "An intentional restart: a mode switch, a setting that needs one, or a firmware update."],
+    ["", "A software reset the firmware didn't mark as intentional or as a crash."],
+    ["ok", "A normal start: it woke from power-off."],
+  ];
+  // nRF52840 POWER.RESETREAS bits: [bit, name, meaning when the firmware left the cause unclassified]
+  const RESETREAS_BITS = [
+    [0, "reset pin", "the reset pin was pressed or the puck was replugged"],
+    [1, "watchdog", "the watchdog restarted a hung firmware"],
+    [2, "soft reset", "the firmware restarted itself"],
+    [3, "CPU lockup", "the CPU locked up"],
+    [16, "wake from off", "it woke from power-off"],
+    [17, "wake (LPCOMP)", "it woke from power-off on the comparator"],
+    [18, "debugger", "a debugger reset it"],
+    [19, "wake (NFC)", "it woke from power-off on an NFC field"],
+    [20, "wake (USB power)", "it woke from power-off when USB power came on, a normal plug-in"],
+  ];
   if (p.length > 113) {
     const code = p[109];
     const raw = ((p[110]|(p[111]<<8)|(p[112]<<16)|(p[113]<<24))>>>0);
@@ -239,18 +297,33 @@ export function applyBlob(p){
     // v12: which loop stage was stuck when the last watchdog/lockup hang fired (0xFF = last boot wasn't a hang)
     const STAGE_NAMES = ["webusb","ctrl.task","serial","rfdiag","rflink","haptic","led","usbmount","usbtx"];
     const hangStage = (p.length>126 ? p[126] : 0xFF);
+    const stageName = hangStage!==0xFF ? (STAGE_NAMES[hangStage]||("stage "+hangStage)) : "";
     let label = name;
-    if (hangStage!==0xFF) label += " @ "+(STAGE_NAMES[hangStage]||("stage "+hangStage));
-    $("#stReset").innerHTML = RR_FAULT.has(code) ? ('<span class="pill dn">'+label+'</span>') : label;
+    if (stageName) label += " @ "+stageName;
+    const bits = RESETREAS_BITS.filter(([b])=>raw & (1<<b));
+    let [sev, what] = RR_INFO[code] || ["", "Reset code "+code+"."];
+    let head = label;
+    // unclassified, but the chip's flags still say what happened
+    if (code === 0 && bits.length) {
+      head = bits.map(b=>b[1]).join(" + ");
+      what = "The firmware doesn't classify this one, but the chip's flags say "+bits.map(b=>b[2]).join(", and ")+".";
+      if (bits.every(([b])=>b>=16 && b!==18)) sev = "ok";
+    }
+    if (stageName) what += " Stuck in: "+stageName+".";
+    $("#stReset").innerHTML = '<span class="pill'+(sev==="ok"?" up":sev==="bad"?" dn":"")+'">'+head+'</span>';
+    $("#resetWhat").textContent = what;
+    $("#resetBits").textContent = (bits.length ? bits.map(b=>b[1]).join(", ") : (raw ? "unrecognised" : "none (power-on)"))
+      + "  (RESETREAS 0x"+raw.toString(16).padStart(8,"0")+")";
     // v12: PC/LR captured by the WDT pre-reset ISR (browser idx = firmware−2: hangPC@131, hangLR@135)
     const hpc=(p.length>134?((p[131]|(p[132]<<8)|(p[133]<<16)|(p[134]<<24))>>>0):0);
     const hlr=(p.length>138?((p[135]|(p[136]<<8)|(p[137]<<16)|(p[138]<<24))>>>0):0);
     const hx=v=>"0x"+v.toString(16).padStart(8,"0");
     const el = $("#resetHist");
-    if (el) el.textContent = "RESETREAS=0x"+raw.toString(16).padStart(8,"0")
-      + (hangStage!==0xFF ? "  hung in: "+(STAGE_NAMES[hangStage]||hangStage) : "")
-      + (hpc ? "  hang PC="+hx(hpc)+" LR="+hx(hlr) : "")
-      + (S.stabLastRun ? "  ·  stability: stayed up "+fmtDur(S.stabLastRun.secs)+" before this reset" : "");
+    if (el) {
+      el.textContent = (hpc ? "hang PC="+hx(hpc)+" LR="+hx(hlr) : "")
+        + (S.stabLastRun ? (hpc ? "  ·  " : "")+"stability test: stayed up "+fmtDur(S.stabLastRun.secs)+" before this reset" : "");
+      el.parentElement.classList.toggle("hide", !el.textContent);
+    }
     if (hpc && hpc!==window._hangPC){ window._hangPC=hpc; log("⚑ HANG PC="+hx(hpc)+" LR="+hx(hlr)+" — send me this; I'll map it to the stuck function"); }
     // append the queued reset to the running hang log, now that we have this boot's reason/PC/stack
     if (S.pendingHang){
@@ -282,11 +355,8 @@ export function applyBlob(p){
 
   // per-type trackpad->stick mapping (blob v20, firmware p[187..194] -> JS p[185..192])
   const padStickCap=(p[0]>=20 && p.length>192);
-  const gitDirty=(p.length>38?p[38]:0); let buildId="";
+  let buildId="";
   for(let i=39;i<51 && i<p.length && p[i];i++) buildId+=String.fromCharCode(p[i]);
-  $("#stBuild").innerHTML = buildId
-    ? (buildId + (gitDirty ? ' <span class="pill dn">dirty</span>' : ' <span class="pill up">clean</span>'))
-    : "—";
   $("#updInstalled").textContent = buildId || "—"; // mirrored on the Firmware-update tab
   updateVersionUI();
   updateFwGate(); // (re)evaluate the firmware-tab gate on every blob — version is at p[0]

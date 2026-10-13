@@ -3,6 +3,8 @@
 export const S = {
   // WebUSB device + endpoints
   dev:null, epIn:0, epOut:0,
+  // debug UI only: made-up controllers / last reset laid over the real status blob (realP = the blob as received)
+  fake:{controllers:0, reset:""}, realP:null,
   // a status blob arrived since this connect: the puck is past boot and takes commands
   blobSeen:false,
   // Pipe owners: each pauses the status-blob poll while it holds the shared bulk endpoint.

@@ -1,7 +1,7 @@
 import { S } from './state.js';
 import { $, DEBUG_UI, fmtSlider, log } from './util.js';
 import { autoConnect, connect, initProtocol, refresh, send, setField } from './protocol.js';
-import { CHORD_DPAD_FIELD, CHORD_FIELD, MODE_NAMES, SC_BITS, showModeDesc } from './status.js';
+import { CHORD_DPAD_FIELD, CHORD_FIELD, MODE_NAMES, SC_BITS, applyBlob, showModeDesc } from './status.js';
 import { changeRfChannelSet, clearJournalRf, disablePoorRfChannels, initRfHelp, manualJournalBuilderRf, manualSurveyRf } from './rf.js';
 import { exportBackup, importBackup } from './backup.js';
 import { downloadCap, startCapture, stopCapture } from './capture.js';
@@ -17,6 +17,9 @@ import { buildLizardProfiles } from './profiles.js';
 initDiag();
 initIcons();
 if(!DEBUG_UI) for(const el of document.querySelectorAll(".debugonly")) el.style.display="none";
+// debug: made-up controllers / last reset on the Status page (applyBlob lays them over the real blob)
+for(const [id,key] of [["fakeCtl","controllers"],["fakeReset","reset"]]) $("#"+id).onchange=()=>{
+  S.fake[key]=key==="controllers"?+$("#"+id).value:$("#"+id).value; if(S.realP) applyBlob(S.realP); };
 initTypes();
 buildLizardProfiles();
 initRfHelp();
