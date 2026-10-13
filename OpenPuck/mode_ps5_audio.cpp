@@ -69,10 +69,6 @@ uint16_t Adafruit_USBD_Audio_UAC1::getInterfaceDescriptor(uint8_t itfnum,
 	g_uac1ItfAs = as_out;
 	g_uac1ItfAsIn = as_in;
 
-	uartPrintf(
-		"[UART] UAC1 getInterfaceDescriptor: ac_itf=%u as_out=%u as_in=%u ep_out=0x08 ep_in=0x88\r\n",
-		ac_itf, as_out, as_in);
-
 	const uint8_t desc[UAC1_DESC_LEN] = {
 		// Interface Association Descriptor (IAD) - 8 bytes
 		8, TUSB_DESC_INTERFACE_ASSOCIATION, ac_itf, 3, TUSB_CLASS_AUDIO,
@@ -409,13 +405,15 @@ static void processAudioSamples(const uint8_t *data, uint32_t len)
 		float wl = al * waveScale, wr = ar * waveScale;
 		float lift = hapticLiftGain(
 			&s_lift, fabsf(wl) > fabsf(wr) ? fabsf(wl) : fabsf(wr));
-		s_pcmL[s_fill] = hapticUlaw(hapticSoftLimit(wl * lift + sp));
-		s_pcmR[s_fill] = hapticUlaw(hapticSoftLimit(wr * lift + sp));
+		PCM_FRAME_L(s_frame)
+		[s_fill] = hapticUlaw(hapticSoftLimit(wl * lift + sp));
+		PCM_FRAME_R(s_frame)
+		[s_fill] = hapticUlaw(hapticSoftLimit(wr * lift + sp));
 		if (++s_fill < hapticPcmFrameLen(s_queued, rate))
 			continue;
 		for (uint8_t b = 0; b < NSLOT; b++)
 			if (waveMask & (1u << b))
-				hapticPcmSend(b, s_pcmL, s_pcmR, s_fill);
+				hapticPcmSend(b, s_frame, s_fill);
 		if (s_queued < 1000u)
 			s_queued += s_fill;
 		s_fill = 0;
@@ -840,10 +838,6 @@ static uint16_t uac1_open(uint8_t rhport, tusb_desc_interface_t const *itf_desc,
 	(void)max_len;
 	if (itf_desc->bInterfaceClass != TUSB_CLASS_AUDIO)
 		return 0;
-
-	uartPrintf("[UART] UAC1 open: subclass=0x%02X itf=%u alt=%u\r\n",
-		   itf_desc->bInterfaceSubClass, itf_desc->bInterfaceNumber,
-		   itf_desc->bAlternateSetting);
 
 	if (itf_desc->bInterfaceSubClass == 0x01) {
 		usbd_edpt_open(rhport, &s_iso_ep_out);
