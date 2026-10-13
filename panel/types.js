@@ -32,7 +32,7 @@ export const TYPE_DEFS = [
   {key:"DS5", name:"DS5", labels:{1:"Cross",2:"Circle",3:"Square",4:"Triangle",5:"L1",6:"R1",7:"L3",8:"R3",9:"Create",10:"Options",11:"PS",19:"L2",20:"R2",...DPAD,16:"Touchpad Click",17:"Mute"}, padTargets:PS_PADS},
 ];
 // Grip strength (percent) and haptic style a type starts with: the firmware's g_typeRumbleScaleDefault and kHapticStyleDefault
-const typeDefaults=def=>({rumble:200,style:3,click:26,tick:0,tickGain:11,knee:85,lift:1,...def.haptics});
+const typeDefaults=def=>({rumble:200,style:3,click:26,tick:0,tickGain:11,knee:85,lift:1,trig:1,...def.haptics});
 // movement-tick spacing: 0 leaves the ticks to the controller (fixed strength), 1..4 have the puck play them, a wider to a
 // narrower distance apart
 export const PAD_TICK_LABELS=["Controller's own","Sparse","Normal","Dense","Densest"];
@@ -113,6 +113,7 @@ function typeResetFields(et){
   const perType=S.lastP && S.lastP[0]>=30;
   if(sw||ds5) f.push(perType ? [hapField(HAP.KNEE,et),typeDefaults(TYPE_DEFS[et]).knee,30] : [115,70,27]);
   if((sw||ds5) && S.lastP && S.lastP.length>hapIndex(HAP.LIFT,et)) f.push([hapField(HAP.LIFT,et),typeDefaults(TYPE_DEFS[et]).lift,30]);
+  if(ds5 && S.lastP && S.lastP.length>hapIndex(HAP.TRIG,et)) f.push([hapField(HAP.TRIG,et),typeDefaults(TYPE_DEFS[et]).trig,30]);
   const style=typeDefaults(TYPE_DEFS[et]).style;
   if(sw) f.push([hapField(HAP.STYLE,et),style,30]);
   if(ds5) f.push([31,1,0],perType ? [hapField(HAP.STYLE,et),style,30] : [88,style,22],[30,0,0],[114,0,26],[116,0,29]);
@@ -148,12 +149,12 @@ export async function resetTypeDefaults(et){
   }finally{ mapResetBusy=false; $("#mapReset").disabled=false; }
 }
 // Strength is sent as percent/2 (field 22), so every value here must be even.
-// Protocol 30 keeps five settings per controller type in one grid (firmware HAP_* in config.h): WebUSB field
+// Protocol 30 keeps the per-type settings in one grid (firmware HAP_* in config.h): WebUSB field
 // 120 + 4 * setting + type, status blob byte 216 + 4 * setting + type (index 214 + ... here, the header being cut).
 // The release before it (29) has one limiter for all types (field 115) and the style on the DualSense only (field 88).
-export const HAP={KNEE:0,STYLE:1,CLICK:2,TICK:3,TICKGAIN:4,LIFT:5};
+export const HAP={KNEE:0,STYLE:1,CLICK:2,TICK:3,TICKGAIN:4,LIFT:5,TRIG:6};
 // per setting, in HAP order: the backup key and its range
-export const HAP_KEYS=[["limiter",50,100],["hapticStyle",0,3],["padClick",0,31],["padTick",0,4],["padTickGain",0,31],["softBoost",0,4]];
+export const HAP_KEYS=[["limiter",50,100],["hapticStyle",0,3],["padClick",0,31],["padTick",0,4],["padTickGain",0,31],["softBoost",0,4],["triggerHaptics",0,3]];
 export const hapField=(k,et)=>120+4*k+et;
 export const hapIndex=(k,et)=>214+4*k+et;
 export const hapValue=(p,k,et)=>p[hapIndex(k,et)];
@@ -255,6 +256,8 @@ export function initTypes(){
       // same order on the Switch and DS5 tabs. A Switch game sends one signal, HD rumble, so its haptics strength is
       // the grip rumble strength. A DualSense game sends motor rumble and audio haptics apart, each with its own.
       const gRum=group("Rumble");
+      // one grid cell for Rumble and the small cards under it, so they stack at any column count
+      const stack=document.createElement("div"); stack.className="stack"; gRum.before(stack); stack.append(gRum);
       const rumble=toggle(gRum,"Rumble","on");
       const sw=def.key==="SWITCH", ds5=def.key==="DS5";
       const gHapt=(sw||ds5)?group("Haptics"):null;
@@ -330,6 +333,18 @@ export function initTypes(){
         note.textContent="Raises quiet haptics, like soft footsteps, so you can feel them. Strong hits are left as they are. The grips play even very soft vibration, but a hand barely notices it below a few percent of full strength. Applies to the Wave style.";
         const wrap=document.createElement("div"); wrap.className="hide"; wrap.append(row(gHapt,"Soft boost",sel),note); gHapt.appendChild(wrap);
         rec.lift=sel; rec.liftWrap=wrap;
+      }
+      // Adaptive triggers: where the DualSense trigger effects are felt; its own group, as it isn't part of the grip stream
+      if(ds5){
+        const gTrig=group("Adaptive triggers"); gTrig.classList.add("hide");
+        stack.append(gTrig);
+        const sel=document.createElement("select");
+        for(const [v,lbl] of [[0,"Off"],[1,"Trackpads"],[2,"Grips"],[3,"Trackpads and grips"]]){ const o=document.createElement("option"); o.value=v; o.textContent=lbl+(v===typeDefaults(def).trig?" (default)":""); sel.appendChild(o); }
+        sel.addEventListener("change",()=>setField(hapField(HAP.TRIG,et),+sel.value));
+        const note=document.createElement("p"); note.className="note";
+        note.textContent="The Steam Controller has no trigger motors, so a game's adaptive-trigger effects are played here: a tick for each step the trigger goes into a resistance zone, a sharp click when a weapon trigger breaks, and trigger vibration as a buzz. R2 plays on the right, L2 on the left. A trigger held still stays quiet.";
+        row(gTrig,"Trigger haptics",sel); gTrig.appendChild(note);
+        rec.trig=sel; rec.trigWrap=gTrig;
       }
       // LED brightness
       { const gLed=group("Lights");

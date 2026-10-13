@@ -250,6 +250,8 @@ extern uint16_t g_audioSpeaker;
 //  HAP_TICKGAIN: gain of the ticks the puck plays, in HAP_CLICK's steps.
 //  HAP_LIFT:  soft boost of the grip PCM stream (DualSense wave, Switch HD wave): 0 off, 1..4 raise quiet passages
 //             by up to 1.5x / 2x / 3x / 4x (hapticLiftGain). Switch and DualSense. g_hapticLift is the active type's copy.
+//  HAP_TRIG:  where the DualSense adaptive-trigger effects are felt (TRIG_HAPTICS_*): off, the trackpads, the
+//             grips, or both. DualSense only. g_trigHaptics is the live copy.
 // Click, tick and tick gain apply to every type.
 enum {
 	HAP_KNEE,
@@ -258,6 +260,7 @@ enum {
 	HAP_TICK,
 	HAP_TICKGAIN,
 	HAP_LIFT,
+	HAP_TRIG,
 	HAP_COUNT
 };
 // Measured on the controller's IMU (Switch HD and DualSense wave), the grips stay linear to ~0.7 of full scale
@@ -271,9 +274,15 @@ enum {
 #define PAD_TICKGAIN_DEFAULT 11
 #define HAPTIC_LIFT_DEFAULT 1
 #define HAPTIC_LIFT_MAX 4
+#define TRIG_HAPTICS_OFF 0
+#define TRIG_HAPTICS_PADS 1
+#define TRIG_HAPTICS_GRIPS 2
+#define TRIG_HAPTICS_BOTH 3
+#define TRIG_HAPTICS_DEFAULT TRIG_HAPTICS_PADS
 extern uint8_t g_typeHaptic[HAP_COUNT][ET_COUNT];
 extern uint8_t g_hapticLimitKnee;
 extern uint8_t g_hapticLift;
+extern uint8_t g_trigHaptics;
 // Store a value if it is in range and the type has the setting, and refresh the live mirrors.
 bool typeHapticSet(uint8_t setting, uint8_t et, uint8_t value);
 // Live copies of the active type's click strength and tick level (the defaults in puck modes)
