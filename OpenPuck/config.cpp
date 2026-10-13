@@ -74,14 +74,15 @@ uint8_t g_typeLimitKnee[ET_COUNT] = { HAPTIC_LIMIT_KNEE_DEFAULT,
 				      HAPTIC_LIMIT_KNEE_DEFAULT,
 				      HAPTIC_LIMIT_KNEE_DEFAULT,
 				      HAPTIC_LIMIT_KNEE_DEFAULT };
-// Per-type haptic settings (see config.h). The Switch starts on tones: the wave style's two full-scale bands made
-// it rough at its grip strength.
+// Per-type haptic settings (see config.h). Every type starts on wave, the Switch too: its two HD bands play at their
+// own frequencies, left and right apart. It stays smooth with the Switch wave capped at 100% grip strength (past
+// that the grips grind) and the limiter knee at 85.
 uint8_t g_typeHaptic[HAP_COUNT][ET_COUNT] = {
 	/* HAP_KNEE  */ { HAPTIC_LIMIT_KNEE_DEFAULT, HAPTIC_LIMIT_KNEE_DEFAULT,
 			  HAPTIC_LIMIT_KNEE_DEFAULT,
 			  HAPTIC_LIMIT_KNEE_DEFAULT },
 	/* HAP_STYLE */
-	{ AUDIO_STYLE_WAVE, AUDIO_STYLE_TONE, AUDIO_STYLE_WAVE,
+	{ AUDIO_STYLE_WAVE, AUDIO_STYLE_WAVE, AUDIO_STYLE_WAVE,
 	  AUDIO_STYLE_WAVE },
 	/* HAP_CLICK */
 	{ PAD_CLICK_DEFAULT, PAD_CLICK_DEFAULT, PAD_CLICK_DEFAULT,
