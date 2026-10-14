@@ -78,7 +78,7 @@ UF2_OUTPUT_DIR ?= build/openpuck
 # the bottom swallows it so make doesn't try to build the port path as a target.
 FLASH_PORT := $(filter-out format format-check check panel panel-check glyphs build build-raytac \
 	package-raytac flash-raytac deploy-raytac provision-raytac-softdevice \
-	build-recovery reversepuck reversepuck-flash reversepuck-deploy flash deploy,$(MAKECMDGOALS))
+	build-recovery build-debug reversepuck reversepuck-flash reversepuck-deploy flash deploy,$(MAKECMDGOALS))
 UPLOAD = arduino-cli upload -b $(FQBN) -p "$(FLASH_PORT)" OpenPuck
 
 # ReversePuck (controller dongle, 28DE:1302) build flags. It has ONE HID interface (core default 2 is fine),
@@ -88,7 +88,7 @@ RP_USB_FLAGS = -DNRF52840_XXAA {build.flags.usb} -DCFG_TUD_TASK_QUEUE_SZ=$(CFG_T
 RP_UPLOAD = arduino-cli upload -b $(FQBN) -p "$(FLASH_PORT)" ReversePuckFirmware
 
 .PHONY: format format-check check panel panel-check build build-raytac uf2 package-raytac \
-	flash-raytac deploy-raytac provision-raytac-softdevice build-recovery \
+	flash-raytac deploy-raytac provision-raytac-softdevice build-recovery build-debug \
 	reversepuck reversepuck-flash reversepuck-deploy flash deploy \
 	install-wireplumber uninstall-wireplumber
 
@@ -150,6 +150,13 @@ provision-raytac-softdevice:
 ## One-time factory-reset recovery image (wipes persistent storage once on first boot). See §6 of the build doc.
 build-recovery:
 	$(MAKE) build BUILD_PATH=$(BUILD_PATH) OUTPUT_DIR=$(OUTPUT_DIR) EXTRA_FLAGS="$(EXTRA_FLAGS) -DOPK_FACTORY_RESET=1"
+
+## The general-purpose debug image CI publishes next to each nightly: the diagnostics that are safe to run together
+## (see config.h): the host-command capture ring, the feature-command log, the PCM counters and the loop timing.
+## Left out is OPK_DIAG_HID_LOG, which runs Serial.printf on the USB task; build it alone, for a specific problem.
+DEBUG_FLAGS ?= -DOPK_DIAG_CAPTURE=1 -DOPK_DIAG_FC=1 -DOPK_DIAG_PCM=1 -DOPK_DIAG_LOOP_TIMING=1
+build-debug:
+	$(MAKE) build BUILD_PATH=$(BUILD_PATH) OUTPUT_DIR=$(OUTPUT_DIR) EXTRA_FLAGS="$(EXTRA_FLAGS) $(DEBUG_FLAGS)"
 
 ## Build OpenPuck and convert the .hex into a drag-and-drop .uf2 (build/openpuck/OpenPuck.ino.uf2 by default).
 ## Same overrides as `build` (CFG_TUD_HID / EXTRA_FLAGS / FQBN), e.g. a recovery UF2:

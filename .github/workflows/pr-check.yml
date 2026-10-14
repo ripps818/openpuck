@@ -108,3 +108,9 @@ jobs:
         run: |
           mkdir -p build/openpuck build/cache/openpuck
           make build BUILD_PATH=build/cache/openpuck OUTPUT_DIR=build/openpuck
+
+      # the debug image has to keep building, or the next bug report finds it broken
+      - name: Compile debug build
+        run: |
+          mkdir -p build/openpuck-debug build/cache/openpuck-debug
+          make build-debug BUILD_PATH=build/cache/openpuck-debug OUTPUT_DIR=build/openpuck-debug

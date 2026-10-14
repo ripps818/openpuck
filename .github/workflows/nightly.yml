@@ -122,6 +122,14 @@ jobs:
           make build-recovery BUILD_PATH=build/cache/openpuck-recovery OUTPUT_DIR=build/openpuck-recovery
           ./gen_uf2.sh build/openpuck-recovery/OpenPuck.ino.hex build/openpuck-recovery/OpenPuck.ino.uf2
 
+      - name: Compile debug build
+        # The general-purpose diagnostic image (make build-debug): host-command capture, feature-command log, PCM
+        # counters, loop timing. Attached to the nightly for bug reports; the panel and the firmware mirror skip it.
+        run: |
+          mkdir -p build/openpuck-debug build/cache/openpuck-debug
+          make build-debug BUILD_PATH=build/cache/openpuck-debug OUTPUT_DIR=build/openpuck-debug
+          ./gen_uf2.sh build/openpuck-debug/OpenPuck.ino.hex build/openpuck-debug/OpenPuck.ino.uf2
+
       - name: Collect artifacts
         env:
           VERSION: ${{ steps.version.outputs.version }}
@@ -131,6 +139,7 @@ jobs:
           for ext in uf2 hex; do
             cp "build/openpuck/OpenPuck.ino.$ext" "release_assets/OpenPuck-${VERSION}-standard.$ext"
             cp "build/openpuck-recovery/OpenPuck.ino.$ext" "release_assets/OpenPuck-${VERSION}-factory-reset.$ext"
+            cp "build/openpuck-debug/OpenPuck.ino.$ext" "release_assets/OpenPuck-${VERSION}-debug.$ext"
           done
           ls -la release_assets
 
@@ -152,6 +161,7 @@ jobs:
 
           - \`OpenPuck-${VERSION}-standard.uf2\`: drag onto the UF2BOOT drive
           - \`OpenPuck-${VERSION}-factory-reset.uf2\`: wipes all settings and the controller pairing on first boot
+          - \`OpenPuck-${VERSION}-debug.uf2\`: for bug reports. Adds the panel's Capture view, a feature-command serial log and loop timing; uses 25 KB more RAM
           - \`.hex\` files for direct flashing"
 
       - name: Mirror UF2s to the firmware branch
@@ -173,7 +183,8 @@ jobs:
             git clone --depth 1 --branch firmware "$REPO" "$OLD/repo"
             cp "$OLD"/repo/OpenPuck-*.uf2 "$NEW"/ 2>/dev/null || true
           fi
-          cp release_assets/OpenPuck-"${VERSION}"-*.uf2 "$NEW"/
+          # the debug build is a download for bug reports, not something the panel offers: leave it out
+          cp release_assets/OpenPuck-"${VERSION}"-standard.uf2 release_assets/OpenPuck-"${VERSION}"-factory-reset.uf2 "$NEW"/
           KEEP="$(gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=15" --jq '.[].assets[].name')"
           for f in "$NEW"/OpenPuck-*.uf2; do
             echo "$KEEP" | grep -qxF "$(basename "$f")" || rm -f "$f"
