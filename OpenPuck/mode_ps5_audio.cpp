@@ -769,11 +769,14 @@ void ps5AudioTask(void)
 				      TONE_GATE);
 	// Auto gain runs even while a fixed gain is set, so switching back to auto starts from a settled level.
 	uint16_t ref = autoGainRef(envL > envR ? envL : envR);
+	// a set gain is 1-100% of 5x the auto level's strength, so 100% is each style's strongest
 	uint16_t gain = g_audioHapticGain;
-	if (gain)
+	if (gain) {
 		ref = 32767;
-	else
+		gain *= 5;
+	} else {
 		gain = 100;
+	}
 	if (!g_audioHaptics)
 		envL = envR = loL = loR = hiL = hiR = 0;
 	uint16_t toneL = tone ? envL : split ? hiL : 0;

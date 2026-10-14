@@ -435,7 +435,8 @@ PCM streaming, measured with the controller's IMU over USB (2026-10-03):
 - Grip linearity, measured with the controller resting on a table (2026-10-12): vibration rises in proportion to
   the sample amplitude up to about 0.7 of full scale, eases off toward full scale, and clips past it. Driving
   about twice full scale (two full bands at 200% grip strength) makes the grips audibly grind. OpenPuck therefore
-  caps the Switch wave style at 100% grip strength and the DualSense wave style at 250% haptic gain. A soft-limit
+  caps the Switch wave style at 100% grip strength; the DualSense wave gain reaches 8× because games mix that track
+  far below full scale, and the soft limiter rounds off a loud one. A soft-limit
   knee of 85 costs no measurable strength, while 70 costs 3-5% near the top; two blind A/B tests (steady and
   swept) found no audible difference, with 85 preferred. On the DualSense at 250% gain, a blind swept A/B with no
   dropped packets or underruns felt 85 and 100 alike and 70 weaker; 85 stays the default as headroom for peaks.
@@ -522,7 +523,8 @@ Messages:
     `94` secondary LED polarity (1 active high, 0 active low).
     `29` Steam-mode identity: nonzero emulates a Steam Machine's internal receiver (`28DE:1305`) instead of the
     puck (`28DE:1304`); takes effect on the next enumeration.
-    DualSense audio haptics: `31` on/off, `30` gain as percent/2 (10-500%, 0 = automatic), `88` style
+    DualSense audio haptics: `31` on/off, `30` gain 0-100% of the style's strongest (0 = automatic; from version 30,
+    before that percent/2 of 10-500%), `88` style
     (0 rumble, 1 tone, 2 split, 3 wave; default 3). See DUALSENSE_HAPTICS.md.
     RF recovery (reply is an `0xAD` frame, not a status blob; nothing is saved except by `100`): `97 <page+1>`
     request RF status (the value picks the `0xAD` v2 row page; older firmware ignores it), `98` run an ambient

@@ -438,7 +438,8 @@ export function applyBlob(p){
         if(perType && document.activeElement!==rec.hdStyle) rec.hdStyle.value=hapValue(p,HAP.STYLE,et);
       }
       if(rec.audioGain && p.length>195){
-        const gain = p[195]*2;
+        // v30: 0-100%; older builds report percent/2 of 10-500%
+        const gain = p[0]>=30 ? p[195] : Math.min(100, Math.round(p[195]*2/5));
         if(document.activeElement!==rec.audioGain){
           rec.audioGain.value = gain;
           rec.audioGainV.textContent = rec.audioGainLabel(gain);

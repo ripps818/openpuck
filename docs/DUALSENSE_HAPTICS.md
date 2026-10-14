@@ -236,7 +236,7 @@ In [mode_ps5_audio.cpp](../OpenPuck/mode_ps5_audio.cpp) (`processAudioSamples`, 
    between ticks as RMS; the halving fall halves that jitter while hits land at full strength on their first tick.
 3. **Auto gain** (default, `g_audioHapticGain == 0`): a reference level plays at full strength. It jumps to any louder
    peak and sinks by 1/1024 per tick (about a 20 s time constant), never below 8192, which caps the boost at 4×. A
-   manual 10–500% gain uses full scale as the reference instead. Wave style skips this step (see below).
+   manual 1–100% gain (5× that internally) uses full scale as the reference instead. Wave style skips this step (see below).
 4. **Drive:** √(level / reference) × gain, 1.0 = full strength. Linear left Stellar Blade's footsteps (40 ms pulses at
    about 5% of full scale) at 10–17% rumble or −15 to −20 dB tone, which isn't felt; the root puts them at 35–45%.
 5. **Output style** (`g_audioHapticStyle`):
@@ -254,11 +254,11 @@ In [mode_ps5_audio.cpp](../OpenPuck/mode_ps5_audio.cpp) (`processAudioSamples`, 
      side's `0x80` rumble speed (gate 400), and the rest (signal minus low-pass) drives the tone as above, including
      its zero crossings (gate 100).
    - **Wave** (default): the haptic channels themselves, through a 1.6 kHz 2nd-order Butterworth low-pass, decimated to 4 kHz,
-     scaled linearly with no auto gain, as a real DualSense plays them: 100% (and Auto) puts int16 full scale at 40%
-     of u-law full scale. Half matched a real pad's strength in FFXIV (2026-10-04) but felt too strong in most other
-     games, including Control Resonant, where 80% of that felt right (2026-10-05). Then u-law encoded and sent as `0x88` stereo PCM frames of 31
+     scaled linearly with no auto gain, as a real DualSense plays them: 100% is 8× the track and Auto is 50% (4×).
+     Games mix the track for a real pad's sensitive actuators: Black Flag Resynced puts it at 0.2-6% of full scale,
+     which the grips barely play at 1:1 (2026-10-14). Then u-law encoded and sent as `0x88` stereo PCM frames of 31
      samples (129 frames/s), left channel to the left **grip** actuator (`0x88` is a grip stream). Streams while either channel's envelope is above
-     gate 100 and for 300 ms after; `0x86 {2, 2, 9}` sets the format at each start and every second. The controller
+     gate 16 (games' idle tracks are exact zeros) and for 300 ms after; `0x86 {2, 2, 9}` sets the format at each start and every second. The controller
      pre-buffers (24 ms with the short third frame, PROTOCOL.md), so it starts about 20 ms later than a tone. No `0x80` rumble from the audio. See PROTOCOL.md
      section 9.1 for the measured PCM behaviour.
 
@@ -290,9 +290,9 @@ vibration trick more than a speaker, and filtering can't change that, so it stay
 The game's ordinary rumble (output report `0x02`) always goes through `0x80`, in every style. `hapticUpdateRumble`
 adds it to the audio rumble (rumble and split styles) and sends one frame.
 
-Web panel and config: gain is field 30 (0 = Auto), style is field 88 (blob `p[205]`: 0 rumble, 1 tone, 2 split,
-3 wave; protocol v22). The panel's style button cycles tone, split, wave, rumble. Gain, on/off and style are saved in the config
-extension bytes 3, 4 and 11 (`cfgExtRead`).
+Web panel and config: gain is field 30 (0-100%, 0 = Auto; 10-500% before protocol v30), style is field 88 (blob `p[205]`: 0 rumble, 1 tone, 2 split,
+3 wave; protocol v22). The panel's style button cycles tone, split, wave, rumble. On/off and style are saved in the config
+extension bytes 4 and 11 (`cfgExtRead`), the gain in the config's `audioGain` tail byte.
 
 **Grip limiter** (DS5 and Switch tabs, protocol v27; one per controller type from v30): the knee of the soft limiter on the grip PCM stream, as a
 percent of full scale: 50, 60, 70 (default), 80, 90, or 100 = off. Below the knee the waveform passes unchanged;
