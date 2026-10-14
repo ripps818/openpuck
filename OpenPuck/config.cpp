@@ -98,7 +98,7 @@ uint8_t g_typeHaptic[HAP_COUNT][ET_COUNT] = {
 	  PAD_TICKGAIN_DEFAULT },
 	/* HAP_LIFT */
 	{ HAPTIC_LIFT_DEFAULT, HAPTIC_LIFT_DEFAULT, HAPTIC_LIFT_DEFAULT,
-	  HAPTIC_LIFT_DEFAULT },
+	  HAPTIC_LIFT_DS5_DEFAULT },
 	/* HAP_TRIG */
 	{ TRIG_HAPTICS_DEFAULT, TRIG_HAPTICS_DEFAULT, TRIG_HAPTICS_DEFAULT,
 	  TRIG_HAPTICS_DEFAULT },
@@ -325,6 +325,8 @@ struct Cfg {
 	uint8_t typeQamSelect[ET_COUNT];
 	// g_lizardHaptic; 0xFF or out of range (an older file) -> the default
 	uint8_t lizardHaptic[LZH_COUNT];
+	// g_audioHapticGain, 0-100. 0xFF (an older file, whose ext byte 3 held the 10-500% scale) -> Auto
+	uint8_t audioGain;
 }; // rsvd0 = ex-padSmooth, now the one-shot debug-CDC arm
 
 // Shortest cfg.bin we still accept: the layout as of CFG_MAGIC 0xCF, i.e. everything before the appended tail.
@@ -370,7 +372,8 @@ void cfgSaveFlush()
 void saveCfg()
 {
 	g_cfgSavePending = false;
-	cfgExtWrite(3u, (uint8_t)(g_audioHapticGain / 2));
+	// ext byte 3 held the gain on the old 10-500% scale; 0 leaves an older build on Auto
+	cfgExtWrite(3u, 0);
 	cfgExtWrite(4u, g_audioHaptics);
 	cfgExtWrite(11u, g_typeHaptic[HAP_STYLE][ET_DS5]);
 	cfgExtWrite(12u, g_trigInner);
@@ -428,6 +431,7 @@ void saveCfg()
 		c.padStick[i][1] = g_padStickCfg[i][1];
 	}
 	memcpy(c.lizardHaptic, g_lizardHaptic, sizeof c.lizardHaptic);
+	c.audioGain = (uint8_t)g_audioHapticGain;
 	storageWriteFile(CFG_FILE, "/cfg.tmp", (const uint8_t *)&c, sizeof c);
 	// a reset can follow a settings save at once, so any profile edit still waiting goes out with it
 	btnmapFlush();
@@ -529,15 +533,6 @@ void loadCfg()
 			if (c.suspendOff <= 1)
 				g_suspendOff = c.suspendOff;
 
-			const uint8_t audioGainVal = cfgExtRead(3u);
-			if (audioGainVal && audioGainVal != 0xFF) {
-				uint16_t pct = (uint16_t)audioGainVal * 2;
-				if (pct < 10)
-					pct = 10;
-				else if (pct > 500)
-					pct = 500;
-				g_audioHapticGain = pct;
-			}
 			const uint8_t audioHapticsVal = cfgExtRead(4u);
 			if (audioHapticsVal <= 1)
 				g_audioHaptics = audioHapticsVal;
@@ -594,6 +589,8 @@ void loadCfg()
 		rfMask |= (uint64_t)c.rfChannelMask[i] << (8 * i);
 	g_rfChannelMask = rfChannelMaskValid(rfMask) ? rfMask :
 						       RF_CHANNEL_MASK_DEFAULT;
+	if (c.audioGain <= 100)
+		g_audioHapticGain = c.audioGain;
 	for (uint8_t k = 0; k < LZH_COUNT; k++)
 		if (lizardHapticInRange(k, c.lizardHaptic[k]))
 			g_lizardHaptic[k] = c.lizardHaptic[k];

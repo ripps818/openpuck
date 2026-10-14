@@ -267,6 +267,28 @@ static inline float hapticLiftGain(HapticLift *s, float peak)
 		g = 1.0f + (g - 1.0f) * (s->env / HAPTIC_LIFT_FLOOR);
 	return g;
 }
+// Wave expander: the real pad's grips-equivalent response is steeper than the Steam Controller's, so a track that
+// shakes the grips as hard as a real DualSense at its quiet effects (gain 0.5x) falls short on its louder ones.
+// This raises the gain with the track's own level: 1x below WAVE_EXP_LO of full scale, up to WAVE_EXP_MAX, on a
+// power law of the level. The envelope rises at once and falls over ~80 ms at 4 kHz, like the soft boost's, so
+// the gain does not ripple within a wave. Measured against a real DualSense with one Black Flag clip
+// (2026-10-14): peaks of 2-4k needed 0.5-0.6x, peaks of 6-7k needed 0.75x.
+#define WAVE_EXP_LO 0.06f
+#define WAVE_EXP_POW 0.35f
+#define WAVE_EXP_MAX 2.0f
+#define WAVE_EXP_RELEASE 0.9969f
+struct WaveExpand {
+	float env;
+};
+// peak: the larger haptic channel's sample magnitude, 0..1 of full scale, before the gain
+static inline float waveExpandGain(WaveExpand *s, float peak)
+{
+	s->env = peak > s->env ? peak : s->env * WAVE_EXP_RELEASE;
+	if (s->env <= WAVE_EXP_LO)
+		return 1.0f;
+	float g = powf(s->env / WAVE_EXP_LO, WAVE_EXP_POW);
+	return g > WAVE_EXP_MAX ? WAVE_EXP_MAX : g;
+}
 void hapticSwitchHd(uint8_t slot, uint16_t leftLow, uint16_t leftHigh,
 		    uint16_t rightLow, uint16_t rightHigh);
 
@@ -331,6 +353,12 @@ struct PcmDiag {
 	uint32_t otherRelays, flushSkip;
 	// DualSense: times the ISO OUT endpoint was found wedged and re-armed (mode_ps5_audio.cpp isoWatch)
 	uint16_t isoRecover;
+#if OPK_DIAG_PCM
+	// Ungated levels of the last tick: the louder haptic channel and the speaker pair's mono mix. Audio can
+	// arrive with silent haptic channels (a game's speaker sounds), which the gated envelope can't tell apart
+	// from no audio at all.
+	uint16_t audioLvlHap, audioLvlSpk;
+#endif
 };
 extern PcmDiag g_pcmDiag;
 // count a controller 0x44 stream event, classing a "ran dry" by where in the stream it landed

@@ -117,7 +117,7 @@ static bool boardCommand(uint8_t op)
 //                [v21: p[53] rumble strength as PERCENT/2 (field 22, revived); p[195] rumble style
 //                 (field 39, RUMBLE_STYLE_* in haptics.h)]
 //                [v22: p[196] 0x52 RF recovery transport capability marker]
-//                [local: p[197] audioHapticGain (field 30, percent/2; 0 = auto); p[198] audioHaptics (field 31);
+//                [local: p[197] audioHapticGain (field 30, 0-100% of the style's strongest from v30; 0 = auto); p[198] audioHaptics (field 31);
 //                 p[199..204] LED config (fields 32,33,90,91,93,94); p[205] audioHapticStyle (field 88,
 //                 AUDIO_STYLE_* in config.h)]
 //                [v24: p[206] trigger deadzone % (field 102); p[207] trigger full-press % (field 103)]
@@ -166,6 +166,7 @@ static void webusbSendBlob()
 	// the older paddle / QAM / swap fields and lizard ops keep working and now edit the active profile;
 	// +per-type haptic settings: grip limiter, haptic style, trackpad click strength, movement-tick spacing and strength
 	// +soft boost of the grip wave stream (fields 120..143, blob p[216..239]);
+	// +DualSense haptic gain (field 30, blob p[197]) runs 0-100% of each style's strongest, was 10-500%;
 	// 29 = +Create-as-touchpad-click toggle (field 116, blob p[210]); +selectable RF channel set: op 0x2B
 	// [mask: 5 bytes LE], 0xAD frame v2 (every even channel 4..80, rows paged by field 97's value, enabled +
 	// default masks appended; the panel keys off the 0xAD version, not this one);
@@ -379,8 +380,8 @@ static void webusbSendBlob()
 	// v22: append-only RF recovery transport capability. p[181] remains the
 	// upstream Steam Machine toggle; older RF builds used that byte for 0x52.
 	p[196] = 0x52;
-	// Local extensions: DualSense audio haptic gain (percent / 2; 0 = auto) and enable toggle
-	p[197] = (uint8_t)(g_audioHapticGain / 2);
+	// Local extensions: DualSense haptic gain (0-100% of the style's strongest; 0 = auto) and enable toggle
+	p[197] = (uint8_t)g_audioHapticGain;
 	p[198] = g_audioHaptics;
 	// Status LED configuration
 	p[199] = g_ledMode;
@@ -730,14 +731,14 @@ static void webusbSendMotion(uint8_t slot)
 //   [queue delay buckets 0..7: u16][made-gap buckets 0..7: u16][ran dry: end, mid-stream, at start: u16]
 static void webusbSendPcmDiag()
 {
-	static uint8_t f[2 + 200];
+	static uint8_t f[2 + 204];
 	uint8_t *p = f + 3;
 	auto put = [&](uint32_t v, uint8_t n) {
 		for (uint8_t i = 0; i < n; i++)
 			*p++ = (uint8_t)(v >> (8 * i));
 	};
 	f[0] = 0xB1;
-	f[1] = 200;
+	f[1] = 204;
 	f[2] = 1;
 	// a snapshot, static like the frame: a stack copy put ~250 B on the usbd task's stack on every SOF
 	static PcmDiag d;
@@ -780,6 +781,8 @@ static void webusbSendPcmDiag()
 	put(d.flushSkip, 4);
 	put(g_connPoll, 2);
 	put(d.isoRecover, 2);
+	put(d.audioLvlHap, 2);
+	put(d.audioLvlSpk, 2);
 	if (tud_vendor_write_available() >= sizeof f) {
 		usb_web.write(f, sizeof f);
 		usb_web.flush();
@@ -1810,18 +1813,10 @@ void webusbPoll()
 						g_trigOuter = v;
 					break;
 
-				// DualSense audio-driven haptic gain (percent / 2, 10-500%; 0 = auto)
-				case 30: {
-					uint16_t pct = (uint16_t)v * 2;
-					if (!v)
-						pct = 0;
-					else if (pct < 10)
-						pct = 10;
-					else if (pct > 500)
-						pct = 500;
-					g_audioHapticGain = pct;
+				// DualSense haptic gain: 1-100% of the style's strongest, 0 = Auto
+				case 30:
+					g_audioHapticGain = v > 100 ? 100 : v;
 					break;
-				}
 					// (fields 23/24, Switch Pro report rate + gyro scale, removed -- rate is
 					//  fixed at full and the gyro mapping is now field 38)
 					// (field 25, poll RX window, removed -- g_rxWin is now FIXED/not configurable)

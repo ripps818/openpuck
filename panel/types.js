@@ -29,7 +29,8 @@ export const TYPE_DEFS = [
   {key:"SWITCH", name:"Switch", labels:{1:"A",2:"B",3:"X",4:"Y",5:"L",6:"R",7:"L-Stick",8:"R-Stick",9:"Minus",10:"Plus",11:"Home",19:"ZL",20:"ZR",...DPAD,18:"Capture / Screenshot"}, padTargets:{},
     haptics:{rumble:100}},
   {key:"DS4", name:"DS4", labels:{1:"Cross",2:"Circle",3:"Square",4:"Triangle",5:"L1",6:"R1",7:"L3",8:"R3",9:"Create",10:"Options",11:"PS",19:"L2",20:"R2",...DPAD,16:"Touchpad Click"}, padTargets:PS_PADS},
-  {key:"DS5", name:"DS5", labels:{1:"Cross",2:"Circle",3:"Square",4:"Triangle",5:"L1",6:"R1",7:"L3",8:"R3",9:"Create",10:"Options",11:"PS",19:"L2",20:"R2",...DPAD,16:"Touchpad Click",17:"Mute"}, padTargets:PS_PADS},
+  {key:"DS5", name:"DS5", labels:{1:"Cross",2:"Circle",3:"Square",4:"Triangle",5:"L1",6:"R1",7:"L3",8:"R3",9:"Create",10:"Options",11:"PS",19:"L2",20:"R2",...DPAD,16:"Touchpad Click",17:"Mute"}, padTargets:PS_PADS,
+    haptics:{lift:0}},
 ];
 // Grip strength (percent) and haptic style a type starts with: the firmware's g_typeRumbleScaleDefault and kHapticStyleDefault
 const typeDefaults=def=>({rumble:200,style:3,click:26,tick:0,tickGain:11,knee:85,lift:1,trig:1,dpad:1,...def.haptics});
@@ -344,19 +345,20 @@ export function initTypes(){
         sel.addEventListener("change",()=>setField(108+et, (+sel.value)/2));
         rec.rumbleScl=sel; rec.rumbleSclWrap=wrap; }
       if(ds5){
-        // Haptics strength: the audio gain. 0 = Auto (firmware default): the loudest recent haptic plays at full
-        // strength; Wave skips the auto gain, so there Auto is a fixed 100%
-        const sl=document.createElement("input"); sl.type="range"; sl.min=0; sl.max=500; sl.step=10;
+        // Haptics strength: 0-100% of the style's strongest (protocol v30). 0 = Auto (firmware default): the loudest
+        // recent haptic plays at full strength; Wave skips the auto gain, so there Auto is a fixed 25%: 100% = 2x the game's
+        // track, linear
+        const sl=document.createElement("input"); sl.type="range"; sl.min=0; sl.max=100; sl.step=5;
         const vspan=document.createElement("span"); vspan.className="val";
         row(gHapt,"Strength",sl,vspan);
-        const gainLabel=v=>+v?v+"%":+sty.value===3?"Auto (100%)":"Auto";
+        const gainLabel=v=>+v?v+"%":+sty.value===3?"Auto (25%)":"Auto";
         sl.value=0; vspan.textContent=gainLabel(0);
         sl.addEventListener("input",()=>{ vspan.textContent=gainLabel(sl.value); });
         sty.addEventListener("change",()=>{ vspan.textContent=gainLabel(sl.value); });
-        sl.addEventListener("change",()=>setField(30, (+sl.value)/2));
+        sl.addEventListener("change",()=>setField(30, S.lastP && S.lastP[0]<30 ? Math.round(sl.value*5/2) : +sl.value));
         rec.audioGain=sl; rec.audioGainV=vspan; rec.audioGainLabel=gainLabel;
         const gnote=document.createElement("p"); gnote.className="note";
-        gnote.textContent="Auto evens out each game's level in the Tone, Split and Rumble styles; in Wave it is 100%, a real DualSense's strength. Wave stops getting stronger at 250%: past that a full-strength haptic track overdrives the grips and they grind. Higher strengths still apply to the Tone, Split and Rumble styles.";
+        gnote.textContent="100% is the strongest each style plays. Wave plays the game's haptic track as sent, scaled up to 2× at 100%. Auto, 25%, shakes the grips about as hard as a real DualSense; past about 2× the grips can't get stronger. The Grip limiter rounds off a loud track before it clips. In the Tone, Split and Rumble styles Auto evens out each game's level.";
         gHapt.appendChild(gnote);
       }
       // Grip limiter (protocol v27, per controller type from v30): the Switch's HD rumble grips and the DualSense's wave haptics/speaker

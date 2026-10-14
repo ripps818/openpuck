@@ -435,7 +435,8 @@ PCM streaming, measured with the controller's IMU over USB (2026-10-03):
 - Grip linearity, measured with the controller resting on a table (2026-10-12): vibration rises in proportion to
   the sample amplitude up to about 0.7 of full scale, eases off toward full scale, and clips past it. Driving
   about twice full scale (two full bands at 200% grip strength) makes the grips audibly grind. OpenPuck therefore
-  caps the Switch wave style at 100% grip strength and the DualSense wave style at 250% haptic gain. A soft-limit
+  caps the Switch wave style at 100% grip strength; the DualSense wave gain reaches 8× because games mix that track
+  far below full scale, and the soft limiter rounds off a loud one. A soft-limit
   knee of 85 costs no measurable strength, while 70 costs 3-5% near the top; two blind A/B tests (steady and
   swept) found no audible difference, with 85 preferred. On the DualSense at 250% gain, a blind swept A/B with no
   dropped packets or underruns felt 85 and 100 alike and 70 weaker; 85 stays the default as headroom for peaks.
@@ -522,7 +523,8 @@ Messages:
     `94` secondary LED polarity (1 active high, 0 active low).
     `29` Steam-mode identity: nonzero emulates a Steam Machine's internal receiver (`28DE:1305`) instead of the
     puck (`28DE:1304`); takes effect on the next enumeration.
-    DualSense audio haptics: `31` on/off, `30` gain as percent/2 (10-500%, 0 = automatic), `88` style
+    DualSense audio haptics: `31` on/off, `30` gain 0-100% of the style's strongest (0 = automatic; from version 30,
+    before that percent/2 of 10-500%), `88` style
     (0 rumble, 1 tone, 2 split, 3 wave; default 3). See DUALSENSE_HAPTICS.md.
     RF recovery (reply is an `0xAD` frame, not a status blob; nothing is saved except by `100`): `97 <page+1>`
     request RF status (the value picks the `0xAD` v2 row page; older firmware ignores it), `98` run an ambient
@@ -562,7 +564,7 @@ Messages:
     | 2 | trackpad click gain step | all | 0-31 = -20 to -1 dB, then +1 to +12 dB (0 dB is skipped: gain byte 0 is the legacy haptic stop) | 26 (+7 dB) |
     | 3 | movement-tick spacing | all | 0 = the controller plays its own ticks, 1-4 = the puck plays them, 11000 / 5500 / 2500 / 1500 units of pad travel apart | 0 |
     | 4 | movement-tick gain step | all | as setting 2 | 11 (-9 dB) |
-    | 5 | soft boost of the grip wave stream | Switch, DS5 | `0` off, `1`-`4` raise quiet passages by up to 1.5× / 2× / 3× / 4× | 1 (1.5×) |
+    | 5 | soft boost of the grip wave stream | Switch, DS5 | `0` off, `1`-`4` raise quiet passages by up to 1.5× / 2× / 3× / 4× | 1 (1.5×); the DualSense's 0 (off) |
     | 6 | where adaptive-trigger effects are felt | DS5 | `0` off, `1` trackpads, `2` grips, `3` both | 1 |
     | 7 | trackpad D-pad feedback | all | `0` off, `1` a click pulse on a pad in a D-pad mode each time its direction changes, and on each click while Trackpad haptics is Off | 1 (the Switch's starts from field 230's old value) |
 
