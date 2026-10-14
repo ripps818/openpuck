@@ -46,7 +46,7 @@ void faultDiagArmIntentionalReset();
 // loop() writes the stage it is ENTERING to GPREGRET2 (encoded 0x80|stage, distinct from the intentional/fault
 // markers and from 0 during normal SREQ). If loop() wedges, the ~8s watchdog fires; GPREGRET2 survives that
 // reset, so the next boot can report WHICH loop stage was stuck -- the missing piece for the clone hangs.
-// Stage indices match the OPK_LOG timing order: 0 webusb,1 ctrl.task,2 serial,3 rfdiag,4 rflink,5 haptic,
+// Stage indices match the OPK_DIAG_LOOP_TIMING order: 0 webusb,1 ctrl.task,2 serial,3 rfdiag,4 rflink,5 haptic,
 // 6 led,7 usbmount,8 usbtx.
 void faultDiagSetStage(uint8_t stage);
 // The stage loop() was in when the last WATCHDOG/LOCKUP reset fired (0xFF = last boot wasn't a hang, or the

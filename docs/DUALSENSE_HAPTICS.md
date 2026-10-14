@@ -316,8 +316,11 @@ DualSense's, and a config from before the per-type fields starts both types from
   the real HID identity.
 - **Recording without a channel map:** a recording made with `--channels=4` alone puts both haptic channels into one
   (§4). It still shows timing and levels, but not which side an effect is on.
-- **Logging build:** a `-DOPK_LOG=1` build of this branch boot-looped in DualSense mode. Cause unknown. Recover by
-  double-tapping RST (or shorting RST to GND twice) and dropping a release UF2 on the bootloader drive.
+- **Diagnostic builds:** the old all-in-one `OPK_LOG` build boot-looped. Its capture ring was 96 KB, which left too
+  little heap at boot, and it also ran `Serial.printf` on the 800-byte USB task. It is now one flag per diagnostic
+  (`OPK_DIAG_*`, all off by default, listed in `config.h`) and the ring is 24 KB. Enable only the one you need. To
+  recover a boot-looping puck, double-tap RST (or short RST to GND twice) and drop a release UF2 on the bootloader
+  drive.
 - **Formatting:** CI pins clang-format 18. A newer clang-format (22 was tried) formats some lines differently, e.g.
   `(int8_t) - *sign`, and fails CI's check.
 

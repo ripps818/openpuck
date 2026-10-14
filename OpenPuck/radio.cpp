@@ -1,3 +1,6 @@
+// Timing-critical (radio TX/RX turnaround): -O2. The rest builds at -Os.
+#pragma GCC optimize("O2")
+
 #include "radio.h"
 #include "bonds.h" // g_slot[]
 #include "config.h"

@@ -410,7 +410,7 @@ void loop()
 		faultDiagTrace(FR_SAVE, 0);
 		saveBonds();
 	}
-#if OPK_LOG
+#if OPK_DIAG_LOOP_TIMING
 	// Diagnostic build: time each loop section so the panel can show the slowest one + the loop period.
 	static uint32_t acc[7] = { 0 };
 	static uint32_t loops = 0;
@@ -456,7 +456,7 @@ void loop()
 	cfgSaveTask();
 	faultDiagSetStage(8);
 	usbTxPump(); // drain queued device->host reports HERE, in loop -- never off-loop (jitters the RF poll)
-	puckCmdLogDrain(); // print captured USB feature commands (diagnostic; no-op unless g_cmdCapture)
+	puckCmdLogDrain(); // print captured USB feature commands (OPK_DIAG_FC builds)
 	loops++;
 	if (millis() - secMs >= 1000) {
 		g_loopPeriodUs = loops ? (uint16_t)(1000000UL / loops) : 0;
@@ -503,6 +503,6 @@ void loop()
 	cfgSaveTask();
 	faultDiagSetStage(8);
 	usbTxPump(); // drain queued device->host reports HERE, in loop -- never off-loop (jitters the RF poll)
-	puckCmdLogDrain(); // print captured USB feature commands (diagnostic; no-op unless g_cmdCapture)
+	puckCmdLogDrain(); // print captured USB feature commands (OPK_DIAG_FC builds)
 #endif
 }

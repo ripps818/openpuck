@@ -62,7 +62,7 @@ That's the whole command — the USB flags the firmware needs are baked in, so y
 
 ```bash
 make build CFG_TUD_HID=6 CFG_TUD_TASK_QUEUE_SZ=128   # different interface count / queue depth
-make build EXTRA_FLAGS="-DOPK_LOG=1"                  # add your own defines
+make build EXTRA_FLAGS="-DOPK_DIAG_PCM=1"             # add your own defines; diagnostics are listed in config.h
 make build FQBN=adafruit:nrf52:somethingelse          # a different nRF52840 board
 ```
 
@@ -299,6 +299,18 @@ boot until you drop an OpenPuck `.uf2` on it. Re-pair afterwards. It needs the A
 boards refuse it.
 
 Note on the serial method: puck (Steam/Lizard) mode drops the CDC console by default to free a USB endpoint for the wake-mouse interface, so the serial port may not be present in that mode. Either arm the one-shot debug CDC first (panel debug-CDC toggle / `D` console command, which keeps the console for the next boot), or just use the WebUSB **Factory erase** button, which is available in all modes.
+
+## 6b. Debug build (for bug reports)
+
+Every nightly and release also carries `OpenPuck-<version>-debug.uf2`, built with `make build-debug`. It is the same
+firmware with the diagnostics that are safe to run together switched on: the host-command capture ring (the panel's
+**Capture** card), the feature-command serial log, the PCM counters and the per-section loop timing. It uses about
+25 KB more RAM and is otherwise the standard build, so settings and pairings carry over. Flash it by drag-and-drop
+like any `.uf2`, or tick **debug** next to a release in the panel's *Update from a release* list.
+
+The diagnostics are build flags, all off in the standard build (`config.h` lists them). A specialised diagnosis builds
+with just the flag it needs, for example `make build EXTRA_FLAGS="-DOPK_DIAG_HID_LOG=1"`. `OPK_DIAG_HID_LOG` is not in
+the debug build because it runs `Serial.printf` on the USB task, which is what once overflowed that task's stack.
 
 ## 7. Pair and verify
 

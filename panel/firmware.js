@@ -191,7 +191,7 @@ export function checkUpdateNotice(){
   const el=$("#updAvail");
   if(!fwupEnabled()){ el.classList.add("hide"); return; }
   const inst=verTriple(blobBuildId(S.lastP));
-  const rel=(relCache||[]).find(r=>!r.prerelease && relAsset(r,false));
+  const rel=(relCache||[]).find(r=>!r.prerelease && relAsset(r,"standard"));
   const latest=rel ? verTriple(rel.tag_name) : null;
   const newer = !!(S.dev && inst && latest &&
     (latest[0]>inst[0] || (latest[0]===inst[0] &&
@@ -345,7 +345,7 @@ let relManifest=null;
 // to get off it), null = unknown (no manifest)
 function relPanelUpdatable(rel){
   if(!relManifest) return null;
-  const known=[relAsset(rel,false),relAsset(rel,true)].filter(a=>a && relManifest[a.name]);
+  const known=["standard","factory-reset","debug"].map(v=>relAsset(rel,v)).filter(a=>a && relManifest[a.name]);
   if(!known.length) return null; // not mirrored (yet) — unknown, don't badge (mirror step lags a fresh release by ~a minute)
   return known.some(a=>relManifest[a.name].panelUpdate);
 }
@@ -379,19 +379,22 @@ async function downloadAsset(asset){
   for(const p of parts){ buf.set(p,o); o+=p.length; }
   return uf2ToImage(buf.buffer);
 }
-function relAsset(rel,factory){
-  const suffix=factory ? "factory-reset" : "standard";
+// variant: "standard", "factory-reset" or "debug" (the asset name's suffix)
+function relAsset(rel,suffix){
   return rel.assets.find(a=>a.name==="OpenPuck-"+rel.tag_name+"-"+suffix+".uf2")
       || rel.assets.find(a=>new RegExp("^OpenPuck-.*-"+suffix+"\\.uf2$").test(a.name)) || null;
 }
-function flashRelease(rel,factory){
-  const asset=relAsset(rel,factory);
-  if(!asset){ log("release "+rel.tag_name+" has no "+(factory?"factory-reset":"standard")+" .uf2 asset"); return; }
+const VARIANT_LABEL={"factory-reset":" (factory reset)","debug":" (debug)"};
+const VARIANT_WARN={
+  "factory-reset":" using the FACTORY RESET build?\n\nOn its first boot it wipes ALL settings and the controller pairing — you must re-pair the controller afterwards.",
+  "debug":" using the DEBUG build?\n\nIt keeps your settings and pairing. It adds the Capture view and diagnostic counters and uses about 25 KB more RAM; flash the standard build again to go back."
+};
+function flashRelease(rel,variant){
+  const asset=relAsset(rel,variant);
+  if(!asset){ log("release "+rel.tag_name+" has no "+variant+" .uf2 asset"); return; }
   const kb=Math.round((asset.size||0)/1024);
-  runUpdate("Updating to "+rel.tag_name+(factory?" (factory reset)":""),
-    "Update the puck to "+rel.tag_name+(factory
-      ? " using the FACTORY RESET build?\n\nOn its first boot it wipes ALL settings and the controller pairing — you must re-pair the controller afterwards."
-      : "?")
+  runUpdate("Updating to "+rel.tag_name+(VARIANT_LABEL[variant]||""),
+    "Update the puck to "+rel.tag_name+(VARIANT_WARN[variant]||"?")
     +"\n\n"+asset.name+" ("+kb+" KiB) is downloaded, sent over WebUSB, verified on the puck, and applied on an "
     +"automatic reboot. A failed or interrupted transfer leaves the current firmware untouched.",
     ()=>downloadAsset(asset));
@@ -416,7 +419,7 @@ function renderReleases(){
   list.textContent="";
   let shown=0;
   for(const rel of relCache){
-    const std=relAsset(rel,false), fac=relAsset(rel,true);
+    const std=relAsset(rel,"standard"), fac=relAsset(rel,"factory-reset"), dbg=relAsset(rel,"debug");
     if(!std && !fac) continue;
     shown++;
     const item=document.createElement("div"); item.className="rel-item";
@@ -426,13 +429,24 @@ function renderReleases(){
     date.textContent=(rel.published_at||"").slice(0,10);
     const name=document.createElement("span"); name.className="grow note"; name.style.margin="0";
     name.textContent=rel.name && rel.name!==rel.tag_name ? rel.name : "";
-    const lab=document.createElement("label");
-    const cb=document.createElement("input"); cb.type="checkbox"; cb.disabled=!fac;
-    lab.appendChild(cb); lab.appendChild(document.createTextNode("factory reset"));
-    lab.title=fac ? "Flash the -factory-reset build: wipes settings + pairing once on first boot"
-                  : "this release has no factory-reset build";
+    // factory reset and debug are separate builds, so at most one is ticked
+    const checks={};
+    const labs=[["factory-reset",fac,"factory reset",
+        "Flash the -factory-reset build: wipes settings + pairing once on first boot",
+        "this release has no factory-reset build"],
+      ["debug",dbg,"debug",
+        "Flash the -debug build: adds the Capture view and diagnostic counters, keeps settings and pairing",
+        "this release has no debug build"]].map(([v,a,text,on,off])=>{
+      const lab=document.createElement("label");
+      const cb=document.createElement("input"); cb.type="checkbox"; cb.disabled=!a;
+      cb.onchange=()=>{ if(cb.checked) for(const o in checks) if(o!==v) checks[o].checked=false; };
+      checks[v]=cb;
+      lab.appendChild(cb); lab.appendChild(document.createTextNode(text));
+      lab.title=a ? on : off;
+      return lab;
+    });
     const btn=document.createElement("button"); btn.textContent="Flash "+rel.tag_name;
-    btn.onclick=()=>flashRelease(rel,cb.checked);
+    btn.onclick=()=>flashRelease(rel,Object.keys(checks).find(v=>checks[v].checked)||"standard");
     row.append(ver,date,name);
     // Pre-release marking is read live from the GitHub API on every refresh, so un-marking a release on
     // GitHub makes the badge disappear here as soon as the list is reloaded.
@@ -450,7 +464,7 @@ function renderReleases(){
         +"can only be updated again via UF2 DFU + drag-and-drop.";
       row.appendChild(pill);
     }
-    row.append(lab,btn);
+    row.append(...labs,btn);
     item.appendChild(row);
     if((rel.body||"").trim()){
       const det=document.createElement("details"); det.className="rel-notes";

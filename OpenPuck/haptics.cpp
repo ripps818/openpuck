@@ -1,3 +1,6 @@
+// Timing-critical (relay flush, PCM haptics): -O2. The rest builds at -Os.
+#pragma GCC optimize("O2")
+
 #include "haptics.h"
 #include "triton.h"
 #include "bonds.h"
@@ -312,16 +315,22 @@ void relayClearSlot(uint8_t slot)
 	__set_PRIMASK(pm);
 }
 
-#if OPK_LOG
+#if OPK_DIAG_CAPTURE
 // diagnostic capture: a ring of the last OUTPUT reports Steam sends (rid/slot/bytes/ms), dumped with 'H'.
 struct HapLog {
 	uint32_t ms;
 	uint8_t slot, rid, n, b[16];
 }; // 16 payload bytes: capture full 0x87 settings frames
-// Big always-on ring: log EVERYTHING from boot (Steam writes, our TX-to-controller, link edges) so a rare
-// reconnect-buzz can be caught after the fact -- the trigger happens moments after boot, while this RAM is
-// fresh, and we dump it once the panel reconnects. 4096 * 20B ~= 80KB.
-#define HAPLOG_N 4096
+// Log EVERYTHING from boot (Steam writes, our TX-to-controller, link edges) so a rare reconnect-buzz can be
+// caught after the fact -- the trigger happens moments after boot, while this RAM is fresh, and we dump it once
+// the panel reconnects. 24 B an entry: the 4096 this once held (96 KB) left too little heap and boot-looped.
+#ifndef OPK_HAPLOG_N
+#define OPK_HAPLOG_N 1024
+#endif
+#define HAPLOG_N OPK_HAPLOG_N
+static_assert(
+	HAPLOG_N <= 4096,
+	"the capture ring's head is a uint16_t index; keep RAM for the rest");
 static HapLog g_hapLog[HAPLOG_N];
 static uint16_t g_hapHead = 0;
 static uint16_t g_hapTail =
@@ -341,8 +350,8 @@ void hapLogAdd(uint8_t slot, uint8_t rid, const uint8_t *b, uint16_t n)
 	e.n = (uint8_t)(n > 255 ? 255 : n);
 	for (int i = 0; i < 16; i++)
 		e.b[i] = (i < (int)n) ? b[i] : 0;
-	// uint16_t, NOT uint8_t: HAPLOG_N is 4096, so a uint8_t cast truncated the head to 0..255 and only the
-	// first 256 ring slots were ever used (capture lost ~94% of its depth).
+	// uint16_t, NOT uint8_t: HAPLOG_N exceeds 256, and a uint8_t cast truncates the head so only the first
+	// 256 ring slots are ever used
 	g_hapHead = (uint16_t)((g_hapHead + 1) %
 			       (sizeof g_hapLog / sizeof g_hapLog[0]));
 	__set_PRIMASK(pm);
@@ -393,7 +402,7 @@ bool hapLogPull(uint32_t *logMs, uint8_t *slot, uint8_t *rid, uint8_t *n,
 	}
 	return false;
 }
-#endif // OPK_LOG
+#endif // OPK_DIAG_CAPTURE
 
 // Per-slot helpers. slot==-1 (default) checks the CURRENT poll slot (g_curSlot), used by flush-time code
 // paths that don't have a slot in hand. Callers with a real slot pass it in.

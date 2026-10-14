@@ -16,7 +16,7 @@
 #pragma once
 #include <math.h>
 #include <stdint.h>
-#include "config.h" // OPK_LOG
+#include "config.h" // OPK_DIAG_CAPTURE
 #include "bonds.h" // NSLOT
 
 // Post-(re)connect haptic block default. While armed, ALL Steam haptic relays to that slot are dropped: a
@@ -142,9 +142,9 @@ extern unsigned long g_hapticBlockUntil[NSLOT];
 // only that controller powers off; host-suspend / the panel test button keep the broadcast default (all off).
 void hapticSendShutdown(uint8_t slot = 0xFF);
 
-// ---- diagnostic capture (compiled in only when OPK_LOG): a ring of recent host->controller commands +
+// ---- diagnostic capture (compiled in only with OPK_DIAG_CAPTURE): a ring of recent host->controller commands +
 //      link/TX markers, dumped over WebUSB. No-ops in a production build so call sites vanish. ----
-#if OPK_LOG
+#if OPK_DIAG_CAPTURE
 void hapLogAdd(uint8_t slot, uint8_t rid, const uint8_t *b, uint16_t n);
 void hapticDumpLog(); // 'H' console dump of the recent OUTPUT-report history
 // WebUSB capture drain: resetDrain(true) rewinds to the OLDEST entry (dump the whole ring from boot);

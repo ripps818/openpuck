@@ -56,8 +56,10 @@ static volatile bool g_swFrameRequest = false;
 // Motion sample for the panel's 3D view (op 0x2A <slot> -> one 0xAF frame). The panel asks ~25 times a second, so
 // it is deferred to the usbd task like the blob; 0xFF = nothing pending.
 static volatile uint8_t g_motionSlot = 0xFF;
+#if OPK_DIAG_PCM
 // Grip PCM stream counters (op 0x35 -> one 0xB1 frame), a debug read for tools/switch_hd_test.py --diag
 static volatile bool g_pcmDiagRequest = false;
+#endif
 // Type whose mapping profiles the next 0xB0 frame carries (v30); 0xFF = nothing pending.
 static volatile uint8_t g_mapDumpType = 0xFF;
 // Firmware-update ack ([0xAB][5][status][nextOff u32 LE]). Like the blob it is written from the usbd task
@@ -229,7 +231,7 @@ static void webusbSendBlob()
 	p[35] = (uint8_t)g_pollPeriodUs;
 	p[36] = (uint8_t)(g_pollPeriodUs >>
 			  8); // measured poll period (intended 4000)
-	p[37] = OPK_LOG; // logging build? panel shows/hides its log UI
+	p[37] = OPK_DIAG_CAPTURE; // capture build? panel shows/hides its capture view
 	p[38] = g_battery
 		[g_curSlot >= 0 && g_curSlot < NSLOT ?
 			 g_curSlot :
@@ -479,7 +481,7 @@ static void webusbSendBondExport()
 }
 
 // Stream the saved (pre-reset) flight-recorder trail to the panel as 0xA8 frames. Always compiled -- the
-// recorder is not OPK_LOG-gated (field hangs happen on release builds too). Frame layout mirrors the 0xA6
+// recorder is not behind a diagnostic flag (field hangs happen on release builds too). Frame layout mirrors the 0xA6
 // capture drain so the same drop-on-full discipline applies (a write only issues when the FIFO can take the
 // whole frame -> usb_web.write() never spins -> loop() never stalls here):
 //   header: [0xA8][29][T=2][count u16][total u16][loopPerSec u16][stallMs][curStage][usbdStk u16][loopStk u16]
@@ -717,6 +719,7 @@ static void webusbSendMotion(uint8_t slot)
 	}
 }
 
+#if OPK_DIAG_PCM
 // 0x35: grip PCM stream counters since boot (g_pcmDiag), written from the usbd task like the blob:
 //   [0xB1][172][ver=1][made sent acked requeued lost evicted: u32 LE][0x44 events 0..15: u16 LE]
 //   [polls/s: u16 LE][relays/s: u16 LE][Switch HD wave rate, kHz][reply delay buckets 0..15: u16 LE]
@@ -734,7 +737,9 @@ static void webusbSendPcmDiag()
 	f[0] = 0xB1;
 	f[1] = 200;
 	f[2] = 1;
-	const PcmDiag d = g_pcmDiag;
+	// a snapshot, static like the frame: a stack copy put ~250 B on the usbd task's stack on every SOF
+	static PcmDiag d;
+	d = g_pcmDiag;
 	const uint32_t c[6] = { d.made,	    d.sent, d.acked,
 				d.requeued, d.lost, d.evicted };
 	for (uint8_t i = 0; i < 6; i++)
@@ -778,6 +783,7 @@ static void webusbSendPcmDiag()
 		usb_web.flush();
 	}
 }
+#endif
 
 // All of a type's mapping profiles (see btnmapDump). False when the frame did not fit the TX FIFO (an unsolicited
 // status blob can be in it), so the caller keeps the request and tries again on the next SOF: the panel waits
@@ -835,10 +841,12 @@ static void webusbSofDrain(void)
 		webusbSendMotion(g_motionSlot);
 		g_motionSlot = 0xFF;
 	}
+#if OPK_DIAG_PCM
 	if (g_pcmDiagRequest) {
 		g_pcmDiagRequest = false;
 		webusbSendPcmDiag();
 	}
+#endif
 	if (g_mapDumpType != 0xFF) {
 		const uint8_t et = g_mapDumpType;
 		if (webusbSendMapDump(et) && g_mapDumpType == et)
@@ -1009,7 +1017,7 @@ static void webusbSendLizardV2()
 	usb_web.write(f, (uint16_t)(2 + count * 24));
 	usb_web.flush();
 }
-#if OPK_LOG
+#if OPK_DIAG_CAPTURE
 // Stream the capture ring (haptics / relayed host commands) to the panel as 0xA6 frames. Frame formats:
 //   entry: [0xA6][L][T=1][age u32 LE][slot][rid][n][bytes n]   (L = 8 + n)
 //   end:   [0xA6][1][T=0]
@@ -1061,7 +1069,7 @@ static void webusbDrainCapture()
 	if (tud_vendor_write_available() >= 3)
 		webusbCapEnd();
 }
-#endif // OPK_LOG
+#endif // OPK_DIAG_CAPTURE
 void webusbPoll()
 {
 	// 160 B holds the largest command: a firmware-update data chunk 0x21 = [op][off u32][len][<=128 data]
@@ -1155,11 +1163,11 @@ void webusbPoll()
 			}
 			// 0x10: stream the saved flight-recorder trail (0xA8 frames). buf[1]=1 restarts (header + rewind),
 			// buf[1]=0 continues the drain. Drained straight from loop context like the 0x06 capture drain --
-			// webusbDrainFlight is drop-on-full so it never blocks. Always available (recorder isn't OPK_LOG).
+			// webusbDrainFlight is drop-on-full so it never blocks. Always available (the recorder has no flag).
 			else if (op == 0x10) {
 				webusbDrainFlight(buf[1] != 0);
 			}
-#if OPK_LOG
+#if OPK_DIAG_CAPTURE
 
 			// rewind drain: buf[1]=1 from boot (whole ring), 0 from now
 			else if (op == 0x05) {
@@ -1183,8 +1191,10 @@ void webusbPoll()
 				hapticImuOn();
 			} else if (op == 0x2A) {
 				g_motionSlot = buf[1] < NSLOT ? buf[1] : 0;
+#if OPK_DIAG_PCM
 			} else if (op == 0x35) {
 				g_pcmDiagRequest = true;
+#endif
 			} else if (op == 0x36) {
 				hapticTestHdPan();
 			}

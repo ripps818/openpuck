@@ -27,7 +27,7 @@ FORMAT_FILES := $(shell find OpenPuck ReversePuckFirmware puck_sniffer pairtui \
 #                               never fit a frame -> blank panel. Sized to hold a full blob with headroom.
 # They're baked in here so a normal build is just `make build` -- no need to remember the flags. Override any
 # on the command line, e.g.   make build CFG_TUD_HID=8 CFG_TUD_TASK_QUEUE_SZ=128
-# or add your own defines:     make build EXTRA_FLAGS="-DOPK_LOG=1"
+# or add your own defines:     make build EXTRA_FLAGS="-DOPK_DIAG_PCM=1" (diagnostics: config.h, all off by default)
 FQBN ?= adafruit:nrf52:feather52840
 CFG_TUD_HID ?= 6
 # Optional output paths; when set, --clean is implied and build artifacts land in OUTPUT_DIR.
@@ -47,10 +47,22 @@ EXTRA_FLAGS ?=
 # so we wrap: webusb_config.cpp takes XID and passes everything else to __real_.
 # The device descriptor is wrapped the same way (mode_ps5.cpp): the clean DualSense mode must report no
 # serial string, and the Adafruit core always sets iSerialNumber.
+# xTaskCreate is wrapped to give the core's "usbd" task a bigger stack than its hard-coded 800 B (usb_tx.cpp).
 RF_JOURNAL_BASE ?= 0x86000
-OPENPUCK_LINK_FLAGS ?= -Wl,--wrap=tud_vendor_control_xfer_cb -Wl,--wrap=tud_descriptor_device_cb -Wl,--section-start=.rf_journal_guard=$(RF_JOURNAL_BASE)
+OPENPUCK_LINK_FLAGS ?= -Wl,--wrap=tud_vendor_control_xfer_cb -Wl,--wrap=tud_descriptor_device_cb -Wl,--wrap=xTaskCreate -Wl,--section-start=.rf_journal_guard=$(RF_JOURNAL_BASE)
+# Size over speed. The core's default -Ofast (with its raised inline limit) made the image ~100 KB larger, and a
+# WebUSB update caps the app at 384 KB (FWUP_MAX_IMG in fw_update.cpp). -ffast-math keeps the float semantics
+# -Ofast had. The timing-sensitive files opt back into -O2 with a pragma at their top (rf_link, radio, haptics,
+# mode_ps5_audio, mode_switch_pro). LTO is no option: the core fails to link with it on this GCC 9 toolchain,
+# and its LTO can bypass the --wrap hooks below.
+OPT_FLAGS ?= -Os -ffast-math
+# The core's float flags minus its -u _printf_float: nothing prints floats, and that pulls in ~8 KB of formatting.
+FLOAT_FLAGS ?= -mfloat-abi=hard -mfpu=fpv4-sp-d16
+OPT_PROPS = --build-property "compiler.optimization_flag=$(OPT_FLAGS)" --build-property "build.float_flags=$(FLOAT_FLAGS)"
+# TinyUSB classes the core enables by default that no mode uses (~7 KB flash, ~1.5 KB RAM)
+USB_CLASS_FLAGS = -DCFG_TUD_MSC=0 -DCFG_TUD_MIDI=0 -DCFG_TUD_VIDEO=0 -DCFG_TUD_VIDEO_STREAMING=0
 # {build.flags.usb} is expanded by arduino-cli (VID/PID/strings); pass it through verbatim.
-USB_EXTRA_FLAGS = -DNRF52840_XXAA {build.flags.usb} -DCFG_TUD_HID=$(CFG_TUD_HID) -DCFG_TUD_TASK_QUEUE_SZ=$(CFG_TUD_TASK_QUEUE_SZ) -DCFG_TUD_VENDOR_TX_BUFSIZE=$(CFG_TUD_VENDOR_TX_BUFSIZE) -DOPK_RF_JOURNAL_BASE=$(RF_JOURNAL_BASE) $(EXTRA_FLAGS)
+USB_EXTRA_FLAGS = -DNRF52840_XXAA {build.flags.usb} -DCFG_TUD_HID=$(CFG_TUD_HID) -DCFG_TUD_TASK_QUEUE_SZ=$(CFG_TUD_TASK_QUEUE_SZ) -DCFG_TUD_VENDOR_TX_BUFSIZE=$(CFG_TUD_VENDOR_TX_BUFSIZE) -DOPK_RF_JOURNAL_BASE=$(RF_JOURNAL_BASE) $(USB_CLASS_FLAGS) $(EXTRA_FLAGS)
 # When BUILD_PATH is set, --clean + path flags are injected; omitted for fast incremental dev builds.
 _PATH_FLAGS = $(if $(BUILD_PATH),--clean --build-path $(BUILD_PATH) --output-dir $(OUTPUT_DIR))
 
@@ -66,7 +78,7 @@ UF2_OUTPUT_DIR ?= build/openpuck
 # the bottom swallows it so make doesn't try to build the port path as a target.
 FLASH_PORT := $(filter-out format format-check check panel panel-check glyphs build build-raytac \
 	package-raytac flash-raytac deploy-raytac provision-raytac-softdevice \
-	build-recovery reversepuck reversepuck-flash reversepuck-deploy flash deploy,$(MAKECMDGOALS))
+	build-recovery build-debug reversepuck reversepuck-flash reversepuck-deploy flash deploy,$(MAKECMDGOALS))
 UPLOAD = arduino-cli upload -b $(FQBN) -p "$(FLASH_PORT)" OpenPuck
 
 # ReversePuck (controller dongle, 28DE:1302) build flags. It has ONE HID interface (core default 2 is fine),
@@ -76,14 +88,14 @@ RP_USB_FLAGS = -DNRF52840_XXAA {build.flags.usb} -DCFG_TUD_TASK_QUEUE_SZ=$(CFG_T
 RP_UPLOAD = arduino-cli upload -b $(FQBN) -p "$(FLASH_PORT)" ReversePuckFirmware
 
 .PHONY: format format-check check panel panel-check build build-raytac uf2 package-raytac \
-	flash-raytac deploy-raytac provision-raytac-softdevice build-recovery \
+	flash-raytac deploy-raytac provision-raytac-softdevice build-recovery build-debug \
 	reversepuck reversepuck-flash reversepuck-deploy flash deploy \
 	install-wireplumber uninstall-wireplumber
 
 ## Compile the firmware with the required USB flags baked in. Override CFG_TUD_HID / CFG_TUD_TASK_QUEUE_SZ /
 ## EXTRA_FLAGS / FQBN as make variables if needed.
 build:
-	arduino-cli compile -b $(FQBN) $(_PATH_FLAGS) --build-property "build.extra_flags=$(USB_EXTRA_FLAGS)" --build-property "compiler.c.elf.extra_flags=$(OPENPUCK_LINK_FLAGS)" OpenPuck
+	arduino-cli compile -b $(FQBN) $(_PATH_FLAGS) --build-property "build.extra_flags=$(USB_EXTRA_FLAGS)" --build-property "compiler.c.elf.extra_flags=$(OPENPUCK_LINK_FLAGS)" $(OPT_PROPS) OpenPuck
 
 ## Build for the Raytac MDBT50Q-CX-40 without replacing its Open DFU bootloader.
 ## Like `build`, this does NOT run gen_version.sh -- run it yourself first if you want version provenance
@@ -95,7 +107,7 @@ build-raytac:
 		--build-path build/cache/raytac \
 		--output-dir build/raytac \
 		--build-property "build.extra_flags=$(USB_EXTRA_FLAGS) -DOPK_BOARD_MDBT50Q_CX_40=1" \
-		--build-property "compiler.c.elf.extra_flags=$(OPENPUCK_LINK_FLAGS)" OpenPuck
+		--build-property "compiler.c.elf.extra_flags=$(OPENPUCK_LINK_FLAGS)" $(OPT_PROPS) OpenPuck
 
 ## Package an existing Raytac build for its factory Nordic Open DFU bootloader.
 package-raytac:
@@ -138,6 +150,13 @@ provision-raytac-softdevice:
 ## One-time factory-reset recovery image (wipes persistent storage once on first boot). See §6 of the build doc.
 build-recovery:
 	$(MAKE) build BUILD_PATH=$(BUILD_PATH) OUTPUT_DIR=$(OUTPUT_DIR) EXTRA_FLAGS="$(EXTRA_FLAGS) -DOPK_FACTORY_RESET=1"
+
+## The general-purpose debug image CI publishes next to each nightly: the diagnostics that are safe to run together
+## (see config.h): the host-command capture ring, the feature-command log, the PCM counters and the loop timing.
+## Left out is OPK_DIAG_HID_LOG, which runs Serial.printf on the USB task; build it alone, for a specific problem.
+DEBUG_FLAGS ?= -DOPK_DIAG_CAPTURE=1 -DOPK_DIAG_FC=1 -DOPK_DIAG_PCM=1 -DOPK_DIAG_LOOP_TIMING=1
+build-debug:
+	$(MAKE) build BUILD_PATH=$(BUILD_PATH) OUTPUT_DIR=$(OUTPUT_DIR) EXTRA_FLAGS="$(EXTRA_FLAGS) $(DEBUG_FLAGS)"
 
 ## Build OpenPuck and convert the .hex into a drag-and-drop .uf2 (build/openpuck/OpenPuck.ino.uf2 by default).
 ## Same overrides as `build` (CFG_TUD_HID / EXTRA_FLAGS / FQBN), e.g. a recovery UF2:
