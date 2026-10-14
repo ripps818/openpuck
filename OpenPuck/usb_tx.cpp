@@ -161,3 +161,21 @@ void usbTxBegin(void)
 {
 	// Nothing to arm: usbTxPump() is driven directly from loop(). Kept for call-site stability.
 }
+
+// Every TinyUSB callback runs on the core's "usbd" task, which it creates with a hard-coded 200 words (800 B);
+// hang boots reported that stack exhausted. Linked with --wrap=xTaskCreate (Makefile), this raises that one
+// task's stack and passes every other task through unchanged.
+#define USBD_STACK_WORDS 512
+extern "C" BaseType_t __real_xTaskCreate(TaskFunction_t code, const char *name,
+					 configSTACK_DEPTH_TYPE depth,
+					 void *param, UBaseType_t prio,
+					 TaskHandle_t *handle);
+extern "C" BaseType_t __wrap_xTaskCreate(TaskFunction_t code, const char *name,
+					 configSTACK_DEPTH_TYPE depth,
+					 void *param, UBaseType_t prio,
+					 TaskHandle_t *handle)
+{
+	if (name && strcmp(name, "usbd") == 0 && depth < USBD_STACK_WORDS)
+		depth = USBD_STACK_WORDS;
+	return __real_xTaskCreate(code, name, depth, param, prio, handle);
+}

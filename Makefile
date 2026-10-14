@@ -47,8 +47,9 @@ EXTRA_FLAGS ?=
 # so we wrap: webusb_config.cpp takes XID and passes everything else to __real_.
 # The device descriptor is wrapped the same way (mode_ps5.cpp): the clean DualSense mode must report no
 # serial string, and the Adafruit core always sets iSerialNumber.
+# xTaskCreate is wrapped to give the core's "usbd" task a bigger stack than its hard-coded 800 B (usb_tx.cpp).
 RF_JOURNAL_BASE ?= 0x86000
-OPENPUCK_LINK_FLAGS ?= -Wl,--wrap=tud_vendor_control_xfer_cb -Wl,--wrap=tud_descriptor_device_cb -Wl,--section-start=.rf_journal_guard=$(RF_JOURNAL_BASE)
+OPENPUCK_LINK_FLAGS ?= -Wl,--wrap=tud_vendor_control_xfer_cb -Wl,--wrap=tud_descriptor_device_cb -Wl,--wrap=xTaskCreate -Wl,--section-start=.rf_journal_guard=$(RF_JOURNAL_BASE)
 # Size over speed. The core's default -Ofast (with its raised inline limit) made the image ~100 KB larger, and a
 # WebUSB update caps the app at 384 KB (FWUP_MAX_IMG in fw_update.cpp). -ffast-math keeps the float semantics
 # -Ofast had. The timing-sensitive files opt back into -O2 with a pragma at their top (rf_link, radio, haptics,

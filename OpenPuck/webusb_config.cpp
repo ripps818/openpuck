@@ -734,7 +734,9 @@ static void webusbSendPcmDiag()
 	f[0] = 0xB1;
 	f[1] = 200;
 	f[2] = 1;
-	const PcmDiag d = g_pcmDiag;
+	// a snapshot, static like the frame: a stack copy put ~250 B on the usbd task's stack on every SOF
+	static PcmDiag d;
+	d = g_pcmDiag;
 	const uint32_t c[6] = { d.made,	    d.sent, d.acked,
 				d.requeued, d.lost, d.evicted };
 	for (uint8_t i = 0; i < 6; i++)
