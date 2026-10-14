@@ -56,8 +56,9 @@ static inline bool slotPoweringOff(int slot)
 //
 // Pure Lizard also keeps the lizard/pad-haptics switch (id9) to itself: haptics.cpp
 // lands it for the trackpad haptics setting, and a host that writes id9=0 every
-// few seconds (Steam's lizard-off heartbeat) would switch the controller's own
-// trackpad ticks and clicks off again right after.
+// 3 s would switch the controller's own trackpad ticks and clicks off again
+// right after. Steam and any SDL3 program with the puck open as a gamepad do:
+// SDL's Steam Triton driver re-sends it every 3000 ms for as long as it runs.
 static uint8_t filterSettingsRelay(const uint8_t *src, uint16_t len,
 				   uint8_t dst[RELAY_CMD_MAXP])
 {
