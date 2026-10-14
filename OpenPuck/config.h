@@ -307,6 +307,9 @@ enum {
 #define PAD_TICK_MAX 4
 #define PAD_TICKGAIN_DEFAULT 11
 #define HAPTIC_LIFT_DEFAULT 1
+// The DualSense plays its wave track as the game mixed it (gain 0.5x, the expander lifting louder passages), so
+// its soft boost starts off
+#define HAPTIC_LIFT_DS5_DEFAULT 0
 #define HAPTIC_LIFT_MAX 4
 #define TRIG_HAPTICS_OFF 0
 #define TRIG_HAPTICS_PADS 1

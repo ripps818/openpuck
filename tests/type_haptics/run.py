@@ -112,11 +112,12 @@ int main()
 	// defaults: every type on wave; 85% limiter, -9 dB click, ticks left to the controller
 	for (int et = 0; et < ET_COUNT; et++) {
 		assert(g_typeHaptic[HAP_KNEE][et] == 85 && g_typeHaptic[HAP_CLICK][et] == 26 && g_typeHaptic[HAP_TICK][et] == 0 && g_typeHaptic[HAP_TICKGAIN][et] == 11);
-		assert(g_typeHaptic[HAP_STYLE][et] == AUDIO_STYLE_WAVE && g_typeHaptic[HAP_LIFT][et] == 1);
+		// soft boost: gentle everywhere but the DualSense, which plays the track as mixed
+		assert(g_typeHaptic[HAP_STYLE][et] == AUDIO_STYLE_WAVE && g_typeHaptic[HAP_LIFT][et] == (et == ET_DS5 ? 0 : 1));
 	}
 	// soft boost: 0..4 on the Switch and DualSense only
 	assert(typeHapticSet(HAP_LIFT, ET_SWITCH, 0) && typeHapticSet(HAP_LIFT, ET_DS5, 4) && !typeHapticSet(HAP_LIFT, ET_DS5, 5) && !typeHapticSet(HAP_LIFT, ET_XBOX, 2));
-	typeHapticSet(HAP_LIFT, ET_SWITCH, 1); typeHapticSet(HAP_LIFT, ET_DS5, 1);
+	typeHapticSet(HAP_LIFT, ET_SWITCH, 1); typeHapticSet(HAP_LIFT, ET_DS5, 0);
 	// trigger haptics: off / trackpads / grips / both, DualSense only, trackpads by default
 	assert(g_typeHaptic[HAP_TRIG][ET_DS5] == TRIG_HAPTICS_PADS && typeHapticSet(HAP_TRIG, ET_DS5, TRIG_HAPTICS_BOTH) && !typeHapticSet(HAP_TRIG, ET_DS5, 4) && !typeHapticSet(HAP_TRIG, ET_SWITCH, 1));
 	typeHapticSet(HAP_TRIG, ET_DS5, TRIG_HAPTICS_PADS);

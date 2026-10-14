@@ -29,7 +29,8 @@ export const TYPE_DEFS = [
   {key:"SWITCH", name:"Switch", labels:{1:"A",2:"B",3:"X",4:"Y",5:"L",6:"R",7:"L-Stick",8:"R-Stick",9:"Minus",10:"Plus",11:"Home",19:"ZL",20:"ZR",...DPAD,18:"Capture / Screenshot"}, padTargets:{},
     haptics:{rumble:100}},
   {key:"DS4", name:"DS4", labels:{1:"Cross",2:"Circle",3:"Square",4:"Triangle",5:"L1",6:"R1",7:"L3",8:"R3",9:"Create",10:"Options",11:"PS",19:"L2",20:"R2",...DPAD,16:"Touchpad Click"}, padTargets:PS_PADS},
-  {key:"DS5", name:"DS5", labels:{1:"Cross",2:"Circle",3:"Square",4:"Triangle",5:"L1",6:"R1",7:"L3",8:"R3",9:"Create",10:"Options",11:"PS",19:"L2",20:"R2",...DPAD,16:"Touchpad Click",17:"Mute"}, padTargets:PS_PADS},
+  {key:"DS5", name:"DS5", labels:{1:"Cross",2:"Circle",3:"Square",4:"Triangle",5:"L1",6:"R1",7:"L3",8:"R3",9:"Create",10:"Options",11:"PS",19:"L2",20:"R2",...DPAD,16:"Touchpad Click",17:"Mute"}, padTargets:PS_PADS,
+    haptics:{lift:0}},
 ];
 // Grip strength (percent) and haptic style a type starts with: the firmware's g_typeRumbleScaleDefault and kHapticStyleDefault
 const typeDefaults=def=>({rumble:200,style:3,click:26,tick:0,tickGain:11,knee:85,lift:1,trig:1,dpad:1,...def.haptics});

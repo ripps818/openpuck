@@ -564,7 +564,7 @@ Messages:
     | 2 | trackpad click gain step | all | 0-31 = -20 to -1 dB, then +1 to +12 dB (0 dB is skipped: gain byte 0 is the legacy haptic stop) | 26 (+7 dB) |
     | 3 | movement-tick spacing | all | 0 = the controller plays its own ticks, 1-4 = the puck plays them, 11000 / 5500 / 2500 / 1500 units of pad travel apart | 0 |
     | 4 | movement-tick gain step | all | as setting 2 | 11 (-9 dB) |
-    | 5 | soft boost of the grip wave stream | Switch, DS5 | `0` off, `1`-`4` raise quiet passages by up to 1.5× / 2× / 3× / 4× | 1 (1.5×) |
+    | 5 | soft boost of the grip wave stream | Switch, DS5 | `0` off, `1`-`4` raise quiet passages by up to 1.5× / 2× / 3× / 4× | 1 (1.5×); the DualSense's 0 (off) |
     | 6 | where adaptive-trigger effects are felt | DS5 | `0` off, `1` trackpads, `2` grips, `3` both | 1 |
     | 7 | trackpad D-pad feedback | all | `0` off, `1` a click pulse on a pad in a D-pad mode each time its direction changes, and on each click while Trackpad haptics is Off | 1 (the Switch's starts from field 230's old value) |
 
