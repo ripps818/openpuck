@@ -6,6 +6,7 @@ import { loadFlightTrail, onWedge, renderHangLog, trailAdd, updateStabUI } from 
 import { checkUpdateNotice, loadReleases } from './firmware.js';
 import { lzV2Load } from './lizard.js';
 import { profilesDrain } from './profiles.js';
+import { cloneRender } from './backup.js';
 
 let ifNum=0;
 
@@ -40,6 +41,7 @@ async function openDevice(d){
     $("#connectBtn").textContent="Reconnect";
     $("#panel").classList.remove("hide"); $("#hdrInfo").classList.remove("hide");
     applyDeviceProfile(); // show the controller UI + hide puck-only cards (or vice-versa)
+    cloneRender();
     log(`connected — ${kind} ${S.dev.serialNumber||"?"} (VID ${S.dev.vendorId.toString(16)} PID ${S.dev.productId.toString(16)} iface ${ifNum})`);
     // resume a stability test across the reset: re-arm the firmware buzz and start timing the next run
     // (puck-only: the dongle has no stability-test / haptic path)
@@ -94,6 +96,7 @@ function onGone(){
   // the next device may be a different puck: its profiles are read afresh
   S.profiles=S.profiles.map(()=>null); S.profileSel=[]; S.profileLoadDue.clear(); S.gesture=null;
   const preSel=$("#ledPreset"); if(preSel) preSel.value="default";
+  cloneRender();
   checkUpdateNotice(); // no device = no notice
   $("#connState").textContent="reconnecting…"; $("#connState").className="pill dn";
   $("#panel").classList.add("hide"); $("#hdrInfo").classList.add("hide");

@@ -134,6 +134,8 @@
      and firmware-update cards. This leaves the debugonly/lizard inline visibility rules untouched, so switching
      back to a puck restores them. The sidebar drops pages left with no visible card. */
   body.dongle .page .card:not(.dongle-ok), body.dongle .puck-only{display:none !important}
+  .cloneSub{font-size:13px;color:var(--fg);margin:16px 0 6px;padding-top:12px;border-top:1px solid #272d3d}
+  #cloneHome .cloneSub{display:none}
   .card h2{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--mut);margin:0 0 14px}
   .row{display:flex;align-items:center;gap:14px;margin:12px 0;flex-wrap:wrap}
   .row label{flex:0 0 150px;color:var(--fg)}
@@ -242,6 +244,9 @@
 </div>
 <div class="wrap">
   <p class="sub">First connect uses the Chrome/Edge device picker; reconnects are automatic. If the picker is empty, quit any app holding the device or replug.</p>
+
+  <!-- holds the clone section while no OpenPuck is connected (the Backup & clone card is hidden then) -->
+  <div class="card" id="cloneHome"><h2>Clone pairings from an official puck</h2></div>
 
   <div id="panel" class="hide">
     <nav id="nav">
@@ -629,7 +634,7 @@
       <p id="ledOld" class="note hide">This puck's firmware predates the status LED settings — update it to configure them.</p>
     </div>
 
-    <div class="card">
+    <div class="card" id="backupCard">
       <h2>Backup &amp; clone</h2>
       <p class="note" style="margin-top:0">Save this puck's controller pairings <em>and</em> every setting to a file, then restore them onto another puck. The other puck becomes a clone — any controller paired to this one connects to it with <strong>no re-pairing</strong>. (Also a plain backup: re-import after a factory erase to get everything back.)</p>
       <div class="row" style="margin:0;flex-wrap:wrap">
@@ -638,6 +643,17 @@
         <input type="file" id="backupFile" accept="application/json,.json" style="display:none">
       </div>
       <p class="note">Import <strong>overwrites</strong> all pairings and settings on the connected puck, then reboots it (~2 s — reconnect after). Tip: pair every controller to one puck, export once, then import onto each spare.</p>
+      <div id="cloneSec">
+        <h3 class="cloneSub">Clone from an official puck</h3>
+        <p class="note" style="margin-top:0">Copy the controller pairings off a Valve puck so those controllers connect to this OpenPuck with <strong>no re-pairing</strong>. Works with one USB port: <b>1.</b> plug in the official puck and read it, <b>2.</b> unplug it, plug in the OpenPuck, Connect, and write. With both plugged in, the browser lists two identical "Steam Controller Puck" entries in step 1 — pick either; if it's the OpenPuck, the panel says so and you pick the other. Existing pairings and settings on the OpenPuck are kept.</p>
+        <div class="row" style="margin:0;flex-wrap:wrap">
+          <button id="cloneRead">1. Read official puck…</button>
+          <button id="cloneWrite" class="primary" disabled>2. Write to this OpenPuck</button>
+          <button id="cloneForget" class="hide">Forget</button>
+        </div>
+        <p class="note" id="cloneStatus">—</p>
+        <p class="note"><b>macOS:</b> reading the official puck needs Chrome in <em>System Settings → Privacy &amp; Security → Input Monitoring</em> (restart Chrome after enabling it). The puck's interfaces include a keyboard, so macOS asks for this — the page can only reach the puck's vendor channel, never keystrokes. You can switch it off again afterwards.</p>
+      </div>
     </div>
 
     <div class="card dongle-ok" id="maintCard">
@@ -1720,7 +1736,7 @@ for(let i=0;i<12;i++) LZ_KEYS.push([0x3a+i,"F"+(i+1)]);
 // every key is drawn as a keycap bearing its name (panel/icons.js)
 for(const k of LZ_KEYS) if(k[0]) k.push("key:"+k[1]);
 const LZ_MBTNS = [[1,"Left click","mouseL"],[2,"Right click","mouseR"],[4,"Middle click","mouseM"]];
-const LZ_AXIS_SRC = [[0,"Right trackpad","padR"],[1,"Left stick","stickL"],[3,"Right stick","stickR"],[2,"Gyro","gyro"]];
+const LZ_AXIS_SRC = [[0,"Right trackpad","padR"],[4,"Left trackpad","padL"],[1,"Left stick","stickL"],[3,"Right stick","stickR"],[2,"Gyro","gyro"]];
 const LZ_SCROLL_SRC = [[0,"Left trackpad","padL"],[1,"Left stick","stickL"],[3,"Right stick","stickR"]];
 const LZ_GYRO_ACT = [[0,"Always"],[1,"While right pad touched","padR"],[2,"While left stick deflected","stickL"],[3,"While hold-button held"]];
 const LZ_CONSUMER = [[1,"Volume +","volUp"],[2,"Volume −","volDown"]];
@@ -4518,215 +4534,6 @@ function applyDeviceProfile(){
   syncNav(); // the sidebar drops the pages this device has no cards for
 }
 
-// ---- panel/protocol.js ----
-let ifNum=0;
-
-// Every VID an OpenPuck can enumerate under — the picker/auto-reconnect can only see a device whose VID is
-// listed here, so a new mode with a new identity MUST be added (1209 = DirectInput, 2E8A = SInput).
-const USB_FILTERS=[{vendorId:0x28DE},{vendorId:0x045E},{vendorId:0x057E},{vendorId:0x0F0D},{vendorId:0x054C},{vendorId:0x1209},{vendorId:0x2E8A}];
-// Acquire+set up an already-chosen USBDevice (shared by the manual picker and the no-picker auto-reconnect).
-async function openDevice(d){
-  try{
-    S.dev=d;
-    S.blobSeen=false;
-    pendingInRead=null;
-    await S.dev.open();
-    if(S.dev.configuration===null) await S.dev.selectConfiguration(1);
-    let found=null;
-    for(const itf of S.dev.configuration.interfaces){
-      const a=itf.alternate;
-      if(a.interfaceClass!==0xFF) continue;
-      if(a.interfaceSubClass===0x5D) continue;
-      let bin=0,bout=0;
-      for(const e of a.endpoints){ if(e.type==="bulk"){ if(e.direction==="in")bin=e.endpointNumber; else bout=e.endpointNumber; } }
-      if(bin&&bout){ found={ifNum:itf.interfaceNumber, epIn:bin, epOut:bout}; break; }
-    }
-    if(!found){ log("no WebUSB bulk vendor interface — reflash firmware with WebUSB enabled, or another app may be holding the device"); S.dev=null; return false; }
-    ifNum=found.ifNum; S.epIn=found.epIn; S.epOut=found.epOut;
-    await S.dev.claimInterface(ifNum);
-    await S.dev.controlTransferOut({requestType:"class", recipient:"interface", request:0x22, value:0x01, index:ifNum});
-    S.isDongle = (S.dev.productId === 0x1302); // ReversePuck controller dongle vs a puck (0x1304 / real)
-    const kind = S.isDongle ? "ReversePuck" : "puck";
-    $("#connState").textContent="connected"; $("#connState").className="pill up";
-    $("#connState").title = S.dev.serialNumber ? (kind+" serial "+S.dev.serialNumber) : "";
-    $("#connectBtn").textContent="Reconnect";
-    $("#panel").classList.remove("hide"); $("#hdrInfo").classList.remove("hide");
-    applyDeviceProfile(); // show the controller UI + hide puck-only cards (or vice-versa)
-    log(`connected — ${kind} ${S.dev.serialNumber||"?"} (VID ${S.dev.vendorId.toString(16)} PID ${S.dev.productId.toString(16)} iface ${ifNum})`);
-    // resume a stability test across the reset: re-arm the firmware buzz and start timing the next run
-    // (puck-only: the dongle has no stability-test / haptic path)
-    if(S.stabArmed && !S.isDongle){ await send([0x0F,1]); S.stabStart=Date.now(); log("stability test resumed — timing next run"); }
-    updateStabUI();
-    // The lizard-map dump (0x11 -> 0xAA) is loaded LAZILY, gated on the firmware advertising v16+ (see
-    // applyBlob). Older firmware (every pre-lizard build, including the v15 updater builds) silently drops
-    // 0x11, and readLizard()'s blocking transferIn would then hang forever -- wedging the status poll the
-    // firmware-update gate depends on. So we never send 0x11 until a status blob proves the puck speaks v16.
-    S.lizardLoaded=false; S.lizardLoadDue=false;
-    startPolling();
-    // GitHub releases are PUCK firmware; skip the fetch for a dongle (it flashes via the local-file card).
-    if(!S.isDongle) loadReleases(false); // background, cached: feeds the update-available notice + pre-warms the update tab
-    return true;
-  }catch(e){ log("connect failed: "+e.message); S.dev=null; return false; }
-}
-// Manual connect: shows the Chrome device picker (needed once, to authorize the device).
-async function connect(){
-  try{ const d = await navigator.usb.requestDevice({filters:USB_FILTERS}); await openDevice(d); }
-  catch(e){ log("connect failed: "+e.message); }
-}
-// No-picker reconnect: reopen a device already authorized this browser. Returns true if it connected.
-async function autoConnect(){
-  if(S.dev) return true;
-  try{
-    const ds = await navigator.usb.getDevices();
-    const d = ds.find(x=>USB_FILTERS.some(f=>f.vendorId===x.vendorId));
-    if(d) return await openDevice(d);
-  }catch(e){}
-  return false;
-}
-function onGone(){
-  // if a stability test is running, this disconnect is the reset that ended the run -- record its uptime
-  // (kept in-page so it survives the reset + reconnect, shown next to Last reset).
-  let up=null;
-  if(S.stabArmed && S.stabStart){ up=(Date.now()-S.stabStart)/1000; S.stabLastRun={secs:up}; log("⏱ stability: stayed up "+fmtDur(up)+", then reset"); S.stabStart=0; }
-  // if the PREVIOUS reset was never classified (no full blob landed between two resets), flush it as
-  // "unclassified" instead of silently overwriting it -- every reset must leave a row.
-  if(S.pendingHang){
-    S.hangLog.unshift({ time:new Date(S.pendingHang.t).toLocaleTimeString(), uptime:S.pendingHang.uptimeSecs,
-      reason:"unclassified", stage:"", pc:"", lr:"", usbd:null });
-    renderHangLog();
-    trailAdd("note: the previous reset was never classified — no full status blob arrived before this disconnect");
-  }
-  // queue a hang-log entry; the reason/PC/stack are filled from the first blob after reconnect
-  S.pendingHang = { t: Date.now(), uptimeSecs: up };
-  trailAdd("device disconnected"+(up!=null?(" after "+fmtDur(up)+" up"):"")+" — reset or replug; reason logged on reconnect");
-  window._flightAuto=false; // re-arm the one-shot flight-trail auto-load for the next reconnect
-  window._wedgeEp=false; window._wedgePeak=0; // re-arm the live wedge logger for the next wedge episode
-  window._lastBlobTs=0; window._hbLostEp=false; // re-arm the heartbeat watchdog (don't fire on a stale pre-reset timestamp)
-  S.polling=false; S.dev=null; S.blobSeen=false; S.tabInited=false; pendingInRead=null; // re-default the config tab to the mode on next connect
-  // the next device may be a different puck: its profiles are read afresh
-  S.profiles=S.profiles.map(()=>null); S.profileSel=[]; S.profileLoadDue.clear(); S.gesture=null;
-  const preSel=$("#ledPreset"); if(preSel) preSel.value="default";
-  checkUpdateNotice(); // no device = no notice
-  $("#connState").textContent="reconnecting…"; $("#connState").className="pill dn";
-  $("#panel").classList.add("hide"); $("#hdrInfo").classList.add("hide");
-  log("device disconnected (mode-switch / watchdog reboot) — auto-reconnecting when it returns");
-  // The puck re-enumerates after a reboot; retry without the picker. The "connect" event also triggers this,
-  // but poll a few times in case the event is missed.
-  let tries=0;
-  const iv=setInterval(async()=>{ if(S.dev||tries++>40){ clearInterval(iv); return; } if(await autoConnect()) clearInterval(iv); }, 500);
-}
-// true once the bytes reached the puck
-async function send(bytes){
-  if(!S.dev) return false;
-  try{ await S.dev.transferOut(S.epOut, new Uint8Array(bytes)); return true; }
-  catch(e){ log("write err: "+e.message); return false; }
-}
-let pendingInRead = null;
-// One transferIn at a time, shared by every reader of the IN pipe: a read that times out stays pending and is
-// handed to the next caller, so the reply it eventually gets is never lost to an orphaned transfer. Returns the
-// bytes, or null on timeout; throws on a USB error.
-async function readIn(readLen, timeoutMs){
-  if(!pendingInRead) pendingInRead = S.dev.transferIn(S.epIn, readLen||256);
-  const pr = pendingInRead;
-  let timer;
-  try{
-    const r = await Promise.race([pr, new Promise(res=>{ timer=setTimeout(()=>res(null), timeoutMs); })]);
-    if(r===null) return null;
-    if(pendingInRead===pr) pendingInRead = null;
-    return r.status==="ok" ? new Uint8Array(r.data.buffer) : new Uint8Array(0);
-  }catch(e){
-    if(pendingInRead===pr) pendingInRead = null;
-    throw e;
-  }finally{ clearTimeout(timer); }
-}
-// Read one framed reply and return its payload (with the 2-byte [marker][len] header stripped). The blob and
-// the bond-export dump share the same framing, distinguished by the marker byte (0xA5 status, 0xA7 bonds).
-async function readFrame(marker, minLen, readLen, timeoutMs=1500){
-  // A frame for a different marker is a late reply to an earlier request that timed out: skip it and keep reading
-  // until the deadline. Returning on it instead left every later read one reply behind -- the status poll reading
-  // motion frames while the motion poll read status blobs -- for as long as both kept polling.
-  const deadline=Date.now()+timeoutMs;
-  try{
-    for(;;){
-      const left=deadline-Date.now();
-      if(left<=0) return null;
-      // largest frame (status blob) spans multiple USB-FS packets; read generously to capture it in one call.
-      // readLen is overridable: the dongle's 0xAC paired-pucks list reaches 213 B (8 pucks) and needs 256.
-      const d = await readIn(readLen, left);
-      if(!d) return null;
-      if(d.length<2) return null;
-      // Live wedge reporter (0xA9): emitted from the firmware's SOF callback (usbd task) while loop() is stalled --
-      // the ONLY signal that survives a loop wedge on boards that wipe retained RAM across the reset. Scan for it
-      // in every read so it surfaces regardless of which frame we were after. Payload: [stage][stallMs u16].
-      for(let w=0; w+4<d.length; w++){
-        if(d[w]===0xA9 && d[w+1]===3){ onWedge(d[w+2], d[w+3]|(d[w+4]<<8)); break; }
-      }
-      let i=0; while(i<d.length && d[i]!==marker) i++;
-      if(i+2>d.length) continue;
-      const len=d[i+1];
-      // truncated read (transfer ended mid-frame): applying a half blob silently skips every late field --
-      // reset cause, pendingHang classification, stack stats -- so drop the whole frame and retry next poll.
-      if(i+2+len>d.length) return null;
-      const p=d.slice(i+2, i+2+len);
-      return p.length>=(minLen||0) ? p : null;
-    }
-  }catch(e){
-    if(S.dev) log("read err: "+e.message);
-    return null;
-  }
-}
-async function readBlob(){ return readFrame(0xA5, 12); }
-// v23+: the Switch Pro / HD rumble / shortcut settings ride a separate 0xAE frame (op 0x27) because
-// the status blob is already at the 255-byte frame limit. Call after applyBlob so lastP is current.
-async function readSw(){
-  if(!S.lastP || S.lastP[0]<23){ applySw(null); return; }
-  await send([0x27]);
-  const s=await readFrame(0xAE, 55);
-  if(s) applySw(s);
-}
-async function refresh(){
-  if(!S.dev||S.inflight||S.capturing||S.backupBusy||S.flightBusy||S.lizardBusy||S.rfBusy||S.fieldBusy) return; S.inflight=true;
-  // try/finally: an exception anywhere in here (applyBlob included) must never leave inflight latched true --
-  // that would silently kill all future polls and read as a fake "heartbeat lost".
-  try{
-    if(S.isDongle){ await send([0x01]); const p=await readFrame(0xAC, 3, 256); if(p) applyDongleStatus(p); }
-    else { await send([0x01]); const p=await readBlob(); if(p){ applyBlob(p); await readSw(); } }
-  }
-  catch(e){ log("refresh err: "+e.message); }
-  finally{ S.inflight=false; }
-}
-// let any in-flight poll read settle before we drive the shared endpoints ourselves
-async function waitIdle(){ for(let i=0;i<60 && S.inflight;i++) await new Promise(r=>setTimeout(r,5)); }
-async function setField(field,value){
-  if(!S.dev) return;
-  for(let i=0; i<60 && (S.inflight || S.rfBusy || S.fieldBusy); i++) await new Promise(r=>setTimeout(r,5));
-  S.fieldBusy=true;
-  try{
-    await send([0x02, field, value&0xff]);
-    const p=await readBlob();
-    if(p){ applyBlob(p); await readSw(); }
-  }catch(e){
-    log("setField err: "+e.message);
-  }finally{
-    S.fieldBusy=false;
-  }
-}
-async function startPolling(){
-  S.polling=true; await refresh();
-  while(S.polling && S.dev){
-    if(S.profileLoadDue.size) await profilesDrain();
-    await new Promise(r=>setTimeout(r,600)); await refresh();
-    if(S.lizardLoadDue){ S.lizardLoadDue=false; await lzV2Load(); }
-    if(window._autoFlight){ window._autoFlight=false; await loadFlightTrail(); }
-  }
-}
-
-function initProtocol(){
-  // Auto-reconnect when an authorized puck (re)appears — no button, no picker.
-  navigator.usb && navigator.usb.addEventListener("connect", e=>{ if(!S.dev) autoConnect(); });
-  navigator.usb && navigator.usb.addEventListener("disconnect", e=>{ if(e.device===S.dev) onGone(); });
-}
-
 // ---- panel/backup.js ----
 // ---- Backup / clone ----
 // A backup file is { magic, version, bonds[4], config{} }. bonds come from the 0x09 export (0xA7 frame); the
@@ -5009,6 +4816,355 @@ async function importBackup(file){
   } finally { S.backupBusy=false; }
 }
 
+// ---- Clone from an official Valve puck ----
+// The Valve puck answers the bond read Steam itself uses: SET feature report 2 [0xA3], then GET report 2 ->
+// [0xA3][0x18][24-byte rec] for that interface's slot (one vendor interface per slot, plus one non-slot
+// interface that reads back empty). Only the 8 UUID bytes matter on-air -- the controller connects to any puck
+// beaconing its bonded UUID pair -- so the copied record makes this OpenPuck a drop-in for the Valve one.
+// The Valve puck is a plain HID device, so it is reached over WebHID: WebUSB cannot claim HID interfaces.
+const VALVE_PUCK_HID={vendorId:0x28DE, productId:0x1304, usagePage:0xFF00};
+async function readOfficialBonds(){
+  // the chooser grants every interface of the picked puck at once, one HIDDevice per interface
+  const picked=await navigator.hid.requestDevice({filters:[VALVE_PUCK_HID]});
+  if(!picked.length) return null;
+  const recs=[];
+  for(const d of picked){
+    if(!d.collections.some(c=>c.usagePage===0xFF00)) continue;
+    try{
+      if(!d.opened) await d.open();
+      const q=new Uint8Array(63); q[0]=0xA3;
+      await d.sendFeatureReport(2, q);
+      const v=await d.receiveFeatureReport(2);
+      const b=new Uint8Array(v.buffer, v.byteOffset, v.byteLength);
+      // Chrome may or may not keep the report-id byte at the front of a feature report
+      const o=(b[0]===0xA3) ? 0 : (b[1]===0xA3 ? 1 : -1);
+      if(o<0 || b[o+1]!==0x18 || b.length<o+26) continue;
+      const rec=Array.from(b.slice(o+2, o+26));
+      if(rec.slice(0,8).every(x=>x===0)) continue;
+      if(!recs.some(r=>sameBondKey(r,rec))) recs.push(rec);
+    }catch(e){ /* an interface without the bond command; the slot interfaces still answer */ }
+    finally{ try{ if(d.opened) await d.close(); }catch(e){} }
+  }
+  return recs;
+}
+// Read pairings are held in localStorage between the two steps: with one USB port the official puck is
+// unplugged before the OpenPuck goes in, and a page reload in between must not lose them.
+const CLONE_KEY="opk-clone-recs";
+function cloneLoad(){
+  try{ const a=JSON.parse(localStorage.getItem(CLONE_KEY)||"[]"); return a.map(hexDec).filter(r=>r.length===24); }
+  catch(e){ return []; }
+}
+function cloneStore(recs){
+  try{ if(recs) localStorage.setItem(CLONE_KEY, JSON.stringify(recs.map(hexEnc))); else localStorage.removeItem(CLONE_KEY); }
+  catch(e){ log("clone: this browser blocks site storage, so the read pairings can't be kept — allow it and read again"); }
+}
+function cloneRender(){
+  // Inside the Backup & clone card while an OpenPuck is connected; standalone above the (hidden) panel otherwise,
+  // so step 1 still works with only the official puck plugged in.
+  const home=S.dev ? $("#backupCard") : $("#cloneHome"), sec=$("#cloneSec");
+  if(sec.parentNode!==home) home.appendChild(sec);
+  $("#cloneHome").classList.toggle("hide", !!S.dev);
+  const recs=cloneLoad(), st=$("#cloneStatus");
+  $("#cloneWrite").disabled = !recs.length || !S.dev || S.isDongle;
+  $("#cloneForget").classList.toggle("hide", !recs.length);
+  if(!recs.length) st.textContent="Nothing read yet.";
+  else if(!S.dev) st.textContent="Holding "+recs.length+" pairing(s) from the official puck. Unplug it, plug in the OpenPuck and click Connect.";
+  else if(S.isDongle) st.textContent="Holding "+recs.length+" pairing(s) — connect an OpenPuck (not a ReversePuck dongle) to write them.";
+  else st.textContent="Holding "+recs.length+" pairing(s) — ready to write to OpenPuck "+(S.dev.serialNumber||"?")+".";
+}
+function cloneForget(){ cloneStore(null); cloneRender(); }
+// This OpenPuck's slots via the 0x09 bond dump (null = firmware too old to export, so too old to import too).
+// Caller holds backupBusy.
+async function openPuckSlots(){
+  await send([0x09]);
+  let bp=null; for(let t=0;t<8 && !bp;t++) bp=await readFrame(0xA7, 2+4*24);
+  if(!bp) return null;
+  const slots=[];
+  for(let s=0;s<4;s++) slots.push(((bp[1]>>s)&1) ? Array.from(bp.slice(2+s*24, 2+s*24+24)) : null);
+  return slots;
+}
+const sameBondKey=(a,b)=>a.slice(0,8).every((x,i)=>x===b[i]);
+const PICK_HINT=" — with both pucks plugged in the picker lists two identical \"Steam Controller Puck\" entries; read again and pick the other one.";
+async function cloneRead(){
+  if(!navigator.hid){ log("clone: this browser has no WebHID — use Chrome or Edge"); return; }
+  let recs;
+  try{ recs=await readOfficialBonds(); }
+  catch(e){ if(e.name!=="NotFoundError") log("clone: couldn't read the official puck — "+e.message); return; }
+  if(!recs) return;
+  if(!recs.length){
+    log("clone: no controller pairings found on the selected puck"+(S.dev && !S.isDongle ? PICK_HINT : ""));
+    return;
+  }
+  // Both pucks share VID/PID and name, so the picker can't tell them apart: catch picking the connected OpenPuck.
+  if(S.dev && !S.isDongle){
+    S.backupBusy=true; await waitIdle();
+    let slots=null;
+    try{ slots=await openPuckSlots(); } finally { S.backupBusy=false; }
+    if(slots && recs.every(r=>slots.some(x=>x && sameBondKey(x,r)))){
+      log("clone: those are this OpenPuck's own pairings (or they're already cloned)"+PICK_HINT);
+      return;
+    }
+  }
+  cloneStore(recs);
+  log("clone: read "+recs.length+" pairing(s) from the official puck");
+  cloneRender();
+}
+async function cloneWrite(){
+  const recs=cloneLoad();
+  if(!S.dev || !recs.length) return;
+  S.backupBusy=true; await waitIdle();
+  try{
+    // the 0x09 bond dump doubles as the capability probe: firmware that can't export can't import (0x0D) either
+    const slots=await openPuckSlots();
+    if(!slots){ log("clone ABORTED — this OpenPuck's firmware is too old for bond import; update it first"); return; }
+    // also what happens when step 1 read this OpenPuck itself (same VID/PID as the Valve puck)
+    const todo=recs.filter(r=>!slots.some(x=>x && sameBondKey(x,r)));
+    if(!todo.length){
+      log("clone: those pairings are already on this OpenPuck — nothing to do");
+      cloneStore(null); return;
+    }
+    const free=[0,1,2,3].filter(s=>!slots[s]);
+    if(todo.length>free.length){
+      log("clone: needs "+todo.length+" free slot(s) but this OpenPuck has "+free.length+" — remove a pairing first");
+      return;
+    }
+    if(!confirm("Copy "+todo.length+" controller pairing(s) onto the CONNECTED OpenPuck (serial "+(S.dev.serialNumber||"?")
+      +")?\n\nExisting pairings and settings are kept. The OpenPuck reboots afterwards.\n\n"
+      +"Keep the official puck unplugged while using this one: with both powered, they compete for the same controller.")) return;
+    modalOpen("Clone from official puck");
+    try{
+      for(let i=0;i<todo.length;i++){
+        modalStage("Writing pairing "+(i+1)+" of "+todo.length, Math.floor(i*100/(todo.length+1)));
+        await send([0x0D, free[i], 1, ...todo[i]]); await readBlob();
+      }
+      modalStage("Committing + rebooting", 99);
+      // 0xFF = keep the current mode; the reboot regenerates the session addresses from the new bonds
+      await send([0x0E, 0xFF]);
+      cloneStore(null);
+      log("cloned "+todo.length+" pairing(s) into slot(s) "+free.slice(0,todo.length).join(",")+" — rebooting");
+      modalDone(true, "Pairings copied — the OpenPuck is rebooting. Turn the controller on and it connects here.");
+    }catch(e){
+      log("clone FAILED — "+e.message);
+      modalDone(false, e.message+" — reconnect and retry.", "Clone failed");
+    }
+  } finally {
+    // polling was paused across the confirm dialog; restart the heartbeat clock so the pause doesn't read as a wedge
+    window._lastBlobTs=Date.now();
+    S.backupBusy=false; cloneRender();
+  }
+}
+
+// ---- panel/protocol.js ----
+let ifNum=0;
+
+// Every VID an OpenPuck can enumerate under — the picker/auto-reconnect can only see a device whose VID is
+// listed here, so a new mode with a new identity MUST be added (1209 = DirectInput, 2E8A = SInput).
+const USB_FILTERS=[{vendorId:0x28DE},{vendorId:0x045E},{vendorId:0x057E},{vendorId:0x0F0D},{vendorId:0x054C},{vendorId:0x1209},{vendorId:0x2E8A}];
+// Acquire+set up an already-chosen USBDevice (shared by the manual picker and the no-picker auto-reconnect).
+async function openDevice(d){
+  try{
+    S.dev=d;
+    S.blobSeen=false;
+    pendingInRead=null;
+    await S.dev.open();
+    if(S.dev.configuration===null) await S.dev.selectConfiguration(1);
+    let found=null;
+    for(const itf of S.dev.configuration.interfaces){
+      const a=itf.alternate;
+      if(a.interfaceClass!==0xFF) continue;
+      if(a.interfaceSubClass===0x5D) continue;
+      let bin=0,bout=0;
+      for(const e of a.endpoints){ if(e.type==="bulk"){ if(e.direction==="in")bin=e.endpointNumber; else bout=e.endpointNumber; } }
+      if(bin&&bout){ found={ifNum:itf.interfaceNumber, epIn:bin, epOut:bout}; break; }
+    }
+    if(!found){ log("no WebUSB bulk vendor interface — reflash firmware with WebUSB enabled, or another app may be holding the device"); S.dev=null; return false; }
+    ifNum=found.ifNum; S.epIn=found.epIn; S.epOut=found.epOut;
+    await S.dev.claimInterface(ifNum);
+    await S.dev.controlTransferOut({requestType:"class", recipient:"interface", request:0x22, value:0x01, index:ifNum});
+    S.isDongle = (S.dev.productId === 0x1302); // ReversePuck controller dongle vs a puck (0x1304 / real)
+    const kind = S.isDongle ? "ReversePuck" : "puck";
+    $("#connState").textContent="connected"; $("#connState").className="pill up";
+    $("#connState").title = S.dev.serialNumber ? (kind+" serial "+S.dev.serialNumber) : "";
+    $("#connectBtn").textContent="Reconnect";
+    $("#panel").classList.remove("hide"); $("#hdrInfo").classList.remove("hide");
+    applyDeviceProfile(); // show the controller UI + hide puck-only cards (or vice-versa)
+    cloneRender();
+    log(`connected — ${kind} ${S.dev.serialNumber||"?"} (VID ${S.dev.vendorId.toString(16)} PID ${S.dev.productId.toString(16)} iface ${ifNum})`);
+    // resume a stability test across the reset: re-arm the firmware buzz and start timing the next run
+    // (puck-only: the dongle has no stability-test / haptic path)
+    if(S.stabArmed && !S.isDongle){ await send([0x0F,1]); S.stabStart=Date.now(); log("stability test resumed — timing next run"); }
+    updateStabUI();
+    // The lizard-map dump (0x11 -> 0xAA) is loaded LAZILY, gated on the firmware advertising v16+ (see
+    // applyBlob). Older firmware (every pre-lizard build, including the v15 updater builds) silently drops
+    // 0x11, and readLizard()'s blocking transferIn would then hang forever -- wedging the status poll the
+    // firmware-update gate depends on. So we never send 0x11 until a status blob proves the puck speaks v16.
+    S.lizardLoaded=false; S.lizardLoadDue=false;
+    startPolling();
+    // GitHub releases are PUCK firmware; skip the fetch for a dongle (it flashes via the local-file card).
+    if(!S.isDongle) loadReleases(false); // background, cached: feeds the update-available notice + pre-warms the update tab
+    return true;
+  }catch(e){ log("connect failed: "+e.message); S.dev=null; return false; }
+}
+// Manual connect: shows the Chrome device picker (needed once, to authorize the device).
+async function connect(){
+  try{ const d = await navigator.usb.requestDevice({filters:USB_FILTERS}); await openDevice(d); }
+  catch(e){ log("connect failed: "+e.message); }
+}
+// No-picker reconnect: reopen a device already authorized this browser. Returns true if it connected.
+async function autoConnect(){
+  if(S.dev) return true;
+  try{
+    const ds = await navigator.usb.getDevices();
+    const d = ds.find(x=>USB_FILTERS.some(f=>f.vendorId===x.vendorId));
+    if(d) return await openDevice(d);
+  }catch(e){}
+  return false;
+}
+function onGone(){
+  // if a stability test is running, this disconnect is the reset that ended the run -- record its uptime
+  // (kept in-page so it survives the reset + reconnect, shown next to Last reset).
+  let up=null;
+  if(S.stabArmed && S.stabStart){ up=(Date.now()-S.stabStart)/1000; S.stabLastRun={secs:up}; log("⏱ stability: stayed up "+fmtDur(up)+", then reset"); S.stabStart=0; }
+  // if the PREVIOUS reset was never classified (no full blob landed between two resets), flush it as
+  // "unclassified" instead of silently overwriting it -- every reset must leave a row.
+  if(S.pendingHang){
+    S.hangLog.unshift({ time:new Date(S.pendingHang.t).toLocaleTimeString(), uptime:S.pendingHang.uptimeSecs,
+      reason:"unclassified", stage:"", pc:"", lr:"", usbd:null });
+    renderHangLog();
+    trailAdd("note: the previous reset was never classified — no full status blob arrived before this disconnect");
+  }
+  // queue a hang-log entry; the reason/PC/stack are filled from the first blob after reconnect
+  S.pendingHang = { t: Date.now(), uptimeSecs: up };
+  trailAdd("device disconnected"+(up!=null?(" after "+fmtDur(up)+" up"):"")+" — reset or replug; reason logged on reconnect");
+  window._flightAuto=false; // re-arm the one-shot flight-trail auto-load for the next reconnect
+  window._wedgeEp=false; window._wedgePeak=0; // re-arm the live wedge logger for the next wedge episode
+  window._lastBlobTs=0; window._hbLostEp=false; // re-arm the heartbeat watchdog (don't fire on a stale pre-reset timestamp)
+  S.polling=false; S.dev=null; S.blobSeen=false; S.tabInited=false; pendingInRead=null; // re-default the config tab to the mode on next connect
+  // the next device may be a different puck: its profiles are read afresh
+  S.profiles=S.profiles.map(()=>null); S.profileSel=[]; S.profileLoadDue.clear(); S.gesture=null;
+  const preSel=$("#ledPreset"); if(preSel) preSel.value="default";
+  cloneRender();
+  checkUpdateNotice(); // no device = no notice
+  $("#connState").textContent="reconnecting…"; $("#connState").className="pill dn";
+  $("#panel").classList.add("hide"); $("#hdrInfo").classList.add("hide");
+  log("device disconnected (mode-switch / watchdog reboot) — auto-reconnecting when it returns");
+  // The puck re-enumerates after a reboot; retry without the picker. The "connect" event also triggers this,
+  // but poll a few times in case the event is missed.
+  let tries=0;
+  const iv=setInterval(async()=>{ if(S.dev||tries++>40){ clearInterval(iv); return; } if(await autoConnect()) clearInterval(iv); }, 500);
+}
+// true once the bytes reached the puck
+async function send(bytes){
+  if(!S.dev) return false;
+  try{ await S.dev.transferOut(S.epOut, new Uint8Array(bytes)); return true; }
+  catch(e){ log("write err: "+e.message); return false; }
+}
+let pendingInRead = null;
+// One transferIn at a time, shared by every reader of the IN pipe: a read that times out stays pending and is
+// handed to the next caller, so the reply it eventually gets is never lost to an orphaned transfer. Returns the
+// bytes, or null on timeout; throws on a USB error.
+async function readIn(readLen, timeoutMs){
+  if(!pendingInRead) pendingInRead = S.dev.transferIn(S.epIn, readLen||256);
+  const pr = pendingInRead;
+  let timer;
+  try{
+    const r = await Promise.race([pr, new Promise(res=>{ timer=setTimeout(()=>res(null), timeoutMs); })]);
+    if(r===null) return null;
+    if(pendingInRead===pr) pendingInRead = null;
+    return r.status==="ok" ? new Uint8Array(r.data.buffer) : new Uint8Array(0);
+  }catch(e){
+    if(pendingInRead===pr) pendingInRead = null;
+    throw e;
+  }finally{ clearTimeout(timer); }
+}
+// Read one framed reply and return its payload (with the 2-byte [marker][len] header stripped). The blob and
+// the bond-export dump share the same framing, distinguished by the marker byte (0xA5 status, 0xA7 bonds).
+async function readFrame(marker, minLen, readLen, timeoutMs=1500){
+  // A frame for a different marker is a late reply to an earlier request that timed out: skip it and keep reading
+  // until the deadline. Returning on it instead left every later read one reply behind -- the status poll reading
+  // motion frames while the motion poll read status blobs -- for as long as both kept polling.
+  const deadline=Date.now()+timeoutMs;
+  try{
+    for(;;){
+      const left=deadline-Date.now();
+      if(left<=0) return null;
+      // largest frame (status blob) spans multiple USB-FS packets; read generously to capture it in one call.
+      // readLen is overridable: the dongle's 0xAC paired-pucks list reaches 213 B (8 pucks) and needs 256.
+      const d = await readIn(readLen, left);
+      if(!d) return null;
+      if(d.length<2) return null;
+      // Live wedge reporter (0xA9): emitted from the firmware's SOF callback (usbd task) while loop() is stalled --
+      // the ONLY signal that survives a loop wedge on boards that wipe retained RAM across the reset. Scan for it
+      // in every read so it surfaces regardless of which frame we were after. Payload: [stage][stallMs u16].
+      for(let w=0; w+4<d.length; w++){
+        if(d[w]===0xA9 && d[w+1]===3){ onWedge(d[w+2], d[w+3]|(d[w+4]<<8)); break; }
+      }
+      let i=0; while(i<d.length && d[i]!==marker) i++;
+      if(i+2>d.length) continue;
+      const len=d[i+1];
+      // truncated read (transfer ended mid-frame): applying a half blob silently skips every late field --
+      // reset cause, pendingHang classification, stack stats -- so drop the whole frame and retry next poll.
+      if(i+2+len>d.length) return null;
+      const p=d.slice(i+2, i+2+len);
+      return p.length>=(minLen||0) ? p : null;
+    }
+  }catch(e){
+    if(S.dev) log("read err: "+e.message);
+    return null;
+  }
+}
+async function readBlob(){ return readFrame(0xA5, 12); }
+// v23+: the Switch Pro / HD rumble / shortcut settings ride a separate 0xAE frame (op 0x27) because
+// the status blob is already at the 255-byte frame limit. Call after applyBlob so lastP is current.
+async function readSw(){
+  if(!S.lastP || S.lastP[0]<23){ applySw(null); return; }
+  await send([0x27]);
+  const s=await readFrame(0xAE, 55);
+  if(s) applySw(s);
+}
+async function refresh(){
+  if(!S.dev||S.inflight||S.capturing||S.backupBusy||S.flightBusy||S.lizardBusy||S.rfBusy||S.fieldBusy) return; S.inflight=true;
+  // try/finally: an exception anywhere in here (applyBlob included) must never leave inflight latched true --
+  // that would silently kill all future polls and read as a fake "heartbeat lost".
+  try{
+    if(S.isDongle){ await send([0x01]); const p=await readFrame(0xAC, 3, 256); if(p) applyDongleStatus(p); }
+    else { await send([0x01]); const p=await readBlob(); if(p){ applyBlob(p); await readSw(); } }
+  }
+  catch(e){ log("refresh err: "+e.message); }
+  finally{ S.inflight=false; }
+}
+// let any in-flight poll read settle before we drive the shared endpoints ourselves
+async function waitIdle(){ for(let i=0;i<60 && S.inflight;i++) await new Promise(r=>setTimeout(r,5)); }
+async function setField(field,value){
+  if(!S.dev) return;
+  for(let i=0; i<60 && (S.inflight || S.rfBusy || S.fieldBusy); i++) await new Promise(r=>setTimeout(r,5));
+  S.fieldBusy=true;
+  try{
+    await send([0x02, field, value&0xff]);
+    const p=await readBlob();
+    if(p){ applyBlob(p); await readSw(); }
+  }catch(e){
+    log("setField err: "+e.message);
+  }finally{
+    S.fieldBusy=false;
+  }
+}
+async function startPolling(){
+  S.polling=true; await refresh();
+  while(S.polling && S.dev){
+    if(S.profileLoadDue.size) await profilesDrain();
+    await new Promise(r=>setTimeout(r,600)); await refresh();
+    if(S.lizardLoadDue){ S.lizardLoadDue=false; await lzV2Load(); }
+    if(window._autoFlight){ window._autoFlight=false; await loadFlightTrail(); }
+  }
+}
+
+function initProtocol(){
+  // Auto-reconnect when an authorized puck (re)appears — no button, no picker.
+  navigator.usb && navigator.usb.addEventListener("connect", e=>{ if(!S.dev) autoConnect(); });
+  navigator.usb && navigator.usb.addEventListener("disconnect", e=>{ if(e.device===S.dev) onGone(); });
+}
+
 // ---- panel/capture.js ----
 function fmtCapEntry(e,maxMs){
   const hex=e.bytes.map(x=>x.toString(16).padStart(2,"0")).join(" ");
@@ -5099,6 +5255,10 @@ initFirmware();
 $("#backupExport").onclick=exportBackup;
 $("#backupImport").onclick=()=>$("#backupFile").click();
 $("#backupFile").onchange=async(e)=>{ const f=e.target.files[0]; if(f) await importBackup(f); e.target.value=""; };
+$("#cloneRead").onclick=cloneRead;
+$("#cloneWrite").onclick=cloneWrite;
+$("#cloneForget").onclick=cloneForget;
+cloneRender();
 $("#capDl").onclick=downloadCap;
 $("#capStart").onclick=startCapture;
 $("#capStop").onclick=stopCapture;

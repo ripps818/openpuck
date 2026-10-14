@@ -17,7 +17,7 @@
 #define LZ_OUT_KBD_CHORD 1u
 // Mouse button: outData[0]=button bitmask (bit0=left, bit1=right, bit2=middle).
 #define LZ_OUT_MOUSE_BTN 2u
-// Mouse axis: outData[0]=source (LZ_MSRC_*), outData[1]=gyro activation (LZ_GYRO_*). The right pad and the two sticks
+// Mouse axis: outData[0]=source (LZ_MSRC_*), outData[1]=gyro activation (LZ_GYRO_*). Both pads and both sticks
 // are driven; the gyro is not yet.
 #define LZ_OUT_MOUSE_AXIS 3u
 // Scroll wheel from an analog source: outData[0]=source (LZ_MSRC_*). The left trackpad and the two
@@ -30,6 +30,9 @@
 #define LZ_MSRC_RPAD 0u // right trackpad (MOUSE_AXIS; touch-gated by TB_RPADT)
 #define LZ_MSRC_LSTICK 1u // left analog stick (MOUSE_AXIS)
 #define LZ_MSRC_RSTICK 3u // right analog stick (MOUSE_AXIS)
+// 4, not upstream's 3: here 3 is the right stick, and saved maps keep their ids
+#define LZ_MSRC_LPAD_MOUSE \
+	4u // left trackpad (MOUSE_AXIS; touch-gated by TB_LPADT)
 #define LZ_MSRC_GYRO \
 	2u // gyroscope (MOUSE_AXIS; activation-gated, see LZ_GYRO_*)
 #define LZ_MSRC_LPAD 0u // left trackpad (SCROLL; touch-gated by TB_LPADT)

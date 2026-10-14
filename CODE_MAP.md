@@ -289,7 +289,8 @@ The 28DE:1304 puck identity with four HID slot interfaces (interface N = bond sl
   `seedLizardProfiles()` (setup) writes a missing one as a copy of profile 0, so the RF path only reads.
   Which one is active is `g_lizardActive` in btnmap; in MODE_LIZARD `g_lizardMap` is that profile, loaded at
   boot and on every switch. WebUSB `0x34` picks the profile the lizard ops edit (`webusbLizardMap()`).
-- Mouse move (`LZ_OUT_MOUSE_AXIS`) sources: the right trackpad (glide model), and the left or right stick
+- Mouse move (`LZ_OUT_MOUSE_AXIS`) sources: the right or left trackpad (`LZ_MSRC_RPAD`/`LZ_MSRC_LPAD_MOUSE`, glide
+  model, each pad integrated on its own and summed into the one cursor), and the left or right stick
   (`LZ_MSRC_LSTICK`/`LZ_MSRC_RSTICK`), driven as speed by `lizardStickAxis` (deadzone, squared curve, 5 px a
   report at full deflection; both sticks add up). The gyro is offered by the editor but not driven yet.
 - Scroll wheel (`LZ_OUT_SCROLL`) sources: the left trackpad, and the left or right stick (up scrolls up), also

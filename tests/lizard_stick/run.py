@@ -22,6 +22,14 @@ struct Adafruit_USBD_HID {
 	}
 };
 '''
+# usbTxHid queues for the usbd task; here it hands the report straight to the stand-in device
+usb_tx = r'''#pragma once
+#include "Adafruit_TinyUSB.h"
+static inline void usbTxHid(Adafruit_USBD_HID *hid, uint8_t rid, const void *data, uint16_t len)
+{
+	hid->sendReport(rid, data, (uint8_t)len);
+}
+'''
 test = r'''
 #include <cassert>
 #include <cmath>
@@ -54,6 +62,27 @@ static void run(int n, int lx, int ly, long *tx, long *ty)
 		rfLizard(&dev, &dev, 0x40, 0x41);
 	for (auto &m : dev.mouse) { *tx += m.x; *ty += m.y; wheel += m.wheel; }
 }
+// drag one finger across a trackpad (x 0 -> 6000 over 20 reports), lift, and let the glide run out
+static void dragAxis(bool right, bool vertical, long *tx, long *ty)
+{
+	dev.mouse.clear();
+	*tx = *ty = wheel = 0;
+	for (int i = 0; i <= 120; i++) {
+		bool down = i <= 20;
+		int16_t v = (int16_t)(down ? i * 300 : 0);
+		g_in[0].buttons = down ? (right ? TB_RPADT : TB_LPADT) : 0;
+		int16_t &px = right ? (vertical ? g_in[0].rpy : g_in[0].rpx) :
+				      (vertical ? g_in[0].lpy : g_in[0].lpx);
+		if (down)
+			px = v;
+		rfLizard(&dev, &dev, 0x40, 0x41);
+	}
+	g_in[0].buttons = 0;
+	g_in[0].lpx = g_in[0].lpy = g_in[0].rpx = g_in[0].rpy = 0;
+	for (auto &m : dev.mouse) { *tx += m.x; *ty += m.y; wheel += m.wheel; }
+}
+static void drag(bool right, long *tx, long *ty) { dragAxis(right, false, tx, ty); }
+static void dragY(long *tx, long *ty) { dragAxis(false, true, tx, ty); }
 static void bindScroll(uint8_t src)
 {
 	g_lizardMap.count = 1;
@@ -165,13 +194,58 @@ int main()
 	bind(LZ_MSRC_LSTICK);
 	run(1, 0, 0, &x, &y);
 	assert(x == 0 && y == 0);
+
+	// a trackpad bound to mouse move: a drag moves the cursor and glides on after the finger lifts
+	bind(LZ_MSRC_LPAD_MOUSE);
+	drag(false, &x, &y);
+	assert(x > 0 && y == 0);
+	long left = x;
+	// the left pad's binding does not make the right pad move the cursor, and the other way round
+	drag(true, &x, &y);
+	assert(x == 0 && y == 0);
+	bind(LZ_MSRC_RPAD);
+	drag(false, &x, &y);
+	assert(x == 0 && y == 0);
+	drag(true, &x, &y);
+	assert(labs(x - left) <= 1); // the right pad behaves as before, the same glide model
+	// both pads bound: each drives the cursor on its own
+	g_lizardMap.count = 2;
+	g_lizardMap.bindings[1] = LizardBinding{ LZ_OUT_MOUSE_AXIS, { LZ_MSRC_LPAD_MOUSE, 0, 0, 0, 0, 0, 0 }, 0, 0 };
+	drag(false, &x, &y);
+	assert(labs(x - left) <= 1);
+	drag(true, &x, &y);
+	assert(labs(x - left) <= 1);
+	// up the pad is up the screen, and a disabled touchpad does nothing
+	dragY(&x, &y);
+	assert(y < 0 && x == 0);
+	g_touchpadDisabled = true;
+	drag(false, &x, &y);
+	assert(x == 0 && y == 0);
+	g_touchpadDisabled = false;
+	// left pad bound to scroll and mouse move at once: a vertical drag both scrolls and moves
+	bindScroll(LZ_MSRC_LPAD);
+	g_lizardMap.count = 2;
+	dragY(&x, &y);
+	assert(y < 0 && wheel != 0);
+	// releasing mid-glide leaves nothing to fling on re-entry
+	bind(LZ_MSRC_LPAD_MOUSE);
+	g_in[0].buttons = TB_LPADT;
+	g_in[0].lpx = 0;
+	run(1, 0, 0, &x, &y);
+	g_in[0].lpx = 3000;
+	run(1, 0, 0, &x, &y);
+	g_in[0].buttons = 0;
+	rfLizardRelease(&dev, &dev, 0x40, 0x41);
+	run(50, 0, 0, &x, &y);
+	assert(x == 0 && y == 0);
 }
 '''
 with tempfile.TemporaryDirectory() as td:
     (Path(td) / 'Adafruit_TinyUSB.h').write_text(usb)
+    (Path(td) / 'usb_tx.h').write_text(usb_tx)
     p = Path(td) / 'test.cpp'
     p.write_text('#include <stddef.h>\n#include <string.h>\n' + lizard + test)
     subprocess.run(['g++', '-std=c++11', '-Wall', '-Wextra', '-Werror', '-Wno-unused', '-fsanitize=address,undefined',
                     '-I' + td, '-I' + str(r / 'OpenPuck'), str(p), '-o', td + '/test'], check=True)
     subprocess.run([td + '/test'], check=True, env={'ASAN_OPTIONS': 'detect_leaks=0'})
-print('Lizard stick: the sticks drive the pointer and the scroll wheel')
+print('Lizard stick: the sticks and trackpads drive the pointer and the scroll wheel')

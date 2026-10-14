@@ -552,6 +552,8 @@ static uint8_t g_lastSeq[NSLOT] = { 0 };
 static uint8_t g_lastInputRid[NSLOT] = { 0 };
 static uint32_t g_stNew[NSLOT] = {};
 static uint32_t g_stCrc[NSLOT] = {}, g_stNoRx[NSLOT] = {};
+// The controller announced a power-off (F2): its silence is real, not a fade.
+static bool g_slotPoweredOff[NSLOT] = {};
 static uint32_t g_chF1[3] = { 0, 0, 0 };
 // Cycle gate: fires once per g_pollUs; each fire polls every warm slot so all run at ~250 Hz (oversampling
 // the controller's ~270 Hz report generation so no fresh trackpad sample is dropped -- see config.h).
@@ -3720,6 +3722,7 @@ uint8_t rfConnTx(uint8_t ch, uint8_t s1, const uint8_t *payload, uint8_t plen,
 					hapticOnReconnect(s);
 					faultDiagTrace(FR_RFUP, s);
 				}
+				g_slotPoweredOff[s] = (rtype == 0xF2);
 				g_connRx++;
 				// link alive -> loop() suppresses the redundant E1 beacon
 				g_connReplyMs[s] = millis();
@@ -4375,7 +4378,10 @@ uint8_t rfConnTx(uint8_t ch, uint8_t s1, const uint8_t *payload, uint8_t plen,
 // (~2 ms) waiting for a reply that never comes -- with two controllers powered off together that is ~100%
 // radio duty, the churn window the power-off watchdog hang (issue #72 repro) lives in. Recovery stays snappy:
 // the first reply re-warms the slot to full rate, so a controller returning from a fade waits <= one retry.
-#define SLOT_QUIET_MS 300u
+// A weak link fades for seconds, and the controller drops the session if it
+// hears no polls for a while, so a fading slot must keep full-rate polling
+// through that window. Only an announced power-off backs off immediately.
+#define SLOT_QUIET_MS 2500u
 #define SLOT_QUIET_RETRY_MS 50u
 static unsigned long g_slotLastAttemptMs[NSLOT] = {};
 
@@ -4491,6 +4497,16 @@ static void rfConnStep()
 			// real puck: BARE E3 (just the opcode) -- the controller streams F1 to any E3 ack
 			uint8_t p[1] = { 0xE3 };
 			rx = rfConnTx(ch, s1, p, 1);
+			// One retransmit for a slot that was just replying: a
+			// weak link loses replies, not the session. Skipped for
+			// an empty ACK, absent slots, and when it would overrun
+			// the poll cycle.
+			if (!rx && !(g_rfReplyUs && g_rfReplyCrcOk) &&
+			    g_connReplyMs[k] &&
+			    nowMs - g_connReplyMs[k] < 300u &&
+			    (uint32_t)(micros() - nowUs) + g_rxWin + 700u <
+				    (uint32_t)g_pollUs)
+				rx = rfConnTx(ch, s1, p, 1);
 		}
 		if (!lastPollReplied[k] && relayPending())
 			g_pcmDiag.flushSkip++;
@@ -4528,7 +4544,7 @@ static void rfConnStep()
 		// at full rate -- the real puck services them all per cycle), and throttle the SILENT ones so they don't
 		// steal reply windows from the live controller(s) (the issue-#72 radio-duty concern):
 		//   - "cold": WAS connected but silent > SLOT_COLD_MS (controller powered off / out of range);
-		//   - "quiet": briefly silent (fade) -> back off to SLOT_QUIET_RETRY_MS until it recovers or goes cold;
+		//   - "quiet": announced a power-off, or silent past SLOT_QUIET_MS -> back off to SLOT_QUIET_RETRY_MS;
 		//   - "phantom": NEVER replied while another controller is live (e.g. a stale bond from a cloned backup).
 		for (int k = 0; k < NSLOT; k++) {
 			if (!g_slot[k].used)
@@ -4538,7 +4554,8 @@ static void rfConnStep()
 				everReplied ? (nowMs - g_connReplyMs[k]) : 0;
 			bool cold = everReplied && silentMs > SLOT_COLD_MS;
 			bool quiet = everReplied && !cold &&
-				     silentMs > SLOT_QUIET_MS;
+				     (silentMs > SLOT_QUIET_MS ||
+				      (g_slotPoweredOff[k] && silentMs > 300u));
 			bool phantom = !everReplied;
 			unsigned long retry = (cold || phantom) ?
 						      SLOT_COLD_RETRY_MS :

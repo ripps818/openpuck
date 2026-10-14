@@ -2,14 +2,15 @@
 #include "lizard_map.h"
 #include "triton.h"
 #include "config.h"
+#include "usb_tx.h"
 #include <string.h>
 
 // Evaluate the binding table for ONE controller's button word, merging its keyboard/mouse-button/
 // consumer outputs into the shared accumulators. Pulled out of rfLizard so every bonded controller can
 // feed the same outputs. The axes are map-level (set if such a binding exists at all).
 struct LizardAxes {
-	bool rpadMouse, lpadScroll, lstickMouse, rstickMouse, lstickScroll,
-		rstickScroll;
+	bool rpadMouse, lpadMouse, lpadScroll, lstickMouse, rstickMouse,
+		lstickScroll, rstickScroll;
 };
 static void lizardEvalSlot(uint64_t buttons, uint8_t &outMod,
 			   uint8_t outKeys[6], uint8_t &nKeys, uint8_t &outMBtn,
@@ -28,6 +29,9 @@ static void lizardEvalSlot(uint64_t buttons, uint8_t &outMod,
 		if (b.outType == LZ_OUT_MOUSE_AXIS) {
 			if (b.outData[0] == LZ_MSRC_RPAD && !g_touchpadDisabled)
 				ax.rpadMouse = true;
+			if (b.outData[0] == LZ_MSRC_LPAD_MOUSE &&
+			    !g_touchpadDisabled)
+				ax.lpadMouse = true;
 			if (b.outData[0] == LZ_MSRC_LSTICK)
 				ax.lstickMouse = true;
 			if (b.outData[0] == LZ_MSRC_RSTICK)
@@ -135,9 +139,11 @@ static float lizardStickAxis(int16_t v, float max)
 // function-local statics) so rfLizardRelease() can reset them on a lizard->Steam handoff: without that reset
 // a key/mouse-button that was DOWN the instant Steam takes over is never released (the change-dedup below
 // thinks it is still "down") and sticks on the desktop until a reconnect/power-cycle.
-static int prx[NSLOT] = { 0 }, pry[NSLOT] = { 0 };
-static bool prt[NSLOT] = { false };
-static float vx[NSLOT] = { 0 }, vy[NSLOT] = { 0 }, rmx = 0, rmy = 0;
+// [PM_RIGHT] / [PM_LEFT]: each pad bound to mouse move glides on its own
+enum { PM_RIGHT, PM_LEFT, PM_N };
+static int prx[PM_N][NSLOT] = {}, pry[PM_N][NSLOT] = {};
+static bool prt[PM_N][NSLOT] = {};
+static float vx[PM_N][NSLOT] = {}, vy[PM_N][NSLOT] = {}, rmx = 0, rmy = 0;
 static int ply[NSLOT] = { 0 };
 static bool plt[NSLOT] = { false };
 static float sacc = 0;
@@ -167,42 +173,49 @@ void rfLizard(Adafruit_USBD_HID *mdev, Adafruit_USBD_HID *kdev, uint8_t mrid,
 			       outMBtn, consumerBits, ax);
 	}
 
-	// ---- right pad -> mouse motion with glide ----
-	// Per-slot velocity/last-position so each controller's pad integrates independently; the resulting
+	// ---- trackpads -> mouse motion with glide ----
+	// Per-slot, per-pad velocity/last-position so each pad integrates independently; the resulting
 	// deltas are SUMMED into one cursor (sub-pixel carry rmx/rmy is shared -- one mouse). State is
 	// file-scope (see the block above rfLizard) so rfLizardRelease() can zero it on a handoff.
 	int dx = 0, dy = 0;
-	if (ax.rpadMouse) {
+	if (ax.rpadMouse || ax.lpadMouse) {
 		float sumx = 0, sumy = 0;
 		float f = g_mFric / 100.0f;
-		for (int s = 0; s < NSLOT; s++) {
-			if (!g_slot[s].used) {
-				vx[s] = vy[s] = 0;
-				prt[s] = false;
-				continue;
+		for (int p = 0; p < PM_N; p++) {
+			const bool right = (p == PM_RIGHT);
+			const bool bound = right ? ax.rpadMouse : ax.lpadMouse;
+			for (int s = 0; s < NSLOT; s++) {
+				if (!bound || !g_slot[s].used) {
+					vx[p][s] = vy[p][s] = 0;
+					prt[p][s] = false;
+					continue;
+				}
+				const PuckInput &in = g_in[s];
+				bool touch =
+					!g_touchpadDisabled &&
+					((in.buttons &
+					  (right ? TB_RPADT : TB_LPADT)) != 0);
+				int x = right ? in.rpx : in.lpx;
+				int y = right ? in.rpy : in.lpy;
+				if (touch && prt[p][s]) {
+					vx[p][s] += (x - prx[p][s]);
+					vy[p][s] += (y - pry[p][s]);
+				}
+				if (touch) {
+					prx[p][s] = x;
+					pry[p][s] = y;
+				}
+				prt[p][s] = touch;
+				sumx += vx[p][s];
+				sumy += vy[p][s];
+				// friction = glide/decay (per slot)
+				vx[p][s] *= f;
+				vy[p][s] *= f;
+				if (vx[p][s] > -1 && vx[p][s] < 1)
+					vx[p][s] = 0;
+				if (vy[p][s] > -1 && vy[p][s] < 1)
+					vy[p][s] = 0;
 			}
-			const PuckInput &in = g_in[s];
-			bool rtouch = !g_touchpadDisabled &&
-				      ((in.buttons & TB_RPADT) != 0);
-			int rx = in.rpx, ry = in.rpy;
-			if (rtouch && prt[s]) {
-				vx[s] += (rx - prx[s]);
-				vy[s] += (ry - pry[s]);
-			}
-			if (rtouch) {
-				prx[s] = rx;
-				pry[s] = ry;
-			}
-			prt[s] = rtouch;
-			sumx += vx[s];
-			sumy += vy[s];
-			// friction = glide/decay (per slot)
-			vx[s] *= f;
-			vy[s] *= f;
-			if (vx[s] > -1 && vx[s] < 1)
-				vx[s] = 0;
-			if (vy[s] > -1 && vy[s] < 1)
-				vy[s] = 0;
 		}
 		// Y inverted; *10 = desktop cursor sensitivity (g_mDiv 64 -> eff 640)
 		float mxf = sumx / (float)(g_mDiv * 10) + rmx,
@@ -316,6 +329,10 @@ void rfLizard(Adafruit_USBD_HID *mdev, Adafruit_USBD_HID *kdev, uint8_t mrid,
 		dw = -15;
 
 	// ---- mouse report ----
+	// Mouse, consumer and keyboard share ONE endpoint (hid[0]) that stays busy
+	// until the host next polls. Sending directly under ready() dropped every
+	// report after the first in a cycle while the shadow state still advanced,
+	// losing key edges whenever the cursor moved; usbTxHid queues them in order.
 	if (dx || dy || dw || outMBtn != pmbtn) {
 		pmbtn = outMBtn;
 		hid_mouse_report_t m;
@@ -324,15 +341,13 @@ void rfLizard(Adafruit_USBD_HID *mdev, Adafruit_USBD_HID *kdev, uint8_t mrid,
 		m.y = (int8_t)dy;
 		m.wheel = (int8_t)dw;
 		m.pan = 0;
-		if (mdev->ready())
-			mdev->sendReport(mrid, &m, sizeof m);
+		usbTxHid(mdev, mrid, &m, sizeof m);
 	}
 
 	// ---- consumer control (edge-triggered) ----
 	if (g_usbMode == MODE_LIZARD) {
 		if (consumerBits != prevCC) {
-			if (mdev->ready())
-				mdev->sendReport(0x03, &consumerBits, 1);
+			usbTxHid(mdev, 0x03, &consumerBits, 1);
 			prevCC = consumerBits;
 		}
 	}
@@ -349,8 +364,7 @@ void rfLizard(Adafruit_USBD_HID *mdev, Adafruit_USBD_HID *kdev, uint8_t mrid,
 		uint8_t krep[8] = { outMod,	0,	    outKeys[0],
 				    outKeys[1], outKeys[2], outKeys[3],
 				    outKeys[4], outKeys[5] };
-		if (kdev->ready())
-			kdev->sendReport(krid, krep, 8);
+		usbTxHid(kdev, krid, krep, 8);
 	}
 }
 
@@ -360,27 +374,26 @@ void rfLizard(Adafruit_USBD_HID *mdev, Adafruit_USBD_HID *kdev, uint8_t mrid,
 // keyboard key / mouse button / consumer key that was DOWN at that instant would otherwise stay latched on
 // the desktop until a reconnect or power-cycle (the reported "stuck input after switching modes"). Sends the
 // neutral reports unconditionally (not change-gated) because the whole point is to override a stale held
-// state that the dedup would suppress. Same direct-sendReport path rfLizard uses.
+// state that the dedup would suppress. Same usbTxHid path rfLizard uses.
 void rfLizardRelease(Adafruit_USBD_HID *mdev, Adafruit_USBD_HID *kdev,
 		     uint8_t mrid, uint8_t krid)
 {
 	uint8_t krep[8] = { 0, 0, 0, 0, 0, 0, 0, 0 }; // all keys + modifiers up
-	if (kdev->ready())
-		kdev->sendReport(krid, krep, 8);
+	usbTxHid(kdev, krid, krep, 8);
 	hid_mouse_report_t m = { 0, 0, 0, 0, 0 }; // no buttons, no motion/wheel
-	if (mdev->ready())
-		mdev->sendReport(mrid, &m, sizeof m);
+	usbTxHid(mdev, mrid, &m, sizeof m);
 	if (g_usbMode == MODE_LIZARD) {
 		uint8_t cc = 0; // release any held consumer-control key
-		if (mdev->ready())
-			mdev->sendReport(0x03, &cc, 1);
+		usbTxHid(mdev, 0x03, &cc, 1);
 	}
 	// Zero the integrators + last-sent shadows so re-entry starts clean (no cursor fling from stale
 	// velocity, and held keys/buttons re-send correctly on the next rfLizard pass).
+	memset(prx, 0, sizeof prx);
+	memset(pry, 0, sizeof pry);
+	memset(prt, 0, sizeof prt);
+	memset(vx, 0, sizeof vx);
+	memset(vy, 0, sizeof vy);
 	for (int s = 0; s < NSLOT; s++) {
-		prx[s] = pry[s] = 0;
-		prt[s] = false;
-		vx[s] = vy[s] = 0;
 		ply[s] = 0;
 		plt[s] = false;
 	}
