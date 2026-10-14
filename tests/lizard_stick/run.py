@@ -22,6 +22,14 @@ struct Adafruit_USBD_HID {
 	}
 };
 '''
+# usbTxHid queues for the usbd task; here it hands the report straight to the stand-in device
+usb_tx = r'''#pragma once
+#include "Adafruit_TinyUSB.h"
+static inline void usbTxHid(Adafruit_USBD_HID *hid, uint8_t rid, const void *data, uint16_t len)
+{
+	hid->sendReport(rid, data, (uint8_t)len);
+}
+'''
 test = r'''
 #include <cassert>
 #include <cmath>
@@ -169,6 +177,7 @@ int main()
 '''
 with tempfile.TemporaryDirectory() as td:
     (Path(td) / 'Adafruit_TinyUSB.h').write_text(usb)
+    (Path(td) / 'usb_tx.h').write_text(usb_tx)
     p = Path(td) / 'test.cpp'
     p.write_text('#include <stddef.h>\n#include <string.h>\n' + lizard + test)
     subprocess.run(['g++', '-std=c++11', '-Wall', '-Wextra', '-Werror', '-Wno-unused', '-fsanitize=address,undefined',

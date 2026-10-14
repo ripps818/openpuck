@@ -1698,7 +1698,7 @@ void hapticTask()
 	// wantAuto = should the controller run its own pad layer (trackpad ticks) for the ACTIVE mode?
 	//  - puck modes (STEAM/LIZARD): NOT STEERED AT ALL. Steam owns the controller's haptics in puck mode
 	//    (it writes id9 itself), so the whole block below is skipped -- we used to drive id9 from
-	//    puckLizardActive() here, which fought Steam's own writes.
+	//    puckLizardActive() here, which fought Steam's own writes. Pure lizard lands id9=1 once per connect.
 	//  - emulated modes (Xbox/Switch/DS): follow the per-type trackpad-haptics config g_padHaptics (default
 	//    ON; Switch defaults OFF). Holding id9=0 is how we turn the controller's autonomous trackpad
 	//    haptics OFF for a type that doesn't want them, or set to clicks only.
@@ -1775,12 +1775,30 @@ void hapticTask()
 			// back in a puck mode: hand the controller's own ticks and clicks back once per connect, in case
 			// an emulated mode took them over and the controller kept the settings
 			static bool landedGive[NSLOT] = { false };
+			// Pure lizard: Steam never sees the controller, so nothing else
+			// re-enables the pad layer after a session left id9=0, and the
+			// trackpad ticks stay silent.
+			static bool landedLizOn[NSLOT] = { false };
+			const bool pureLizard = (g_usbMode == MODE_LIZARD);
 			for (int s = 0; s < NSLOT; s++) {
-				if (!g_slot[s].used || !hapticLinkUp(s))
+				if (!g_slot[s].used || !hapticLinkUp(s)) {
 					landedGive[s] = false;
-				else if (!landedGive[s]) {
+					landedLizOn[s] = false;
+					continue;
+				}
+				if (!landedGive[s]) {
 					landedGive[s] = true;
 					padCtrlWrite((uint8_t)s, false);
+				}
+				if (!pureLizard)
+					landedLizOn[s] = false;
+				else if (!landedLizOn[s]) {
+					landedLizOn[s] = true;
+					relayEnqueue(
+						IBEX_CMD_SET_SETTINGS_VALUES,
+						DATA_LIZARD_ON,
+						sizeof DATA_LIZARD_ON, false,
+						(uint8_t)s);
 				}
 			}
 		} // !modeIsPuck
