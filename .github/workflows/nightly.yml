@@ -183,8 +183,7 @@ jobs:
             git clone --depth 1 --branch firmware "$REPO" "$OLD/repo"
             cp "$OLD"/repo/OpenPuck-*.uf2 "$NEW"/ 2>/dev/null || true
           fi
-          # the debug build is a download for bug reports, not something the panel offers: leave it out
-          cp release_assets/OpenPuck-"${VERSION}"-standard.uf2 release_assets/OpenPuck-"${VERSION}"-factory-reset.uf2 "$NEW"/
+          cp release_assets/OpenPuck-"${VERSION}"-standard.uf2 release_assets/OpenPuck-"${VERSION}"-factory-reset.uf2 release_assets/OpenPuck-"${VERSION}"-debug.uf2 "$NEW"/
           KEEP="$(gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=15" --jq '.[].assets[].name')"
           for f in "$NEW"/OpenPuck-*.uf2; do
             echo "$KEEP" | grep -qxF "$(basename "$f")" || rm -f "$f"

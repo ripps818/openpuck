@@ -306,7 +306,7 @@ Every nightly and release also carries `OpenPuck-<version>-debug.uf2`, built wit
 firmware with the diagnostics that are safe to run together switched on: the host-command capture ring (the panel's
 **Capture** card), the feature-command serial log, the PCM counters and the per-section loop timing. It uses about
 25 KB more RAM and is otherwise the standard build, so settings and pairings carry over. Flash it by drag-and-drop
-like any `.uf2`; the panel's release list doesn't offer it.
+like any `.uf2`, or tick **debug** next to a release in the panel's *Update from a release* list.
 
 The diagnostics are build flags, all off in the standard build (`config.h` lists them). A specialised diagnosis builds
 with just the flag it needs, for example `make build EXTRA_FLAGS="-DOPK_DIAG_HID_LOG=1"`. `OPK_DIAG_HID_LOG` is not in
