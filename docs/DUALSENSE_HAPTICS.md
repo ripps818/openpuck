@@ -254,9 +254,10 @@ In [mode_ps5_audio.cpp](../OpenPuck/mode_ps5_audio.cpp) (`processAudioSamples`, 
      side's `0x80` rumble speed (gate 400), and the rest (signal minus low-pass) drives the tone as above, including
      its zero crossings (gate 100).
    - **Wave** (default): the haptic channels themselves, through a 1.6 kHz 2nd-order Butterworth low-pass, decimated to 4 kHz,
-     scaled linearly with no auto gain, as a real DualSense plays them: 100% is 8× the track and Auto is 50% (4×).
-     Games mix the track for a real pad's sensitive actuators: Black Flag Resynced puts it at 0.2-6% of full scale,
-     which the grips barely play at 1:1 (2026-10-14). Then u-law encoded and sent as `0x88` stereo PCM frames of 31
+     scaled linearly with no auto gain, as a real DualSense plays them: 100% is 2× the track and Auto is 25% (0.5×).
+     Calibrated on both controllers' accelerometers with one Black Flag Resynced clip played to the puck and a real
+     DualSense together (2026-10-14): mid-level effects shake the grips as hard as the real pad at 0.5×, while the
+     clip's hits stop at about 55 mg on the grips against about 80 mg on the real pad, reached at 2×. Then u-law encoded and sent as `0x88` stereo PCM frames of 31
      samples (129 frames/s), left channel to the left **grip** actuator (`0x88` is a grip stream). Streams while either channel's envelope is above
      gate 16 (games' idle tracks are exact zeros) and for 300 ms after; `0x86 {2, 2, 9}` sets the format at each start and every second. The controller
      pre-buffers (24 ms with the short third frame, PROTOCOL.md), so it starts about 20 ms later than a tone. No `0x80` rumble from the audio. See PROTOCOL.md

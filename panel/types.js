@@ -345,19 +345,19 @@ export function initTypes(){
         rec.rumbleScl=sel; rec.rumbleSclWrap=wrap; }
       if(ds5){
         // Haptics strength: 0-100% of the style's strongest (protocol v30). 0 = Auto (firmware default): the loudest
-        // recent haptic plays at full strength; Wave skips the auto gain, so there Auto is a fixed 50%: 100% = 8x the game's
+        // recent haptic plays at full strength; Wave skips the auto gain, so there Auto is a fixed 25%: 100% = 2x the game's
         // track, linear
         const sl=document.createElement("input"); sl.type="range"; sl.min=0; sl.max=100; sl.step=5;
         const vspan=document.createElement("span"); vspan.className="val";
         row(gHapt,"Strength",sl,vspan);
-        const gainLabel=v=>+v?v+"%":+sty.value===3?"Auto (50%)":"Auto";
+        const gainLabel=v=>+v?v+"%":+sty.value===3?"Auto (25%)":"Auto";
         sl.value=0; vspan.textContent=gainLabel(0);
         sl.addEventListener("input",()=>{ vspan.textContent=gainLabel(sl.value); });
         sty.addEventListener("change",()=>{ vspan.textContent=gainLabel(sl.value); });
         sl.addEventListener("change",()=>setField(30, S.lastP && S.lastP[0]<30 ? Math.round(sl.value*5/2) : +sl.value));
         rec.audioGain=sl; rec.audioGainV=vspan; rec.audioGainLabel=gainLabel;
         const gnote=document.createElement("p"); gnote.className="note";
-        gnote.textContent="100% is the strongest each style plays. Wave plays the game's haptic track as sent, scaled up to 8× at 100% (Auto is 50%, 4×): games mix it quietly for a real DualSense's sensitive actuators. The Grip limiter rounds off a loud track before it clips. In the Tone, Split and Rumble styles Auto evens out each game's level.";
+        gnote.textContent="100% is the strongest each style plays. Wave plays the game's haptic track as sent, scaled up to 2× at 100%. Auto, 25%, shakes the grips about as hard as a real DualSense; past about 2× the grips can't get stronger. The Grip limiter rounds off a loud track before it clips. In the Tone, Split and Rumble styles Auto evens out each game's level.";
         gHapt.appendChild(gnote);
       }
       // Grip limiter (protocol v27, per controller type from v30): the Switch's HD rumble grips and the DualSense's wave haptics/speaker

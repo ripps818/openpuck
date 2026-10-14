@@ -177,11 +177,11 @@ bool Adafruit_USBD_Audio_UAC1::begin()
 // Wave plays the track as sent and games' idle haptic tracks are exact zeros, so its gate only has to clear
 // rounding: a menu tick at ~0.2% of full scale (level ~60) still plays.
 #define WAVE_GATE 16
-// Wave gain: 100% is WAVE_MAX_GAIN times the haptic channels. Games mix DualSense haptics quietly for its
-// sensitive actuators (Black Flag: 0.2-6% of full scale), which the grips barely play at 1:1; the soft limiter
-// keeps a louder track from popping at the top of the range.
-#define WAVE_MAX_GAIN 8.0f
-#define WAVE_GAIN_DEFAULT 50
+// Wave gain: 100% is WAVE_MAX_GAIN times the haptic channels. Measured on both controllers' IMUs with one
+// Black Flag clip (2026-10-14): mid-level effects shake the grips as hard as a real DualSense at 0.5x (the
+// default, 25%), and 2x is where the clip's hits reach the grips' ceiling (~55 mg, a real pad's ~80 mg).
+#define WAVE_MAX_GAIN 2.0f
+#define WAVE_GAIN_DEFAULT 25
 // One strength update per 20 ms, the 0x80 rumble relay's throttle (RUMBLE_THROTTLE_MS in haptics.cpp).
 #define HAPTIC_TICK_MS 20u
 // A zero crossing counts once a sample passes this far beyond zero, so dither does not read as a high tone.
