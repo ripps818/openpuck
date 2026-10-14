@@ -11,6 +11,14 @@ table = cfg_c[cfg_c.index('uint8_t g_typeHaptic[HAP_COUNT]'):cfg_c.index('bool t
 helpers = cfg_h[cfg_h.index('// gain in dB of click step'):cfg_h.index('// 1 = the active DualSense profile maps Create')]
 setter = cfg_c[cfg_c.index('bool typeHapticSet('):]
 setter = setter[:setter.index('\n}\n') + 3]
+# Lizard mode's own trackpad haptics: its enum, table and setter, the load loop, the WebUSB field and frame bytes
+lzh_enum = cfg_h[cfg_h.index('enum { LZH_MODE'):cfg_h.index('extern uint8_t g_lizardHaptic')]
+lzh = cfg_c[cfg_c.index('uint8_t g_lizardHaptic[LZH_COUNT]'):cfg_c.index('bool lizardHapticSet(')]
+lzh_set = cfg_c[cfg_c.index('bool lizardHapticSet('):]
+lzh += lzh_set[:lzh_set.index('\n}\n') + 3]
+lzh_load = cfg_c[cfg_c.index('\tfor (uint8_t k = 0; k < LZH_COUNT; k++)'):cfg_c.index('\t// per-type haptic settings; one missing')]
+lzh_field = web[web.index('\t\t\t\tif (f >= 156 && f < 156 + LZH_COUNT) {'):web.index('\t\t\t\tswitch (f) {\n\t\t\t\t// the Switch-only D-pad')]
+lzh_frame = web[web.index('\tmemcpy(p + 50, g_lizardHaptic'):web.index('\t// drop-on-full, same anti-hang rule as the status blob')]
 load = cfg_c[cfg_c.index('\t// per-type haptic settings; one missing'):cfg_c.index('\tif (c.hdPadScale2 <= 250)')]
 load += cfg_c[cfg_c.index('\tfor (uint8_t et = 0; et < ET_COUNT; et++) {\n\t\tif (c.typeQamSelect'):cfg_c.index('\t// bits 1 and 2 were')]
 field = web[web.index('\t\t\t\tif (f >= 120 && f < 120 + 4 * HAP_COUNT) {'):web.index('\t\t\t\t// fields 190..229 were')]
@@ -39,7 +47,27 @@ bool g_blobRequest = false;
 void applyActiveType() { ++applied; }
 void saveCfg() { ++saved; }
 void saveCfgSoon() { ++saved; }
-''' + consts + table + helpers + setter + '''
+#define PAD_HAPTICS_OFF 0
+#define PAD_HAPTICS_ON 1
+#define PAD_HAPTICS_CLICK 2
+''' + consts + table + helpers + setter + lzh_enum + lzh + '''
+struct LzCfg { uint8_t lizardHaptic[LZH_COUNT]; };
+static void lzLoad(const LzCfg &c)
+{
+''' + lzh_load + '''}
+static bool lzField(uint8_t f, uint8_t v)
+{
+	uint8_t buf[8] = {};
+	int n = 3, need = 3;
+	bool handled = true;
+	do {
+''' + lzh_field + '''		handled = false;
+	} while (0);
+	return handled;
+}
+static void lzFrame(uint8_t *p)
+{
+''' + lzh_frame + '''}
 struct Cfg { uint8_t typeHaptic[HAP_COUNT][ET_COUNT]; uint8_t swDpadHaptics, swQamSelect, shortcutFlags, typeQamSelect[ET_COUNT]; };
 static void load(const Cfg &c)
 {
@@ -60,6 +88,27 @@ static void blobFill(uint8_t *p)
 ''' + blob + '''}
 int main()
 {
+	// Lizard trackpad haptics: On, +7 dB clicks, ticks left to the controller, the other types' defaults
+	assert(g_lizardHaptic[LZH_MODE] == PAD_HAPTICS_ON && g_lizardHaptic[LZH_CLICK] == 26 && g_lizardHaptic[LZH_TICK] == 0 && g_lizardHaptic[LZH_TICKGAIN] == 11);
+	applied = 0;
+	assert(lizardHapticSet(LZH_MODE, PAD_HAPTICS_CLICK) && lizardHapticSet(LZH_CLICK, 31) && lizardHapticSet(LZH_TICK, 4) && lizardHapticSet(LZH_TICKGAIN, 0) && applied == 4);
+	assert(!lizardHapticSet(LZH_MODE, 3) && !lizardHapticSet(LZH_CLICK, 32) && !lizardHapticSet(LZH_TICK, 5) && !lizardHapticSet(LZH_TICKGAIN, 32) && !lizardHapticSet(LZH_COUNT, 0) && applied == 4);
+	{
+		// fields 156..159, read back from the 0xAE frame's p[50..53]; the bytes after stay zero
+		assert(lzField(156, PAD_HAPTICS_OFF) && lzField(157, 3) && lzField(158, 2) && lzField(159, 9) && !lzField(160, 0) && !lzField(155, 0));
+		uint8_t p[57];
+		memset(p, 0xAA, sizeof p);
+		lzFrame(p);
+		assert(p[50] == PAD_HAPTICS_OFF && p[51] == 3 && p[52] == 2 && p[53] == 9 && p[54] == 0 && p[55] == 0 && p[56] == 0 && p[49] == 0xAA);
+		// a file from before the setting (0xFF tail fill) or out of range keeps what is there; a good one loads
+		LzCfg old;
+		memset(&old, 0xFF, sizeof old);
+		lzLoad(old);
+		assert(g_lizardHaptic[LZH_MODE] == PAD_HAPTICS_OFF && g_lizardHaptic[LZH_CLICK] == 3);
+		LzCfg good = { { PAD_HAPTICS_ON, 26, 0, 11 } };
+		lzLoad(good);
+		assert(g_lizardHaptic[LZH_MODE] == PAD_HAPTICS_ON && g_lizardHaptic[LZH_CLICK] == 26 && g_lizardHaptic[LZH_TICK] == 0 && g_lizardHaptic[LZH_TICKGAIN] == 11);
+	}
 	// defaults: every type on wave; 85% limiter, -9 dB click, ticks left to the controller
 	for (int et = 0; et < ET_COUNT; et++) {
 		assert(g_typeHaptic[HAP_KNEE][et] == 85 && g_typeHaptic[HAP_CLICK][et] == 26 && g_typeHaptic[HAP_TICK][et] == 0 && g_typeHaptic[HAP_TICKGAIN][et] == 11);

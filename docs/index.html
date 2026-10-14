@@ -472,6 +472,17 @@
         <p class="note" id="lzStatus" style="margin-top:8px">—</p>
       </div>
     </div>
+    <div class="card" id="lzHapCard">
+      <h2><span data-ic="padR"></span> Trackpad feedback</h2>
+      <p class="note hide" id="lzHapOld" style="margin-top:0">This puck's firmware predates the Lizard trackpad haptics — update it to set them.</p>
+      <div id="lzHapControls">
+        <div class="row"><label>Trackpad haptics</label><select id="lzHapMode"><option value="1">On</option><option value="2">Clicks only</option><option value="0">Off</option></select></div>
+        <div class="row"><label>Click strength</label><input type="range" id="lzHapClick" min="0" max="31" step="1"><span class="val" id="lzHapClickV"></span></div>
+        <div class="row"><label>Tick spacing</label><input type="range" id="lzHapTick" min="0" max="4" step="1"><span class="val" id="lzHapTickV"></span></div>
+        <div class="row"><label>Tick strength</label><input type="range" id="lzHapTickG" min="0" max="31" step="1"><span class="val" id="lzHapTickGV"></span></div>
+        <p class="note">For Lizard mode; Steam mode's lizard (Steam closed) leaves the trackpads to Steam. On plays the controller's own ticks and clicks at a fixed strength; choose a tick spacing and the puck plays both itself, at the Tick and Click strengths. Clicks only has no ticks and the puck pulses each click at the Click strength.</p>
+      </div>
+    </div>
     <div class="card" id="mouseCard">
       <h2><span data-ic="padR"></span> Trackpad mouse</h2>
       <div class="row"><label>Sensitivity</label><input type="range" id="mDiv" min="4" max="200" step="1"><span class="val" id="mDivV"></span></div>
@@ -2560,6 +2571,7 @@ function mkSelect(def, includeNone){
 // s = 0xAE frame payload: [ver][37 unused][swDpadHaptics][storageState][hdPadScale/2][4 unused]
 // [swQamSelect][shortcutFlags][8 unused]
 function swStatusApply(s){
+  lizardHapticsApply(s);
   const capable=!!s;
   // firmware with the per-type D-pad click feedback shows it on every tab instead
   const perTypeDpad=!!(S.lastP && S.lastP.length>hapIndex(HAP.DPAD,3));
@@ -2654,7 +2666,37 @@ const HAPTIC_STYLES=[[3,"Wave"],[1,"Tone"],[2,"Split"],[0,"Rumble"]];
 const RUMBLE_SCALES=Array.from({length:246},(_,i)=>10+i*2);
 const HD_PAD_SCALES=Array.from({length:251},(_,i)=>i*2);
 
+// Lizard mode's trackpad haptics (v30): WebUSB fields 156..159, 0xAE payload s[48..51] = Trackpad haptics,
+// click strength, tick spacing, tick strength (g_lizardHaptic in config.h)
+const LZH_FIELD0 = 156, LZH_INDEX0 = 48;
+const LZH_DEFAULTS = [1, 26, 0, 11];
+const fmtLzClick=(pos,dflt)=>{ const db=clickDb(pos); return (db>0?"+":"")+db+" dB"+(pos===dflt?" (default)":""); };
+function initLizardHaptics(){
+  const ctl=[$("#lzHapMode"),$("#lzHapClick"),$("#lzHapTick"),$("#lzHapTickG")];
+  ctl.forEach((el,k)=>el.addEventListener("change",()=>setField(LZH_FIELD0+k,+el.value)));
+  $("#lzHapClick").addEventListener("input",()=>{ $("#lzHapClickV").textContent=fmtLzClick(+$("#lzHapClick").value,LZH_DEFAULTS[1]); });
+  $("#lzHapTick").addEventListener("input",()=>{ $("#lzHapTickV").textContent=PAD_TICK_LABELS[+$("#lzHapTick").value]; });
+  $("#lzHapTickG").addEventListener("input",()=>{ $("#lzHapTickGV").textContent=fmtLzClick(+$("#lzHapTickG").value,LZH_DEFAULTS[3]); });
+}
+function lizardHapticsValues(s){
+  return (s && S.lastP && S.lastP[0]>=30 && s.length>LZH_INDEX0+3) ? Array.from(s.slice(LZH_INDEX0,LZH_INDEX0+4)) : null;
+}
+function lizardHapticsApply(s){
+  const v=lizardHapticsValues(s);
+  $("#lzHapOld").classList.toggle("hide",!!v);
+  $("#lzHapControls").classList.toggle("hide",!v);
+  if(!v) return;
+  const [mode,click,tick,tickG]=v;
+  if(!held($("#lzHapMode"))) $("#lzHapMode").value=mode;
+  if(!held($("#lzHapClick"))){ $("#lzHapClick").value=click; $("#lzHapClickV").textContent=fmtLzClick(click,LZH_DEFAULTS[1]); }
+  if(!held($("#lzHapTick"))){ $("#lzHapTick").value=tick; $("#lzHapTickV").textContent=PAD_TICK_LABELS[tick]||tick; }
+  if(!held($("#lzHapTickG"))){ $("#lzHapTickG").value=tickG; $("#lzHapTickGV").textContent=fmtLzClick(tickG,LZH_DEFAULTS[3]); }
+  // as on the other types: click strength needs haptics on or clicks only, ticks need On
+  $("#lzHapClick").disabled=(mode===0); $("#lzHapTick").disabled=(mode!==1); $("#lzHapTickG").disabled=(mode!==1||tick===0);
+}
+
 function initTypes(){
+  initLizardHaptics();
   $("#swClickFeedback").onchange=()=>setField(230,+$("#swClickFeedback").value);
   (function buildTypeCfgs(){
     const host=document.getElementById("typeCfgs"), tabs=document.getElementById("mapTabs");
@@ -4585,6 +4627,8 @@ function buildBackup(p, bp){
     cfg.swDpadHaptics=S.lastSw[38]; cfg.hdPadScale=S.lastSw[40]*2;
     cfg.swQamSelect=S.lastSw[45]; cfg.shortcutFlags=S.lastSw[46];
   }
+  // Lizard trackpad haptics: Trackpad haptics, click strength, tick spacing, tick strength (fields 156..159)
+  const lzh=lizardHapticsValues(S.lastSw); if(lzh) cfg.lizardHaptics=lzh;
   // version 2: include the lizard map so it survives a backup/restore cycle.
   // Guard on !lizardBusy to avoid a race with the one-shot lazy load (lizardExchange sets
   // lizardBusy while the initial 0x11 fetch is in flight); if the load is still pending the
@@ -4673,6 +4717,10 @@ async function importBackup(file){
        m.every(b=>b && isInt(b.outType,0,255) && Array.isArray(b.od) && b.od.length<=7 && b.od.every(byte) && isInt(b.trig,0,2**40-1) && isInt(b.hold,0,2**40-1)))))){
     log("import: invalid mapping profiles");return;
   }
+  const LZH_RANGE=[2,31,4,31];
+  if(hc.lizardHaptics!==undefined && !(Array.isArray(hc.lizardHaptics) && hc.lizardHaptics.length===4 && hc.lizardHaptics.every((v,k)=>isInt(v,0,LZH_RANGE[k])))){
+    log("import: invalid Lizard trackpad haptics");return;
+  }
   const bondedN=obj.bonds.filter(b=>b.used).length;
   if(!confirm("Restore this backup onto the CONNECTED puck (serial "+(S.dev.serialNumber||"?")+")?\n\nMake sure this is the TARGET puck, not the one you exported from — the panel only talks to the puck you last connected.\n\nThis OVERWRITES its "+bondedN+" controller pairing(s) and ALL settings, then reboots it.\n\nResult: any controller paired to the original puck will connect to this one with no re-pairing.")) return;
   log("importing onto puck "+(S.dev.serialNumber||"?"));
@@ -4697,7 +4745,9 @@ async function importBackup(file){
   const profN=(Array.isArray(c.profiles) && profilesCapable())?c.profiles.length:0;
   const hapN=(S.lastP && S.lastP[0]>=30 && Array.isArray(c.types))?c.types.slice(0,typeN).reduce((n,t)=>n+HAP_KEYS.filter(([key])=>t && t[key]!==undefined).length,0):0;
   const qamN=(S.lastP && S.lastP.length>QAM_SELECT_INDEX0 && Array.isArray(c.types))?c.types.slice(0,typeN).filter((t,et)=>t && t.qamSelect!==undefined && S.lastP.length>QAM_SELECT_INDEX0+et).length:0;
-  const total=baseN + typeN*9 + padStickN + hapN + qamN + profN*4 + (profN && c.profileGesture?1:0) + lizardN + 4 + 1 + (c.swDpadHaptics!==undefined?1:0) + (c.rumbleScale!==undefined?1:0) + (c.hdPadScale!==undefined?1:0) + (c.swQamSelect!==undefined?1:0) + (c.shortcutFlags!==undefined?1:0);
+  // a puck without the Lizard trackpad haptics skips them, like the other settings it doesn't have
+  const lzhN=(c.lizardHaptics && lizardHapticsValues(S.lastSw))?4:0;
+  const total=lzhN + baseN + typeN*9 + padStickN + hapN + qamN + profN*4 + (profN && c.profileGesture?1:0) + lizardN + 4 + 1 + (c.swDpadHaptics!==undefined?1:0) + (c.rumbleScale!==undefined?1:0) + (c.hdPadScale!==undefined?1:0) + (c.swQamSelect!==undefined?1:0) + (c.shortcutFlags!==undefined?1:0);
   let step=0, stage="";
   const tick=()=>modalStage(stage, Math.min(99,Math.floor(step*100/total)));
   try{
@@ -4758,6 +4808,7 @@ async function importBackup(file){
     if(c.hdPadScale!==undefined) await sf(231,c.hdPadScale/2);
     if(c.swQamSelect!==undefined)await sf(239,c.swQamSelect);
     if(c.shortcutFlags!==undefined)await sf(240,c.shortcutFlags);
+    if(lzhN) for(let k=0;k<4;k++) await sf(156+k, c.lizardHaptics[k]);
     if(profN){
       stage="Restoring mapping profiles"; tick();
       // Each op answers with the type's 0xB0 frame. Only what differs from the puck is sent: a full restore is

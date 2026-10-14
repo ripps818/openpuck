@@ -143,6 +143,30 @@ bool typeHapticSet(uint8_t setting, uint8_t et, uint8_t value)
 	applyActiveType();
 	return true;
 }
+uint8_t g_lizardHaptic[LZH_COUNT] = { PAD_HAPTICS_ON, PAD_CLICK_DEFAULT,
+				      PAD_TICK_DEFAULT, PAD_TICKGAIN_DEFAULT };
+static bool lizardHapticInRange(uint8_t setting, uint8_t value)
+{
+	switch (setting) {
+	case LZH_MODE:
+		return value <= PAD_HAPTICS_CLICK;
+	case LZH_CLICK:
+		return typeHapticInRange(HAP_CLICK, value);
+	case LZH_TICK:
+		return typeHapticInRange(HAP_TICK, value);
+	case LZH_TICKGAIN:
+		return typeHapticInRange(HAP_TICKGAIN, value);
+	}
+	return false;
+}
+bool lizardHapticSet(uint8_t setting, uint8_t value)
+{
+	if (!lizardHapticInRange(setting, value))
+		return false;
+	g_lizardHaptic[setting] = value;
+	applyActiveType();
+	return true;
+}
 uint8_t g_createAsTouch = 0;
 uint8_t g_trigInner = 0, g_trigOuter = 100;
 uint8_t g_ledBright = 0;
@@ -192,7 +216,7 @@ void applyActiveType()
 		g_qamMap = 0;
 		g_qamSelect = 0;
 		g_abSwap = 0;
-		g_padHaptics = 1;
+		g_padHaptics = PAD_HAPTICS_ON;
 		g_rumble = 1;
 		g_rumbleStyle = RUMBLE_STYLE_NORMAL;
 		g_hapticLimitKnee = HAPTIC_LIMIT_KNEE_DEFAULT;
@@ -200,6 +224,12 @@ void applyActiveType()
 		g_padClick = PAD_CLICK_DEFAULT;
 		g_padTick = PAD_TICK_DEFAULT;
 		g_padTickGain = PAD_TICKGAIN_DEFAULT;
+		if (g_usbMode == MODE_LIZARD) {
+			g_padHaptics = g_lizardHaptic[LZH_MODE];
+			g_padClick = g_lizardHaptic[LZH_CLICK];
+			g_padTick = g_lizardHaptic[LZH_TICK];
+			g_padTickGain = g_lizardHaptic[LZH_TICKGAIN];
+		}
 		g_ledBright = 0;
 		g_padStick[0] = g_padStick[1] = PS_OFF;
 		remapDefaultMap(&g_btnMap);
@@ -293,6 +323,8 @@ struct Cfg {
 	// per-type Quick Access + Select target, g_typeQamSelect. 0xFF (older file) -> the Switch's from swQamSelect
 	// when its enable switch was on, the rest none
 	uint8_t typeQamSelect[ET_COUNT];
+	// g_lizardHaptic; 0xFF or out of range (an older file) -> the default
+	uint8_t lizardHaptic[LZH_COUNT];
 }; // rsvd0 = ex-padSmooth, now the one-shot debug-CDC arm
 
 // Shortest cfg.bin we still accept: the layout as of CFG_MAGIC 0xCF, i.e. everything before the appended tail.
@@ -395,6 +427,7 @@ void saveCfg()
 		c.padStick[i][0] = g_padStickCfg[i][0];
 		c.padStick[i][1] = g_padStickCfg[i][1];
 	}
+	memcpy(c.lizardHaptic, g_lizardHaptic, sizeof c.lizardHaptic);
 	storageWriteFile(CFG_FILE, "/cfg.tmp", (const uint8_t *)&c, sizeof c);
 	// a reset can follow a settings save at once, so any profile edit still waiting goes out with it
 	btnmapFlush();
@@ -561,6 +594,9 @@ void loadCfg()
 		rfMask |= (uint64_t)c.rfChannelMask[i] << (8 * i);
 	g_rfChannelMask = rfChannelMaskValid(rfMask) ? rfMask :
 						       RF_CHANNEL_MASK_DEFAULT;
+	for (uint8_t k = 0; k < LZH_COUNT; k++)
+		if (lizardHapticInRange(k, c.lizardHaptic[k]))
+			g_lizardHaptic[k] = c.lizardHaptic[k];
 	// per-type haptic settings; one missing or out of range keeps its default, except that the limiter and the
 	// DualSense style start from the shared values older configs kept (g_hapticLimitKnee, g_audioHapticStyle)
 	for (uint8_t k = 0; k < HAP_COUNT; k++)

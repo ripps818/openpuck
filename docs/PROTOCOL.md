@@ -580,6 +580,12 @@ Messages:
     `swQamSelect` byte. A file from before keeps the Switch's target only if its bit 4 was set (`18` when no target
     was saved).
 
+    Lizard mode's trackpad haptics (it has no controller type): fields `156` Trackpad haptics (`0` off, `1` on,
+    `2` clicks only), `157` click strength, `158` tick spacing, `159` tick strength, with the ranges and meaning of
+    per-type settings 2-4. Read back in `0xAE` bytes 48-51 of its payload (the status blob has no room left).
+    Defaults on, `26`, `0`, `11`. They apply in Lizard mode only; Steam mode's lizard leaves the trackpads to
+    Steam. The config file keeps the four bytes after the Quick Access targets.
+
     Trigger haptics plays a game's adaptive-trigger effects (ticks into a resistance zone, a weapon's snap, trigger
     vibration) on the chosen actuators; the trigger status itself is always reported. See DUALSENSE_HAPTICS.md §10.
     Firmware before it sends a shorter status blob (no `p[240..243]`).
@@ -763,7 +769,8 @@ Messages:
     those bytes (button combinations, macros); skip what the length covers beyond what you know.
   - `0xAE 55 <payload>`: Switch Pro / HD rumble / shortcut settings: `[ver=1][37 zero bytes]`
     `[swDpadHaptics][storageState][hdPadScale/2][4 zero bytes][swQamSelect][shortcutFlags][lizardProfile]`
-    `[7 zero bytes]`, where `lizardProfile` (version ≥ 30, zero before) is the active Lizard profile.
+    `[lizardHaptics x4][3 zero bytes]`, where `lizardProfile` (version ≥ 30, zero before) is the active Lizard
+    profile and `lizardHaptics` (version ≥ 30) is Lizard mode's trackpad haptics, fields `156..159` below.
     The zero bytes held removed settings (Switch Pro profiles, rumble presets and slot, strength steps and
     slots) and keep the layout stable; storageState 0 unavailable, 1 mounted, 2 initialized blank flash, 3 save failed.
 

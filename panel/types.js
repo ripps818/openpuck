@@ -1,5 +1,5 @@
 import { S } from './state.js';
-import { $, log } from './util.js';
+import { $, held, log } from './util.js';
 import { setField } from './protocol.js';
 import { MODE_NAMES, MODE_ORDER } from './status.js';
 import { openNav } from './nav.js';
@@ -72,6 +72,7 @@ function mkSelect(def, includeNone){
 // s = 0xAE frame payload: [ver][37 unused][swDpadHaptics][storageState][hdPadScale/2][4 unused]
 // [swQamSelect][shortcutFlags][8 unused]
 export function swStatusApply(s){
+  lizardHapticsApply(s);
   const capable=!!s;
   // firmware with the per-type D-pad click feedback shows it on every tab instead
   const perTypeDpad=!!(S.lastP && S.lastP.length>hapIndex(HAP.DPAD,3));
@@ -166,7 +167,37 @@ const HAPTIC_STYLES=[[3,"Wave"],[1,"Tone"],[2,"Split"],[0,"Rumble"]];
 export const RUMBLE_SCALES=Array.from({length:246},(_,i)=>10+i*2);
 const HD_PAD_SCALES=Array.from({length:251},(_,i)=>i*2);
 
+// Lizard mode's trackpad haptics (v30): WebUSB fields 156..159, 0xAE payload s[48..51] = Trackpad haptics,
+// click strength, tick spacing, tick strength (g_lizardHaptic in config.h)
+const LZH_FIELD0 = 156, LZH_INDEX0 = 48;
+const LZH_DEFAULTS = [1, 26, 0, 11];
+const fmtLzClick=(pos,dflt)=>{ const db=clickDb(pos); return (db>0?"+":"")+db+" dB"+(pos===dflt?" (default)":""); };
+function initLizardHaptics(){
+  const ctl=[$("#lzHapMode"),$("#lzHapClick"),$("#lzHapTick"),$("#lzHapTickG")];
+  ctl.forEach((el,k)=>el.addEventListener("change",()=>setField(LZH_FIELD0+k,+el.value)));
+  $("#lzHapClick").addEventListener("input",()=>{ $("#lzHapClickV").textContent=fmtLzClick(+$("#lzHapClick").value,LZH_DEFAULTS[1]); });
+  $("#lzHapTick").addEventListener("input",()=>{ $("#lzHapTickV").textContent=PAD_TICK_LABELS[+$("#lzHapTick").value]; });
+  $("#lzHapTickG").addEventListener("input",()=>{ $("#lzHapTickGV").textContent=fmtLzClick(+$("#lzHapTickG").value,LZH_DEFAULTS[3]); });
+}
+export function lizardHapticsValues(s){
+  return (s && S.lastP && S.lastP[0]>=30 && s.length>LZH_INDEX0+3) ? Array.from(s.slice(LZH_INDEX0,LZH_INDEX0+4)) : null;
+}
+function lizardHapticsApply(s){
+  const v=lizardHapticsValues(s);
+  $("#lzHapOld").classList.toggle("hide",!!v);
+  $("#lzHapControls").classList.toggle("hide",!v);
+  if(!v) return;
+  const [mode,click,tick,tickG]=v;
+  if(!held($("#lzHapMode"))) $("#lzHapMode").value=mode;
+  if(!held($("#lzHapClick"))){ $("#lzHapClick").value=click; $("#lzHapClickV").textContent=fmtLzClick(click,LZH_DEFAULTS[1]); }
+  if(!held($("#lzHapTick"))){ $("#lzHapTick").value=tick; $("#lzHapTickV").textContent=PAD_TICK_LABELS[tick]||tick; }
+  if(!held($("#lzHapTickG"))){ $("#lzHapTickG").value=tickG; $("#lzHapTickGV").textContent=fmtLzClick(tickG,LZH_DEFAULTS[3]); }
+  // as on the other types: click strength needs haptics on or clicks only, ticks need On
+  $("#lzHapClick").disabled=(mode===0); $("#lzHapTick").disabled=(mode!==1); $("#lzHapTickG").disabled=(mode!==1||tick===0);
+}
+
 export function initTypes(){
+  initLizardHaptics();
   $("#swClickFeedback").onchange=()=>setField(230,+$("#swClickFeedback").value);
   (function buildTypeCfgs(){
     const host=document.getElementById("typeCfgs"), tabs=document.getElementById("mapTabs");

@@ -53,6 +53,12 @@ static inline bool slotPoweringOff(int slot)
 // emulated mode, so forwarding that tuple disables motion until the controller
 // is re-paired. Trailing bytes cannot form a setting and must not reach the
 // controller as a truncated tuple.
+//
+// Pure Lizard also keeps the lizard/pad-haptics switch (id9) to itself: haptics.cpp
+// lands it for the trackpad haptics setting, and a host that writes id9=0 every
+// 3 s would switch the controller's own trackpad ticks and clicks off again
+// right after. Steam and any SDL3 program with the puck open as a gamepad do:
+// SDL's Steam Triton driver re-sends it every 3000 ms for as long as it runs.
 static uint8_t filterSettingsRelay(const uint8_t *src, uint16_t len,
 				   uint8_t dst[RELAY_CMD_MAXP])
 {
@@ -61,6 +67,8 @@ static uint8_t filterSettingsRelay(const uint8_t *src, uint16_t len,
 	for (uint16_t off = 0;
 	     off + 2 < len && (uint16_t)out + 3 <= RELAY_CMD_MAXP; off += 3) {
 		if (src[off] == SETTING_IMU_MODE)
+			continue;
+		if (src[off] == SETTING_LIZARD_MODE && g_usbMode == MODE_LIZARD)
 			continue;
 		memcpy(dst + out, src + off, 3);
 		out += 3;
@@ -1001,6 +1009,11 @@ void SteamPuckController::task()
 			wasLizard = nowLizard;
 		}
 	}
+	// Pure Lizard is keyboard/mouse only: announcing a connected controller (0x79) makes SDL's Steam
+	// driver open a joystick and write lizard-off every 3 s, which silences the pad haptics. Without
+	// the 0x79 SDL never sees a controller; the lizard reports above don't depend on it.
+	if (g_usbMode == MODE_LIZARD)
+		return;
 	// Per-slot 0x79/0x7B: each connected slot reports its OWN edge and its OWN status. State arrays are
 	// per-slot so each controller's "connected" edge fires once and is re-sent only until Steam acks THAT
 	// slot. The real puck's per-slot edge-triggered 0x79 prevents re-triggering Steam's connect-chime loop.

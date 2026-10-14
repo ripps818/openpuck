@@ -2,7 +2,7 @@ import { S } from './state.js';
 import { $, log } from './util.js';
 import { readBlob, readFrame, send, waitIdle } from './protocol.js';
 import { CHORD_DPAD_FIELD } from './status.js';
-import { HAP_KEYS, PAD_STICK_FIELD0, TYPE_DEFS, hapField, hapValue } from './types.js';
+import { HAP_KEYS, PAD_STICK_FIELD0, TYPE_DEFS, hapField, hapValue, lizardHapticsValues } from './types.js';
 import { LZ_MAX, lizardCapable, lzReadProfile, lzWriteProfile, readLizard } from './lizard.js';
 import { modalDone, modalOpen, modalStage } from './firmware.js';
 import { LZ_TYPE, QAM_SELECT_FIELD0, QAM_SELECT_INDEX0, profilesCapable, profilesLoad } from './profiles.js';
@@ -43,6 +43,8 @@ export function buildBackup(p, bp){
     cfg.swDpadHaptics=S.lastSw[38]; cfg.hdPadScale=S.lastSw[40]*2;
     cfg.swQamSelect=S.lastSw[45]; cfg.shortcutFlags=S.lastSw[46];
   }
+  // Lizard trackpad haptics: Trackpad haptics, click strength, tick spacing, tick strength (fields 156..159)
+  const lzh=lizardHapticsValues(S.lastSw); if(lzh) cfg.lizardHaptics=lzh;
   // version 2: include the lizard map so it survives a backup/restore cycle.
   // Guard on !lizardBusy to avoid a race with the one-shot lazy load (lizardExchange sets
   // lizardBusy while the initial 0x11 fetch is in flight); if the load is still pending the
@@ -131,6 +133,10 @@ export async function importBackup(file){
        m.every(b=>b && isInt(b.outType,0,255) && Array.isArray(b.od) && b.od.length<=7 && b.od.every(byte) && isInt(b.trig,0,2**40-1) && isInt(b.hold,0,2**40-1)))))){
     log("import: invalid mapping profiles");return;
   }
+  const LZH_RANGE=[2,31,4,31];
+  if(hc.lizardHaptics!==undefined && !(Array.isArray(hc.lizardHaptics) && hc.lizardHaptics.length===4 && hc.lizardHaptics.every((v,k)=>isInt(v,0,LZH_RANGE[k])))){
+    log("import: invalid Lizard trackpad haptics");return;
+  }
   const bondedN=obj.bonds.filter(b=>b.used).length;
   if(!confirm("Restore this backup onto the CONNECTED puck (serial "+(S.dev.serialNumber||"?")+")?\n\nMake sure this is the TARGET puck, not the one you exported from — the panel only talks to the puck you last connected.\n\nThis OVERWRITES its "+bondedN+" controller pairing(s) and ALL settings, then reboots it.\n\nResult: any controller paired to the original puck will connect to this one with no re-pairing.")) return;
   log("importing onto puck "+(S.dev.serialNumber||"?"));
@@ -155,7 +161,9 @@ export async function importBackup(file){
   const profN=(Array.isArray(c.profiles) && profilesCapable())?c.profiles.length:0;
   const hapN=(S.lastP && S.lastP[0]>=30 && Array.isArray(c.types))?c.types.slice(0,typeN).reduce((n,t)=>n+HAP_KEYS.filter(([key])=>t && t[key]!==undefined).length,0):0;
   const qamN=(S.lastP && S.lastP.length>QAM_SELECT_INDEX0 && Array.isArray(c.types))?c.types.slice(0,typeN).filter((t,et)=>t && t.qamSelect!==undefined && S.lastP.length>QAM_SELECT_INDEX0+et).length:0;
-  const total=baseN + typeN*9 + padStickN + hapN + qamN + profN*4 + (profN && c.profileGesture?1:0) + lizardN + 4 + 1 + (c.swDpadHaptics!==undefined?1:0) + (c.rumbleScale!==undefined?1:0) + (c.hdPadScale!==undefined?1:0) + (c.swQamSelect!==undefined?1:0) + (c.shortcutFlags!==undefined?1:0);
+  // a puck without the Lizard trackpad haptics skips them, like the other settings it doesn't have
+  const lzhN=(c.lizardHaptics && lizardHapticsValues(S.lastSw))?4:0;
+  const total=lzhN + baseN + typeN*9 + padStickN + hapN + qamN + profN*4 + (profN && c.profileGesture?1:0) + lizardN + 4 + 1 + (c.swDpadHaptics!==undefined?1:0) + (c.rumbleScale!==undefined?1:0) + (c.hdPadScale!==undefined?1:0) + (c.swQamSelect!==undefined?1:0) + (c.shortcutFlags!==undefined?1:0);
   let step=0, stage="";
   const tick=()=>modalStage(stage, Math.min(99,Math.floor(step*100/total)));
   try{
@@ -216,6 +224,7 @@ export async function importBackup(file){
     if(c.hdPadScale!==undefined) await sf(231,c.hdPadScale/2);
     if(c.swQamSelect!==undefined)await sf(239,c.swQamSelect);
     if(c.shortcutFlags!==undefined)await sf(240,c.shortcutFlags);
+    if(lzhN) for(let k=0;k<4;k++) await sf(156+k, c.lizardHaptics[k]);
     if(profN){
       stage="Restoring mapping profiles"; tick();
       // Each op answers with the type's 0xB0 frame. Only what differs from the puck is sent: a full restore is

@@ -1654,6 +1654,13 @@ void hapticTestRumble()
 		g_rumbleTestStop = 1;
 }
 
+// The puck steers the trackpad haptics everywhere but Steam mode, where Steam writes id9 itself. Pure Lizard is
+// steered too: Steam never sees the controller there, and Lizard has its own settings (g_lizardHaptic).
+static inline bool padHapticsSteered()
+{
+	return !modeIsPuck(g_usbMode) || g_usbMode == MODE_LIZARD;
+}
+
 // Take over (or hand back) the controller's own movement ticks and clicks, see padTickCtrlDue
 static void padCtrlWrite(uint8_t slot, bool take)
 {
@@ -1705,12 +1712,12 @@ void hapticTask()
 	// controller's revert timer (which also resets all settings = audible pop).
 	//
 	// wantAuto = should the controller run its own pad layer (trackpad ticks) for the ACTIVE mode?
-	//  - puck modes (STEAM/LIZARD): NOT STEERED AT ALL. Steam owns the controller's haptics in puck mode
-	//    (it writes id9 itself), so the whole block below is skipped -- we used to drive id9 from
-	//    puckLizardActive() here, which fought Steam's own writes. Pure lizard lands id9=1 once per connect.
-	//  - emulated modes (Xbox/Switch/DS): follow the per-type trackpad-haptics config g_padHaptics (default
-	//    ON; Switch defaults OFF). Holding id9=0 is how we turn the controller's autonomous trackpad
-	//    haptics OFF for a type that doesn't want them, or set to clicks only.
+	//  - Steam mode: NOT STEERED AT ALL. Steam owns the controller's haptics (it writes id9 itself), so the
+	//    steering below is skipped -- we used to drive id9 from puckLizardActive() here, which fought Steam's
+	//    own writes.
+	//  - emulated modes (Xbox/Switch/DS) and pure Lizard: follow the trackpad-haptics config g_padHaptics
+	//    (per type, default ON; Switch defaults OFF; Lizard's own g_lizardHaptic). Holding id9=0 is how we
+	//    turn the controller's autonomous trackpad haptics OFF, or set to clicks only.
 	if (g_lizKeep) {
 		static unsigned long lastKeep[NSLOT] = { 0 };
 		static bool landedAuto[NSLOT] = { false };
@@ -1728,8 +1735,7 @@ void hapticTask()
 			SETTING_TRIGGER_MODE, 0x00, 0x00
 		};
 
-		// In puck mode Steam owns haptics; skip id9 steering.
-		if (!modeIsPuck(g_usbMode)) {
+		if (padHapticsSteered()) {
 			bool wantAuto = g_padHaptics == PAD_HAPTICS_ON;
 			for (int s = 0; s < NSLOT; s++) {
 				if (!g_slot[s].used || !hapticLinkUp(s)) {
@@ -1741,7 +1747,8 @@ void hapticTask()
 					lastKeep[s] = 0;
 					continue;
 				}
-				if (!landedImu[s]) {
+				// Lizard keeps whatever IMU mode the controller has (the panel's Turn on IMU sets it)
+				if (!landedImu[s] && g_usbMode != MODE_LIZARD) {
 					landedImu[s] = true;
 					relayEnqueue(
 						IBEX_CMD_SET_SETTINGS_VALUES,
@@ -1784,37 +1791,18 @@ void hapticTask()
 			// back in a puck mode: hand the controller's own ticks and clicks back once per connect, in case
 			// an emulated mode took them over and the controller kept the settings
 			static bool landedGive[NSLOT] = { false };
-			// Pure lizard: Steam never sees the controller, so nothing else
-			// re-enables the pad layer after a session left id9=0, and the
-			// trackpad ticks stay silent.
-			static bool landedLizOn[NSLOT] = { false };
-			const bool pureLizard = (g_usbMode == MODE_LIZARD);
 			for (int s = 0; s < NSLOT; s++) {
-				if (!g_slot[s].used || !hapticLinkUp(s)) {
+				if (!g_slot[s].used || !hapticLinkUp(s))
 					landedGive[s] = false;
-					landedLizOn[s] = false;
-					continue;
-				}
-				if (!landedGive[s]) {
+				else if (!landedGive[s]) {
 					landedGive[s] = true;
 					padCtrlWrite((uint8_t)s, false);
 				}
-				if (!pureLizard)
-					landedLizOn[s] = false;
-				else if (!landedLizOn[s]) {
-					landedLizOn[s] = true;
-					relayEnqueue(
-						IBEX_CMD_SET_SETTINGS_VALUES,
-						DATA_LIZARD_ON,
-						sizeof DATA_LIZARD_ON, false,
-						(uint8_t)s);
-				}
 			}
-		} // !modeIsPuck
+		} // padHapticsSteered
 	}
 	// Trackpad haptics On with a tick level: the puck plays the movement ticks itself, so their strength is ours
-	if (g_padHaptics == PAD_HAPTICS_ON && g_padTick &&
-	    !modeIsPuck(g_usbMode))
+	if (g_padHaptics == PAD_HAPTICS_ON && g_padTick && padHapticsSteered())
 		for (uint8_t s = 0; s < NSLOT; s++)
 			if (g_slot[s].used)
 				padTickMove(s);
@@ -1822,7 +1810,7 @@ void hapticTask()
 	// click itself; with puck-made ticks the controller's own click pulse is off, so it does the same. The PlayStation builders also feed padClickEdge; it fires once per rising edge.
 	if ((g_padHaptics == PAD_HAPTICS_CLICK ||
 	     (g_padHaptics == PAD_HAPTICS_ON && g_padTick)) &&
-	    !modeIsPuck(g_usbMode))
+	    padHapticsSteered())
 		for (uint8_t s = 0; s < NSLOT; s++)
 			if (g_slot[s].used)
 				padClickEdge(s, shortcutHostButtons(
