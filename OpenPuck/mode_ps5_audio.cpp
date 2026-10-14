@@ -352,6 +352,7 @@ static void processAudioSamples(const uint8_t *data, uint32_t len)
 	static Biquad s_spkAa[2] = {}, s_spkCut[2] = {};
 	static float s_spkGain = 0, s_spkPeak = 0, s_spkAgc = 1;
 	static HapticLift s_lift = {};
+	static WaveExpand s_exp = {};
 	uint8_t waveMask = s_waveMask;
 	float waveScale = s_waveScale, spkScale = s_spkScale;
 	uint8_t dec = s_streamDec;
@@ -364,6 +365,7 @@ static void processAudioSamples(const uint8_t *data, uint32_t len)
 		s_queued = 0;
 		s_spkGain = 0;
 		s_lift = {};
+		s_exp = {};
 	}
 
 	uint32_t num_frames = len / 8;
@@ -421,7 +423,11 @@ static void processAudioSamples(const uint8_t *data, uint32_t len)
 		}
 		// soft limit, not hapticUlaw's clamp: a sharp hit peaks above the 20 ms envelope the haptic gain
 		// follows, and a clipped peak plays as a pop
-		float wl = al * waveScale, wr = ar * waveScale;
+		float ex = waveExpandGain(&s_exp,
+					  (fabsf(al) > fabsf(ar) ? fabsf(al) :
+								   fabsf(ar)) *
+						  (1.0f / 32768.0f));
+		float wl = al * waveScale * ex, wr = ar * waveScale * ex;
 		float lift = hapticLiftGain(
 			&s_lift, fabsf(wl) > fabsf(wr) ? fabsf(wl) : fabsf(wr));
 		PCM_FRAME_L(s_frame)

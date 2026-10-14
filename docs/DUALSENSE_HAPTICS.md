@@ -257,7 +257,11 @@ In [mode_ps5_audio.cpp](../OpenPuck/mode_ps5_audio.cpp) (`processAudioSamples`, 
      scaled linearly with no auto gain, as a real DualSense plays them: 100% is 2× the track and Auto is 25% (0.5×).
      Calibrated on both controllers' accelerometers with one Black Flag Resynced clip played to the puck and a real
      DualSense together (2026-10-14): mid-level effects shake the grips as hard as the real pad at 0.5×, while the
-     clip's hits stop at about 55 mg on the grips against about 80 mg on the real pad, reached at 2×. Then u-law encoded and sent as `0x88` stereo PCM frames of 31
+     clip's hits stop at about 55 mg on the grips against about 80 mg on the real pad, reached at 2×.
+     An expander raises the gain with the track's own level (1× below 6% of full scale, a power law of 0.35 up to
+     2×, `waveExpandGain` in haptics.h): peaks of 2-4k needed 0.5-0.6× to match the real pad and peaks of 6-7k about
+     0.75×. What it can't fix is frequency: the grips are about twice as strong as the real pad at 90-140 Hz and weaker
+     below 60 Hz, which the IMUs (250 reports/s) can't measure well above ~100 Hz. Then u-law encoded and sent as `0x88` stereo PCM frames of 31
      samples (129 frames/s), left channel to the left **grip** actuator (`0x88` is a grip stream). Streams while either channel's envelope is above
      gate 16 (games' idle tracks are exact zeros) and for 300 ms after; `0x86 {2, 2, 9}` sets the format at each start and every second. The controller
      pre-buffers (24 ms with the short third frame, PROTOCOL.md), so it starts about 20 ms later than a tone. No `0x80` rumble from the audio. See PROTOCOL.md
