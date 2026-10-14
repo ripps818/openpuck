@@ -174,6 +174,14 @@ bool Adafruit_USBD_Audio_UAC1::begin()
 // Tone style: plays down to TONE_FLOOR_DB, so its gate sits lower (~0.3% of full scale). Idle haptic tracks
 // are exact zeros, so this still separates an effect from silence.
 #define TONE_GATE 100
+// Wave plays the track as sent and games' idle haptic tracks are exact zeros, so its gate only has to clear
+// rounding: a menu tick at ~0.2% of full scale (level ~60) still plays.
+#define WAVE_GATE 16
+// Wave gain: 100% is WAVE_MAX_GAIN times the haptic channels. Games mix DualSense haptics quietly for its
+// sensitive actuators (Black Flag: 0.2-6% of full scale), which the grips barely play at 1:1; the soft limiter
+// keeps a louder track from popping at the top of the range.
+#define WAVE_MAX_GAIN 8.0f
+#define WAVE_GAIN_DEFAULT 50
 // One strength update per 20 ms, the 0x80 rumble relay's throttle (RUMBLE_THROTTLE_MS in haptics.cpp).
 #define HAPTIC_TICK_MS 20u
 // A zero crossing counts once a sample passes this far beyond zero, so dither does not read as a high tone.
@@ -738,7 +746,7 @@ void ps5AudioTask(void)
 	bool tone = g_audioHapticStyle == AUDIO_STYLE_TONE;
 	bool split = g_audioHapticStyle == AUDIO_STYLE_SPLIT;
 	bool wave = g_audioHapticStyle == AUDIO_STYLE_WAVE;
-	uint16_t gate = (tone || wave) ? TONE_GATE : HAPTIC_GATE;
+	uint16_t gate = tone ? TONE_GATE : wave ? WAVE_GATE : HAPTIC_GATE;
 	uint16_t envL = hapticEnvelope(hapticLevel(sqL, frames), &s_envL, gate);
 	uint16_t envR = hapticEnvelope(hapticLevel(sqR, frames), &s_envR, gate);
 	g_pcmDiag.audioEnvL = envL;
@@ -777,16 +785,15 @@ void ps5AudioTask(void)
 	uint16_t spkEnv = hapticEnvelope(hapticLevel(sqSpk, frames), &s_envSpk,
 					 SPEAKER_GATE);
 	bool spkOn = g_audioSpeaker && spkEnv;
-	// wave plays the haptic channels as sent, like a real DualSense, so it skips the auto gain. 100% (and Auto)
-	// is 40% of full scale: half matched a real pad in FFXIV, but felt too strong across other games (2026-10-05).
-	// Past 250% a full-scale track overdrives the grips (IMU: they flatten above ~0.7 and clip past full scale),
-	// so more gain stays with the tone and rumble styles.
-	uint16_t waveGain = g_audioHapticGain ? g_audioHapticGain : 100;
-	if (waveGain > 250)
-		waveGain = 250;
+	// wave skips the auto gain: the gain is a fixed scale of the track, so equal effects play equally
+	uint16_t waveGain = g_audioHapticGain ? g_audioHapticGain :
+						WAVE_GAIN_DEFAULT;
+	if (waveGain > 100)
+		waveGain = 100;
 	waveUpdate((wave && (envL || envR)) || spkOn, g_audioSpeaker != 0,
-		   (wave && g_audioHaptics) ? waveGain / (250.0f * 32768.0f) :
-					      0.0f,
+		   (wave && g_audioHaptics) ?
+			   waveGain * WAVE_MAX_GAIN / (100.0f * 32768.0f) :
+			   0.0f,
 		   spkOn ? g_audioSpeaker / (50.0f * 32768.0f) : 0.0f, now);
 
 	// A style that stops using an output stops whatever it left playing (a tone cuts once; a rumble stops below).
