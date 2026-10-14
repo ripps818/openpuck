@@ -456,6 +456,19 @@ static void ps5SetCommon(uint8_t slot, uint8_t rid, hid_report_type_t type,
 	}
 	if (id != 0x02 || pn < 4)
 		return;
+#if OPK_DIAG_CAPTURE
+	// {valid flag0, flag1, right motor, left motor, valid flag2} on each change: which flag a game marks its
+	// motor bytes valid with, and whether reports without it (lightbar, triggers) carry zeroed motors
+	{
+		static uint8_t s_last[5];
+		const uint8_t e[5] = { p[0], p[1], p[2], p[3],
+				       (uint8_t)(pn > 38 ? p[38] : 0) };
+		if (memcmp(e, s_last, sizeof e)) {
+			memcpy(s_last, e, sizeof e);
+			hapLogAdd(slot, 0x02, e, sizeof e);
+		}
+	}
+#endif
 	// `slot` here is the USB slot the report arrived on -> route rumble to the bond slot it's mapped to.
 	int bond = (slot < NSLOT) ? g_usbToBond[slot] : -1;
 	if (bond < 0 || !g_slot[bond].used) {

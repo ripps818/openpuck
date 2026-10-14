@@ -730,14 +730,14 @@ static void webusbSendMotion(uint8_t slot)
 //   [queue delay buckets 0..7: u16][made-gap buckets 0..7: u16][ran dry: end, mid-stream, at start: u16]
 static void webusbSendPcmDiag()
 {
-	static uint8_t f[2 + 200];
+	static uint8_t f[2 + 204];
 	uint8_t *p = f + 3;
 	auto put = [&](uint32_t v, uint8_t n) {
 		for (uint8_t i = 0; i < n; i++)
 			*p++ = (uint8_t)(v >> (8 * i));
 	};
 	f[0] = 0xB1;
-	f[1] = 200;
+	f[1] = 204;
 	f[2] = 1;
 	// a snapshot, static like the frame: a stack copy put ~250 B on the usbd task's stack on every SOF
 	static PcmDiag d;
@@ -780,6 +780,8 @@ static void webusbSendPcmDiag()
 	put(d.flushSkip, 4);
 	put(g_connPoll, 2);
 	put(d.isoRecover, 2);
+	put(d.audioLvlHap, 2);
+	put(d.audioLvlSpk, 2);
 	if (tud_vendor_write_available() >= sizeof f) {
 		usb_web.write(f, sizeof f);
 		usb_web.flush();

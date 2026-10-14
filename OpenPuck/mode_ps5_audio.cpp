@@ -742,6 +742,14 @@ void ps5AudioTask(void)
 	uint16_t envL = hapticEnvelope(hapticLevel(sqL, frames), &s_envL, gate);
 	uint16_t envR = hapticEnvelope(hapticLevel(sqR, frames), &s_envR, gate);
 	g_pcmDiag.audioEnvL = envL;
+#if OPK_DIAG_PCM
+	{
+		uint16_t hl = hapticLevel(sqL, frames),
+			 hr = hapticLevel(sqR, frames);
+		g_pcmDiag.audioLvlHap = hl > hr ? hl : hr;
+		g_pcmDiag.audioLvlSpk = hapticLevel(sqSpk, frames);
+	}
+#endif
 	// Split style: below SPLIT_HZ drives the rumble, the rest the tones, each with that output's gate.
 	uint16_t loL = hapticEnvelope(hapticLevel(sqLoL, frames), &s_envLoL,
 				      HAPTIC_GATE);

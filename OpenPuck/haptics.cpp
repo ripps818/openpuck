@@ -1389,7 +1389,10 @@ bool rfConnFlushRelay(uint8_t ch, uint8_t s1, bool *requeued)
 				memcpy(p + 4, m.data, rl);
 				plen = (uint8_t)(4 + rl);
 			}
-			hapLogAdd(0xFE, m.rid, m.data, rl);
+			// grip PCM frames have their own counters (0xB1), and at ~130/s they would push everything
+			// else out of the ring
+			if (m.rid != 0x88)
+				hapLogAdd(0xFE, m.rid, m.data, rl);
 			// Lifecycle log (CDC debug boot): EXACTLY what we TX to the controller, so a capture shows
 			// whether OpenPuck (or Steam in the background) pokes the controller right before a buzz
 			// latches -- the piece the I45 stream (controller->us) can't show. Low rate outside a haptic
