@@ -53,6 +53,11 @@ static inline bool slotPoweringOff(int slot)
 // emulated mode, so forwarding that tuple disables motion until the controller
 // is re-paired. Trailing bytes cannot form a setting and must not reach the
 // controller as a truncated tuple.
+//
+// Pure Lizard also keeps the lizard/pad-haptics switch (id9) to itself: haptics.cpp
+// lands it for the trackpad haptics setting, and a host that writes id9=0 every
+// few seconds (Steam's lizard-off heartbeat) would switch the controller's own
+// trackpad ticks and clicks off again right after.
 static uint8_t filterSettingsRelay(const uint8_t *src, uint16_t len,
 				   uint8_t dst[RELAY_CMD_MAXP])
 {
@@ -61,6 +66,8 @@ static uint8_t filterSettingsRelay(const uint8_t *src, uint16_t len,
 	for (uint16_t off = 0;
 	     off + 2 < len && (uint16_t)out + 3 <= RELAY_CMD_MAXP; off += 3) {
 		if (src[off] == SETTING_IMU_MODE)
+			continue;
+		if (src[off] == SETTING_LIZARD_MODE && g_usbMode == MODE_LIZARD)
 			continue;
 		memcpy(dst + out, src + off, 3);
 		out += 3;
