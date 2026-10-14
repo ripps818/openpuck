@@ -353,10 +353,12 @@ struct PcmDiag {
 	uint32_t otherRelays, flushSkip;
 	// DualSense: times the ISO OUT endpoint was found wedged and re-armed (mode_ps5_audio.cpp isoWatch)
 	uint16_t isoRecover;
+#if OPK_DIAG_PCM
 	// Ungated levels of the last tick: the louder haptic channel and the speaker pair's mono mix. Audio can
 	// arrive with silent haptic channels (a game's speaker sounds), which the gated envelope can't tell apart
 	// from no audio at all.
 	uint16_t audioLvlHap, audioLvlSpk;
+#endif
 };
 extern PcmDiag g_pcmDiag;
 // count a controller 0x44 stream event, classing a "ran dry" by where in the stream it landed
