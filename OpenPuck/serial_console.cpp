@@ -6,7 +6,7 @@
 #include "bonds.h"
 #include "config.h"
 #include "btnmap.h"
-#include "puck_hid.h" // g_cmdCapture (feature-command capture toggle)
+#include "puck_hid.h" // g_cmdCapture (OPK_DIAG_FC)
 #include "fault_diag.h"
 #include "usb_mount.h" // modeSwitchReboot()
 #include <Adafruit_TinyUSB.h>
@@ -122,12 +122,15 @@ void serialConsolePoll()
 					      g_rumbleStyle,
 					      RY_NAME[g_rumbleStyle]);
 			} else if (!strcmp(line, "FC")) {
-				// feature-command capture: log Steam's USB SET/GET commands to serial + suppress I45
+#if OPK_DIAG_FC
+				// feature-command capture: log Steam's USB SET/GET commands to serial
 				g_cmdCapture = !g_cmdCapture;
-				Serial.printf(
-					"# feature-cmd capture %s (I45 %s)\n",
-					g_cmdCapture ? "ON" : "off",
-					g_cmdCapture ? "suppressed" : "on");
+				Serial.printf("# feature-cmd capture %s\n",
+					      g_cmdCapture ? "ON" : "off");
+#else
+				Serial.println(
+					"# feature-cmd capture: build with -DOPK_DIAG_FC=1");
+#endif
 			} else if (!strcmp(line, "FR")) {
 				// re-dump the flight recorder trail captured before the last watchdog hang (also printed
 				// automatically at boot, but CDC may not be attached yet then -- this reprints on demand).

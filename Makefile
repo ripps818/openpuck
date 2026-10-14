@@ -27,7 +27,7 @@ FORMAT_FILES := $(shell find OpenPuck ReversePuckFirmware puck_sniffer pairtui \
 #                               never fit a frame -> blank panel. Sized to hold a full blob with headroom.
 # They're baked in here so a normal build is just `make build` -- no need to remember the flags. Override any
 # on the command line, e.g.   make build CFG_TUD_HID=8 CFG_TUD_TASK_QUEUE_SZ=128
-# or add your own defines:     make build EXTRA_FLAGS="-DOPK_LOG=1"
+# or add your own defines:     make build EXTRA_FLAGS="-DOPK_DIAG_PCM=1" (diagnostics: config.h, all off by default)
 FQBN ?= adafruit:nrf52:feather52840
 CFG_TUD_HID ?= 6
 # Optional output paths; when set, --clean is implied and build artifacts land in OUTPUT_DIR.

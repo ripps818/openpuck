@@ -16,7 +16,7 @@ Three contexts matter for every piece of state below:
 | Context | Priority / stack | What runs here |
 |---|---|---|
 | **loop task** | Arduino FreeRTOS "loop" task, low priority, ~4 KB stack | Everything called from `loop()`: `webusbPoll`, `g_active->task()`, `serialConsolePoll`, `rfDiagTask`, `rfLinkTask`, `hapticTask`, `ledTask`, `usbMountTask`, `pwrSwitchTask` (only under `OPK_PWR_SWITCH`). Also all of the RF radio code (it is driven synchronously from `rfLinkTask`/`rfDiagTask`). Also `setup()`. |
-| **usbd task** | TinyUSB "usbd" task, **high priority, ~800-byte stack** | All TinyUSB HID `set_report`/`get_report` callbacks, the custom XInput class-driver xfer callbacks, and (in the Adafruit core) HID `sendReport` queuing context. This is where host→device control transfers are decoded. **Stack is tiny — a `Serial.printf` here can overflow it (the suspected LOCKUP cause), which is why all per-report logging is `#if OPK_LOG` gated.** |
+| **usbd task** | TinyUSB "usbd" task, **high priority, ~800-byte stack** | All TinyUSB HID `set_report`/`get_report` callbacks, the custom XInput class-driver xfer callbacks, and (in the Adafruit core) HID `sendReport` queuing context. This is where host→device control transfers are decoded. **Stack is tiny — a `Serial.printf` here can overflow it (the suspected LOCKUP cause), which is why per-report logging is `#if OPK_DIAG_HID_LOG` gated.** The core creates it with 800 bytes; `usb_tx.cpp` wraps `xTaskCreate` to raise it to 2 KB. |
 | **ISR** | Hardware exception | `HardFault_Handler` (fault_diag.cpp). The RADIO is **polled, not interrupt-driven** — there is no radio ISR. |
 
 Key cross-task rule the code relies on: producers that touch the relay rings and the
@@ -58,7 +58,7 @@ re-add wake mouse + `g_active->mountSlots(k)` + WebUSB in locked instance order,
 3. Calls, in order: `webusbPoll`, `g_active->task`, `serialConsolePoll`, `rfDiagTask`,
    `rfLinkTask`, `hapticTask`, `ledTask`, `pwrSwitchTask` (only under `OPK_PWR_SWITCH`),
    `usbMountTask`.
-   `#if OPK_LOG` wraps each in `micros()` timing for the WebUSB panel (`pwrSwitchTask`
+   `#if OPK_DIAG_LOOP_TIMING` wraps each in `micros()` timing for the WebUSB panel (`pwrSwitchTask`
    is untimed, like `usbMountTask`/`usbTxPump`).
 
 ### State owned
@@ -543,11 +543,11 @@ that profile into `g_lizardMap`, and `lizardButtons()` (mode_lizard.cpp) hides t
   (2.5 s); idle-clear re-init.
 - **`hapInit()`** resets all rings/flags at boot.
 
-### Diagnostic capture ring (`#if OPK_LOG` only)
-- `g_hapLog[HAPLOG_N=4096]` of `{ms, slot, rid, n, b[16]}` (~80 KB). `hapLogAdd` written
+### Diagnostic capture ring (`#if OPK_DIAG_CAPTURE` only)
+- `g_hapLog[HAPLOG_N=1024]` of `{ms, slot, rid, n, b[16]}` (24 KB; `OPK_HAPLOG_N` overrides, up to 4096). `hapLogAdd` written
   from **both usbd and loop**, guarded by PRIMASK; `g_hapHead` is `uint16_t`. Drained to
   WebUSB via `hapLogResetDrain`/`hapLogPull` (loop) and `'H'` console dump. Compiled out
-  entirely in production (`OPK_LOG=0`), reclaiming the RAM.
+  entirely by default. Each diagnostic has its own build flag, all off (see `config.h`).
 
 ---
 
@@ -594,7 +594,7 @@ that profile into `g_lizardMap`, and `lizardButtons()` (mode_lizard.cpp) hides t
   `g_hapticBlockMs` (≤60 s), etc., then `applyActiveType`/`saveCfg`/`swProSaveCfg`);
   `0x03 mode`→`saveMode`+reset; `0x07`→`hapticReinit`; `0x08`→`hapticSendShutdown`;
   `0x16`→`hapticTestRumble`;
-  `0x0A` ("ERS")→`factoryErase`+reset; `0x0B/0x0C`→DFU; capture drain (`OPK_LOG`).
+  `0x0A` ("ERS")→`factoryErase`+reset; `0x0B/0x0C`→DFU; capture drain (`OPK_DIAG_CAPTURE`).
   Each reset/DFU path does `delay(40)` then `NVIC_SystemReset()` (harmless — reboots).
 
 ### `fw_update.cpp` / `fw_update.h` — staged firmware update (loop task + boot)
@@ -670,7 +670,7 @@ State touched by **both** the loop task and the usbd task (the synchronization-c
 | **`g_xiSlot[NSLOT]`** (xinput) | usbd class driver (eps, rumble) | loop `xinputSend`/`task` | `inUse`/`rumble*` `volatile`; `itf`/`epIn`/`epOut` not volatile; no lock |
 | **`g_swProReportMode[NSLOT]`** | usbd `jcSubcmd` + loop `mountSlots` | loop `task` | **not volatile** |
 | **`g_steamAliveMs` / `g_resumeMs`** (puck_hid) | usbd `handleSet`/`handleGet` + loop `task` | both | none |
-| **`g_hapLog[4096]`** (`OPK_LOG`) | usbd + loop `hapLogAdd` | loop drain | PRIMASK in `hapLogAdd` |
+| **`g_hapLog[1024]`** (`OPK_DIAG_CAPTURE`) | usbd + loop `hapLogAdd` | loop drain | PRIMASK in `hapLogAdd` |
 | **`rfrx[100]`/`rftx[100]` + `NRF_RADIO`** | loop `rf_link` AND loop `rf_diag` | same | **no guard** — relies on diag-modes-off assumption (both are loop task, so no preemption between them, but no arbitration of radio state) |
 
 **`hapticSteamRumble()` is the one app function legitimately entered from the usbd task**

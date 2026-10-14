@@ -11,6 +11,7 @@
 //     never relay haptics while presenting lizard (Steam isn't reading 0x45 back -> would buzz-loop).
 //   - the USB connection-state presentation (reports 0x79 / 0x7B) Steam reads to mark the controller connected.
 #pragma once
+#include "config.h" // OPK_DIAG_FC
 #include "controllers.h"
 #include <stdint.h>
 
@@ -28,11 +29,17 @@ extern uint8_t g_fwdContentDedup;
 // NOT run while lizard is active, or it disables the controller's autonomous touchpad haptic ticks.
 bool puckLizardActive();
 
-// Feature-command capture (diagnostic): when g_cmdCapture is on, Steam's USB feature SET/GET commands are
-// logged to serial (# FC lines) from loop context and the high-rate I45 input stream is suppressed, so the
-// connect handshake is readable. puckCmdLogDrain() must be called once per loop(). Console "FC" toggles it.
+// Feature-command capture (OPK_DIAG_FC builds): when g_cmdCapture is on, Steam's USB feature SET/GET commands
+// are logged to serial (# FC lines) from loop context, so the connect handshake is readable.
+// puckCmdLogDrain() must be called once per loop(). Console "FC" toggles it.
+#if OPK_DIAG_FC
 extern bool g_cmdCapture;
 void puckCmdLogDrain(void);
+#else
+static inline void puckCmdLogDrain(void)
+{
+}
+#endif
 
 // Note that a controller power-off (0x9F "off!") was just relayed to `slot` (or ALL used slots for the 0xFF
 // broadcast). The puck then presents that slot as cleanly DISCONNECTED to Steam and HOLDS it there through the

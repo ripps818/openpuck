@@ -10,7 +10,7 @@
 #include "triton.h"
 #include "haptics.h"
 #include "steam_commands.h"
-#include "puck_hid.h" // g_cmdCapture (suppress I45 during feature-command capture)
+#include "puck_hid.h" // g_cmdCapture (OPK_DIAG_FC)
 #include "controllers.h"
 #include "status_led.h"
 #include "fault_diag.h"
@@ -4328,8 +4328,10 @@ uint8_t rfConnTx(uint8_t ch, uint8_t s1, const uint8_t *payload, uint8_t plen,
 							g_curSlot, profile,
 							true);
 				}
+#if OPK_DIAG_FC
 				// compact stream for rf_controller_ui.py -- NON-BLOCKING: skip if CDC TX is backed up (a blocking
 				// Serial.print stalls the RF+USB loop -> jaggy input). One line/frame using the last record.
+				// Off while the feature-command capture is on, which prints its own lines.
 				if (lastRep && !g_connVerbose &&
 				    !g_cmdCapture &&
 				    Serial.availableForWrite() > 150 &&
@@ -4341,6 +4343,7 @@ uint8_t rfConnTx(uint8_t ch, uint8_t s1, const uint8_t *payload, uint8_t plen,
 							      lastRep[i]);
 					Serial.println();
 				}
+#endif
 			}
 			if (g_connVerbose && Serial.availableForWrite() > 180) {
 				Serial.printf(

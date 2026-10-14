@@ -62,7 +62,7 @@ That's the whole command — the USB flags the firmware needs are baked in, so y
 
 ```bash
 make build CFG_TUD_HID=6 CFG_TUD_TASK_QUEUE_SZ=128   # different interface count / queue depth
-make build EXTRA_FLAGS="-DOPK_LOG=1"                  # add your own defines
+make build EXTRA_FLAGS="-DOPK_DIAG_PCM=1"             # add your own defines; diagnostics are listed in config.h
 make build FQBN=adafruit:nrf52:somethingelse          # a different nRF52840 board
 ```
 

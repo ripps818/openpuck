@@ -6,11 +6,36 @@
 #pragma once
 #include <stdint.h>
 
-// Compile-time logging / diagnostics. 0 (default) = PRODUCTION build: no host->controller capture ring
-// (reclaims ~80KB RAM), no per-event logging, no main-loop section timing, no WebUSB capture channel.
-// Functional bits (haptic reconnect block, buzz-clear re-init, rate stats) stay. -DOPK_LOG=1 for diagnostics.
-#ifndef OPK_LOG
-#define OPK_LOG 0
+// Diagnostics: one build flag each, all off by default. Turn on only the one a diagnosis needs, e.g.
+//   make uf2 EXTRA_FLAGS="-DOPK_DIAG_CAPTURE=1"
+// Several run on the usbd task (every TinyUSB callback) or hold RAM; switched on together they once
+// overflowed the usbd stack and ran the puck out of memory at boot.
+//  OPK_DIAG_CAPTURE      ring of host->controller commands, frames sent to the controller and link edges,
+//                        read by the panel's capture view (WebUSB ops 0x05/0x06) and the console "H" dump.
+//                        Logs from the usbd task. OPK_HAPLOG_N entries of 24 B (default 1024, 24 KB).
+//  OPK_DIAG_HID_LOG      serial echo of host HID OUTPUT/SET/GET reports and pairing/bond changes.
+//                        Serial.printf ON the usbd task (200-500 B of its stack each): pair with care.
+//  OPK_DIAG_FC           serial log of Steam's feature commands, queued from the usbd task and printed from
+//                        loop(); console "FC" toggles it
+//  OPK_DIAG_PCM          grip PCM stream counters frame (WebUSB op 0x35), for tools/switch_hd_test.py --diag
+//  OPK_DIAG_LOOP_TIMING  per-section loop() timing (slowest section and loop period) for the panel
+#ifdef OPK_LOG
+#error "OPK_LOG was split into per-diagnostic flags: use the OPK_DIAG_* flag you need (config.h)"
+#endif
+#ifndef OPK_DIAG_CAPTURE
+#define OPK_DIAG_CAPTURE 0
+#endif
+#ifndef OPK_DIAG_HID_LOG
+#define OPK_DIAG_HID_LOG 0
+#endif
+#ifndef OPK_DIAG_FC
+#define OPK_DIAG_FC 0
+#endif
+#ifndef OPK_DIAG_PCM
+#define OPK_DIAG_PCM 0
+#endif
+#ifndef OPK_DIAG_LOOP_TIMING
+#define OPK_DIAG_LOOP_TIMING 0
 #endif
 
 // Build-time FACTORY RESET (recovery build). 0 (default) = normal. -DOPK_FACTORY_RESET=1 wipes ALL persistent

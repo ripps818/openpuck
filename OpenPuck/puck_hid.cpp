@@ -152,8 +152,8 @@ static Adafruit_USBD_HID hid[NSLOT];
 // Log the USB feature command channel (Steam's SET/GET) to serial to see the connect handshake -- WITHOUT a
 // Serial.printf on the fragile 800B usbd task (that path can blow the stack -> LOCKUP; it's why production
 // avoids printf here). handleSet/handleGet (usbd task) push a compact record under PRIMASK; puckCmdLogDrain()
-// prints them from loop() context. When g_cmdCapture is on, the high-rate I45 input stream is also suppressed
-// (rf_link) so the command sequence is readable. Toggle from the console with "FC".
+// prints them from loop() context. Toggle from the console with "FC". OPK_DIAG_FC builds only.
+#if OPK_DIAG_FC
 bool g_cmdCapture = true;
 struct FCmdRec {
 	uint8_t dir; // 0 = SET (host->puck write), 1 = GET (host read)
@@ -202,6 +202,12 @@ void puckCmdLogDrain(void)
 	}
 	usbTxUnboost();
 }
+#else
+static inline void fcPush(uint8_t, int, uint8_t, uint8_t, uint8_t,
+			  const uint8_t *, uint8_t)
+{
+}
+#endif
 
 // ===================== seamless LIZARD decision =====================
 // Steam, while running, re-sends settings report 0x87 (lizard-off) every ~3s as a heartbeat (captured on HW),
@@ -303,12 +309,12 @@ static void handleSet(int slot, uint8_t rid, hid_report_type_t type,
 			}
 		}
 
-#if OPK_LOG
+#if OPK_DIAG_HID_LOG
 		// Per-report Serial echo: gated to the diagnostic build only. handleSet runs on the TinyUSB device
 		// task, whose FreeRTOS stack is just 800 bytes; a Serial.printf there costs 200-500B and, stacked
 		// under TinyUSB's control-transfer frames + a preempting USB ISR, can blow the stack -> the exact
 		// SP-corruption-during-exception-entry that shows up as RR_LOCKUP. Production keeps this path
-		// printf-free; the same data is already in the OPK_LOG capture ring (hapLogAdd) for the WebUSB panel.
+		// printf-free; the same data is already in the OPK_DIAG_CAPTURE ring (hapLogAdd) for the WebUSB panel.
 		if (Serial.availableForWrite() > 80) {
 			Serial.printf("# OUT if%d rid=%02X n=%u:", slot, rid,
 				      n);
@@ -424,7 +430,7 @@ static void handleSet(int slot, uint8_t rid, hid_report_type_t type,
 				if (!rl)
 					relayOk = false;
 			}
-#if OPK_LOG
+#if OPK_DIAG_HID_LOG
 			if (len > RELAY_CMD_MAXP &&
 			    Serial.availableForWrite() > 60)
 				Serial.printf(
@@ -455,9 +461,9 @@ static void handleSet(int slot, uint8_t rid, hid_report_type_t type,
 			S.resp_len = 63;
 		}
 	}
-#if OPK_LOG
+#if OPK_DIAG_HID_LOG
 	// Diagnostic-build only -- see the OUTPUT-path note: no Serial.printf on the 800B usbd-task stack in
-	// production (LOCKUP mitigation). The feature SET is already captured to the OPK_LOG ring above.
+	// production (LOCKUP mitigation). The feature SET is already captured to the OPK_DIAG_CAPTURE ring above.
 	if (Serial.availableForWrite() > 80) {
 		Serial.printf("# SET if%d rid=%02X cmd=%02X len=%u:", slot, rid,
 			      cmd, len);
@@ -543,7 +549,7 @@ static void handleSet(int slot, uint8_t rid, hid_report_type_t type,
 	case IBEX_CMD_ENABLE_PAIRING: // 0xAD
 		// TODO: Check if this should be relayed?
 		g_pairing = (pln > 0 && pl[0] != 0);
-#if OPK_LOG
+#if OPK_DIAG_HID_LOG
 		Serial.printf("# pairing %s\n", g_pairing ? "ON" : "off");
 #endif
 		S.resp[0] = IBEX_CMD_ENABLE_PAIRING;
@@ -566,7 +572,7 @@ static void handleSet(int slot, uint8_t rid, hid_report_type_t type,
 					relayClearSlot((uint8_t)slot);
 			}
 			g_dirty = true;
-#if OPK_LOG
+#if OPK_DIAG_HID_LOG
 			Serial.printf("# slot %d %s\n", slot,
 				      recEmpty(pl) ? "cleared" : "bonded");
 #endif
@@ -666,9 +672,9 @@ static uint16_t handleGet(int slot, uint8_t rid, hid_report_type_t type,
 			// serial feature-command capture: what Steam READ on this interface + our answer
 			fcPush(1, slot, rid, S.resp[0], (uint8_t)n, S.resp + 2,
 			       10);
-#if OPK_LOG
+#if OPK_DIAG_HID_LOG
 			// Diagnostic build only -- no Serial.printf on the 800B usbd-task stack in production (LOCKUP
-			// mitigation). The GET is captured to the OPK_LOG ring above for the WebUSB panel.
+			// mitigation). The GET is captured to the OPK_DIAG_CAPTURE ring above for the WebUSB panel.
 			if (Serial.availableForWrite() > 80)
 				Serial.printf(
 					"# GET if%d rid=%02X reqlen=%u -> %02X %02X %02X (batt=%u%%)\n",
