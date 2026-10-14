@@ -1,3 +1,6 @@
+// Timing-critical (USB audio to haptics): -O2. The rest builds at -Os.
+#pragma GCC optimize("O2")
+
 #include "mode_ps5_audio.h"
 #include "haptics.h"
 #include "bonds.h"

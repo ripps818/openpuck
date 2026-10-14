@@ -1,3 +1,6 @@
+// Timing-critical (250 Hz poll, reply windows): -O2. The rest builds at -Os.
+#pragma GCC optimize("O2")
+
 #include "rf_link.h"
 #include "rf_journal_layout.h"
 #include "radio.h"

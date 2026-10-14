@@ -49,8 +49,19 @@ EXTRA_FLAGS ?=
 # serial string, and the Adafruit core always sets iSerialNumber.
 RF_JOURNAL_BASE ?= 0x86000
 OPENPUCK_LINK_FLAGS ?= -Wl,--wrap=tud_vendor_control_xfer_cb -Wl,--wrap=tud_descriptor_device_cb -Wl,--section-start=.rf_journal_guard=$(RF_JOURNAL_BASE)
+# Size over speed. The core's default -Ofast (with its raised inline limit) made the image ~100 KB larger, and a
+# WebUSB update caps the app at 384 KB (FWUP_MAX_IMG in fw_update.cpp). -ffast-math keeps the float semantics
+# -Ofast had. The timing-sensitive files opt back into -O2 with a pragma at their top (rf_link, radio, haptics,
+# mode_ps5_audio, mode_switch_pro). LTO is no option: the core fails to link with it on this GCC 9 toolchain,
+# and its LTO can bypass the --wrap hooks below.
+OPT_FLAGS ?= -Os -ffast-math
+# The core's float flags minus its -u _printf_float: nothing prints floats, and that pulls in ~8 KB of formatting.
+FLOAT_FLAGS ?= -mfloat-abi=hard -mfpu=fpv4-sp-d16
+OPT_PROPS = --build-property "compiler.optimization_flag=$(OPT_FLAGS)" --build-property "build.float_flags=$(FLOAT_FLAGS)"
+# TinyUSB classes the core enables by default that no mode uses (~7 KB flash, ~1.5 KB RAM)
+USB_CLASS_FLAGS = -DCFG_TUD_MSC=0 -DCFG_TUD_MIDI=0 -DCFG_TUD_VIDEO=0 -DCFG_TUD_VIDEO_STREAMING=0
 # {build.flags.usb} is expanded by arduino-cli (VID/PID/strings); pass it through verbatim.
-USB_EXTRA_FLAGS = -DNRF52840_XXAA {build.flags.usb} -DCFG_TUD_HID=$(CFG_TUD_HID) -DCFG_TUD_TASK_QUEUE_SZ=$(CFG_TUD_TASK_QUEUE_SZ) -DCFG_TUD_VENDOR_TX_BUFSIZE=$(CFG_TUD_VENDOR_TX_BUFSIZE) -DOPK_RF_JOURNAL_BASE=$(RF_JOURNAL_BASE) $(EXTRA_FLAGS)
+USB_EXTRA_FLAGS = -DNRF52840_XXAA {build.flags.usb} -DCFG_TUD_HID=$(CFG_TUD_HID) -DCFG_TUD_TASK_QUEUE_SZ=$(CFG_TUD_TASK_QUEUE_SZ) -DCFG_TUD_VENDOR_TX_BUFSIZE=$(CFG_TUD_VENDOR_TX_BUFSIZE) -DOPK_RF_JOURNAL_BASE=$(RF_JOURNAL_BASE) $(USB_CLASS_FLAGS) $(EXTRA_FLAGS)
 # When BUILD_PATH is set, --clean + path flags are injected; omitted for fast incremental dev builds.
 _PATH_FLAGS = $(if $(BUILD_PATH),--clean --build-path $(BUILD_PATH) --output-dir $(OUTPUT_DIR))
 
@@ -83,7 +94,7 @@ RP_UPLOAD = arduino-cli upload -b $(FQBN) -p "$(FLASH_PORT)" ReversePuckFirmware
 ## Compile the firmware with the required USB flags baked in. Override CFG_TUD_HID / CFG_TUD_TASK_QUEUE_SZ /
 ## EXTRA_FLAGS / FQBN as make variables if needed.
 build:
-	arduino-cli compile -b $(FQBN) $(_PATH_FLAGS) --build-property "build.extra_flags=$(USB_EXTRA_FLAGS)" --build-property "compiler.c.elf.extra_flags=$(OPENPUCK_LINK_FLAGS)" OpenPuck
+	arduino-cli compile -b $(FQBN) $(_PATH_FLAGS) --build-property "build.extra_flags=$(USB_EXTRA_FLAGS)" --build-property "compiler.c.elf.extra_flags=$(OPENPUCK_LINK_FLAGS)" $(OPT_PROPS) OpenPuck
 
 ## Build for the Raytac MDBT50Q-CX-40 without replacing its Open DFU bootloader.
 ## Like `build`, this does NOT run gen_version.sh -- run it yourself first if you want version provenance
@@ -95,7 +106,7 @@ build-raytac:
 		--build-path build/cache/raytac \
 		--output-dir build/raytac \
 		--build-property "build.extra_flags=$(USB_EXTRA_FLAGS) -DOPK_BOARD_MDBT50Q_CX_40=1" \
-		--build-property "compiler.c.elf.extra_flags=$(OPENPUCK_LINK_FLAGS)" OpenPuck
+		--build-property "compiler.c.elf.extra_flags=$(OPENPUCK_LINK_FLAGS)" $(OPT_PROPS) OpenPuck
 
 ## Package an existing Raytac build for its factory Nordic Open DFU bootloader.
 package-raytac:

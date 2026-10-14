@@ -1,3 +1,6 @@
+// Timing-critical (HD rumble decode): -O2. The rest builds at -Os.
+#pragma GCC optimize("O2")
+
 #include "mode_switch_pro.h"
 #include "triton.h"
 #include "gamepad_util.h"

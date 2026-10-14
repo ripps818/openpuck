@@ -1,3 +1,6 @@
+// Timing-critical (relay flush, PCM haptics): -O2. The rest builds at -Os.
+#pragma GCC optimize("O2")
+
 #include "haptics.h"
 #include "triton.h"
 #include "bonds.h"
