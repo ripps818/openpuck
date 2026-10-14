@@ -298,6 +298,13 @@ extern uint8_t g_dpadClick;
 bool typeHapticSet(uint8_t setting, uint8_t et, uint8_t value);
 // Live copies of the active type's click strength and tick level (the defaults in puck modes)
 extern uint8_t g_padClick, g_padTick, g_padTickGain;
+// Trackpad haptics for Lizard mode, which has no emulated type: Trackpad haptics (PAD_HAPTICS_*), then click
+// strength, tick spacing and tick strength with HAP_CLICK / HAP_TICK / HAP_TICKGAIN's ranges and meaning.
+// WebUSB fields 156 + k, 0xAE frame bytes p[50 + k]. Steam mode's seamless lizard leaves the pads to Steam.
+enum { LZH_MODE, LZH_CLICK, LZH_TICK, LZH_TICKGAIN, LZH_COUNT };
+extern uint8_t g_lizardHaptic[LZH_COUNT];
+// Store a value if it is in range, and refresh the live mirrors.
+bool lizardHapticSet(uint8_t setting, uint8_t value);
 // gain in dB of click step 0..31: -20..-1, then +1..+12 (Steam's own haptic range tops out at 12 dB)
 static inline int padClickGainDb(uint8_t step)
 {

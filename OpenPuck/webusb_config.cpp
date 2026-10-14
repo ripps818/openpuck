@@ -421,7 +421,7 @@ static void webusbSendBlob()
 // Switch Pro / HD rumble / shortcut settings frame (protocol v23, op 0x27):
 //   [0xAE][len][ver=1][37 zero bytes, ex Switch Pro profiles][swDpadHaptics][storageState][hdPadScale/2]
 //   [4 zero bytes, ex rumble presets + slot][swQamSelect][shortcutFlags][active Lizard profile (v30)]
-//   [7 zero bytes, ex strength steps + slots]   (len = 55)
+//   [Lizard trackpad haptics, LZH_COUNT bytes (v30)][3 zero bytes, ex strength steps + slots]   (len = 55)
 #define WB_SW_PAYLEN 55
 static void webusbSendSwitchFrame()
 {
@@ -439,7 +439,9 @@ static void webusbSendSwitchFrame()
 	// the status blob has no room left: this frame is read on every poll too, so a profile switched on the
 	// controller in Lizard mode shows without asking
 	p[49] = g_lizardActive;
-	memset(p + 50, 0, 7); // ex strength steps + slots
+	memcpy(p + 50, g_lizardHaptic, LZH_COUNT);
+	memset(p + 50 + LZH_COUNT, 0,
+	       7 - LZH_COUNT); // ex strength steps + slots
 	// drop-on-full, same anti-hang rule as the status blob
 	if (tud_vendor_write_available() >= sizeof p) {
 		usb_web.write(p, sizeof p);
@@ -1541,6 +1543,15 @@ void webusbPoll()
 				// fields 190..229 were the Switch Pro profiles (removed): ignored, but still answered
 				// so an older panel waiting on the status reply doesn't stall
 				if (f >= 190 && f < 230) {
+					g_blobRequest = true;
+					memmove(buf, buf + need, n - need);
+					n -= need;
+					continue;
+				}
+				// Lizard trackpad haptics (protocol v30): field 156 + LZH_*, see config.h
+				if (f >= 156 && f < 156 + LZH_COUNT) {
+					lizardHapticSet((uint8_t)(f - 156), v);
+					saveCfgSoon();
 					g_blobRequest = true;
 					memmove(buf, buf + need, n - need);
 					n -= need;
