@@ -289,8 +289,8 @@ static void ds3Build(uint8_t slot, uint8_t out[48])
 	out[14] = (b & TB_DRT) ? 0xFF : 0;
 	out[15] = (b & TB_DDN) ? 0xFF : 0;
 	out[16] = (b & TB_DLF) ? 0xFF : 0;
-	out[17] = g_in[slot].lt;
-	out[18] = g_in[slot].rt;
+	out[17] = psTriggerAxis(g_in[slot].lt, b, TB_L2);
+	out[18] = psTriggerAxis(g_in[slot].rt, b, TB_R2);
 	out[19] = (b & TB_LB) ? 0xFF : 0;
 	out[20] = (b & TB_RB) ? 0xFF : 0;
 	out[21] = tri ? 0xFF : 0;

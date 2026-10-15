@@ -112,6 +112,12 @@ static inline uint32_t psButtonsFromSteam(uint8_t slot, uint32_t raw)
 {
 	return remapHostButtons(slot, raw);
 }
+// The analog trigger byte for a PlayStation report. A button remapped to L2/R2 arrives as TB_L2/TB_R2 and
+// pulls the axis full: games read the axis, not the digital bit.
+static inline uint8_t psTriggerAxis(uint8_t analog, uint32_t b, uint32_t flag)
+{
+	return (b & flag) ? 0xFF : analog;
+}
 // L1..R3 + Create/Options byte. lt/rt are the per-slot analog trigger values so the digital ZL/ZR trip
 // doesn't leak across slots when several slots are active.
 uint8_t psShouldersByte(uint32_t b, uint8_t lt, uint8_t rt);

@@ -537,12 +537,14 @@ static void ps5Build(uint8_t usbSlot, uint8_t slot, uint8_t out[63])
 	out[1] = swStick(ly, true);
 	out[2] = swStick(rx, false);
 	out[3] = swStick(ry, true);
-	out[4] = g_in[slot].lt;
-	out[5] = g_in[slot].rt;
+	const uint8_t lt = psTriggerAxis(g_in[slot].lt, b, TB_L2),
+		      rt = psTriggerAxis(g_in[slot].rt, b, TB_R2);
+	out[4] = lt;
+	out[5] = rt;
 	static uint8_t seq[NSLOT] = { 0 };
 	out[6] = seq[usbSlot]++;
 	out[7] = psHatNibble(b) | psFaceNibble(b);
-	out[8] = psShouldersByte(b, g_in[slot].lt, g_in[slot].rt);
+	out[8] = psShouldersByte(b, lt, rt);
 	out[9] = ((b & TB_STEAM) ? 0x01 : 0) |
 		 (((b & TB_TOUCH) ||
 		   (!g_touchpadDisabled && (b & (TB_LPADC | TB_RPADC)))) ?

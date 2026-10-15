@@ -225,7 +225,9 @@ static void hidGyroBuild(uint8_t usbSlot, uint8_t slot, uint8_t out[63])
 	out[2] = swStick(rx, false);
 	out[3] = swStick(ry, true);
 	out[4] = psHatNibble(b) | psFaceNibble(b);
-	out[5] = psShouldersByte(b, g_in[slot].lt, g_in[slot].rt);
+	const uint8_t lt = psTriggerAxis(g_in[slot].lt, b, TB_L2),
+		      rt = psTriggerAxis(g_in[slot].rt, b, TB_R2);
+	out[5] = psShouldersByte(b, lt, rt);
 	static uint8_t ctr[NSLOT] = { 0 };
 	out[6] = ((ctr[usbSlot]++ & 0x0F) << 4) |
 		 (((b & TB_TOUCH) ||
@@ -233,8 +235,8 @@ static void hidGyroBuild(uint8_t usbSlot, uint8_t slot, uint8_t out[63])
 			  0x02 :
 			  0) |
 		 ((b & TB_STEAM) ? 0x01 : 0);
-	out[7] = g_in[slot].lt;
-	out[8] = g_in[slot].rt;
+	out[7] = lt;
+	out[8] = rt;
 	uint16_t ds4ts = (uint16_t)(micros() / 16);
 	out[9] = (uint8_t)(ds4ts & 0xFF);
 	out[10] = (uint8_t)((ds4ts >> 8) & 0xFF);
