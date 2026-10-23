@@ -18,7 +18,8 @@
 
 // register the boot-mouse wake interface (call from setup() for clean modes + normal puck boot). Locks its
 // TinyUSB HID instance index -- for dynamic-mount modes call this BEFORE the slot pool so it is HID instance 0.
-void wakeHidBegin();
+// puck: lead the descriptor with the pogo-pin collection so Linux hid-steam skips this interface.
+void wakeHidBegin(bool puck = false);
 
 // Re-add the (already-begun) wake-mouse interface to a freshly-cleared config descriptor, for a dynamic
 // re-enumeration that doesn't reboot. begin() is once-only; this re-emits the interface descriptor.
