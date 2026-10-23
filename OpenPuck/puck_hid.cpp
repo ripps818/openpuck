@@ -1117,8 +1117,11 @@ void SteamPuckController::task()
 			last43[s] = millis();
 		}
 	}
-	// Reset edge state for slots that are no longer used/ready (so a re-bond sees a fresh edge).
+	// Reset edge state on un-bond or USB unmount so the next connect sees a
+	// fresh edge. Not on !hid.ready(): that is also false while an IN report
+	// is in flight, which re-fired the 0x79 connect edge ~700x/s and flooded
+	// Steam's controller log (upstream #304).
 	for (int s = 0; s < NSLOT; s++)
-		if (!g_slot[s].used || !hid[s].ready())
+		if (!g_slot[s].used || !USBDevice.mounted())
 			usbConn[s] = false;
 }
