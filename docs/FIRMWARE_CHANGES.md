@@ -3,7 +3,7 @@
 What changed in Valve's Steam Controller ("Ibex"/Triton) and Puck ("Proteus") firmware, and what it
 means for OpenPuck and ReversePuck. Newest release first.
 
-Images come from the [IbexFirmware archive](https://github.com/OpenSteamController/IbexFirmware),
+Images come from the [Ibex-Firmware archive](https://github.com/OpenSteamController/Ibex-Firmware),
 which extracts them from the Steam client's `bins_hardware_all` zip. `tools/fw_inspect.py` dumps the
 identity, USB and protocol fingerprints of an image and diffs two releases; run it on each new drop.
 
@@ -19,6 +19,9 @@ identity, USB and protocol fingerprints of an image and diffs two releases; run 
 
 | Channel    | First seen | Controller (`IBEX_FW_`) | Puck (`PROTEUS_FW_`) | Git SHA        |
 |------------|------------|-------------------------|----------------------|----------------|
+| publicbeta | 2026-10-29 | `6ADFB8D0`              | (`6AC6869B`)         | `a63420978073` |
+| stable     | 2026-10-22 | `6ACFF323`              | `6AC6869B`           | `50787e6d82ed` |
+| publicbeta | 2026-10-16 | `6ACFF323`              | (`6AC6869B`)         | `50787e6d82ed` |
 | publicbeta | 2026-10-07 | `6AC686B3`              | `6AC6869B`           | `970218aed150` |
 | publicbeta | 2026-10-02 | `6ABC4999`              | `6ABC4988`           | `3a5c18c37841` |
 | publicbeta | 2026-09-17 | `6AA43B55`              | (`6A628359`)         | `39810c8f9d80` |
@@ -29,6 +32,59 @@ identity, USB and protocol fingerprints of an image and diffs two releases; run 
 A parenthesised puck build is the one still current on that channel. Before this update OpenPuck
 reported puck build `6A628359` (current stable). ReversePuck reported controller build `6A18D057`
 (May).
+
+## `6ADFB8D0` (publicbeta, 2026-10-29)
+
+Controller only; the puck is still `6AC6869B`. Diffed against `6ACFF323`. Build time 2026-10-26
+20:32 UTC. Not yet confirmed on hardware with `ReversePuck/scpair.py list`.
+
+The image grew by 188 bytes and no log strings were added or removed. The Zephyr base moved from
+`v4.4.0-a236f691b6cd` to `v4.4.0-bbb417d19289`, and most of the diff is relocation from that.
+The real changes:
+
+- **The wireless transport (USB/PUCK) survives a reboot.** On a transport switch the firmware also
+  writes retained RAM `0x2001ffd8` = `0x5438FE00 | transport`. At boot it saves that value to the
+  `user/wireless_transport` setting.
+- **"Continue wireless" is honoured on the charging dongle.** At boot the retained-RAM magic
+  `0xD5CEE019` at `0x2001ffd4` is latched into a flag, and the charging-dongle attach handler now
+  checks it. A controller that reboots on the dongle stays on PUCK wireless (`Continue wireless
+  operation (PUCK)`) instead of switching to `Charging dongle operation`.
+- The BLE connection handler's log path for a failed HIDS disconnect notify was restructured.
+
+Unchanged apart from relocated branches and literals:
+
+- The LSM6DSV16X IMU driver: mounting matrix, free-fall window, alpha-blend and high-accuracy mode.
+- The IMU setting handlers, the HID and RF report senders, and the motion sample layout.
+
+## `6ACFF323` (publicbeta 2026-10-16, stable 2026-10-22)
+
+Controller only; the puck is still `6AC6869B`. Diffed against `6AC686B3`. Build time 2026-10-14
+21:24 UTC. Not yet confirmed on hardware.
+
+Same image size and no string changes. Apart from the SHA and build stamp, one function changed:
+the controller's wireless connect state machine. Its idle/default case no longer calls the ESB
+teardown (radio, timers, ECB and PPI channels 19/30/31 off) before waiting for `Enable slot 0/1`.
+
+No IMU, settings, HID, RF-frame or USB change.
+
+## Switch-mode gyro after these updates
+
+Neither build changes the IMU driver, the IMU-mode setting (`0x30`) or the RF motion data, so the
+firmware itself should not break Switch gyro. The IMU mode lives in RAM only: the update reboot turns
+it off, and Steam can leave it off.
+
+OpenPuck lands IMU mode on at every link-up in the emulated modes (`DATA_IMU_ON` in
+`OpenPuck/haptics.cpp`). Switch Pro also writes raw accel + gyro (`0x18`) from `hapticOnReconnect`.
+
+- **Reconnect:** covered. rf_link's connect edge sends `0x18` first, then `hapticTask` lands `0x07`,
+  so `0x07` is the value that stays set.
+- **Mode switch:** every mode change goes through `modeSwitchReboot`, so the puck reboots and the
+  link comes up again as a fresh connect. There is no live mode switch with the link held.
+- **Keepalive:** none. Steam's `0x30` writes are filtered in the puck modes, and a controller reboot
+  drops the link, so nothing known clears the IMU mode mid-session.
+
+Upstream safijari/openpuck #308 ("Enable raw IMU in every emulated gyro mode": reconnect, mode switch
+and a 5 s keepalive) is not merged here.
 
 ## `6AC686B3` / `6AC6869B` (publicbeta, 2026-10-07)
 
@@ -239,6 +295,14 @@ ATTRIB_CONNECTION_INTERVAL_IN_US:
   64 bytes. OpenPuck dropped these three; it now relays them with the full 63-byte payload.
 - **Report `0x42` bits 28/29** are the grip-touch bits (set from the pad/grip sensor events), not
   always-on status bits.
+
+## Repo changes for `6ACFF323` / `6ADFB8D0`
+
+- Archive link → `OpenSteamController/Ibex-Firmware` (the old `IbexFirmware` name 404s), here and in
+  `tools/fw_inspect.py`.
+- No RF, USB or slot-HID protocol changes. OpenPuck's puck `build_timestamp` stays `0x6AC6869B`.
+- `ReversePuckFirmware/identity.cpp` stays at `6AC686B3` / `970218aed150` until `0x83` is read off an
+  updated controller.
 
 ## Repo changes for `6AC686B3` / `6AC6869B`
 

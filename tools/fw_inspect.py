@@ -4,7 +4,7 @@
   tools/fw_inspect.py IMAGE.fw            identity, USB, HID and RF fingerprint
   tools/fw_inspect.py OLD.fw NEW.fw       fingerprint diff + added/removed log strings
 
-Images: https://github.com/OpenSteamController/IbexFirmware. See docs/FIRMWARE_CHANGES.md for what
+Images: https://github.com/OpenSteamController/Ibex-Firmware. See docs/FIRMWARE_CHANGES.md for what
 the fields mean. Heuristic, no disassembler needed: if a field reads "?", the code moved and needs a
 look in a real disassembler.
 """
