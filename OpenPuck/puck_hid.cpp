@@ -786,6 +786,10 @@ void SteamPuckController::onReport45(int slot, const uint8_t *rep, bool fresh,
 		return;
 	if (!g_slot[slot].used)
 		return;
+	// Input on a slot we just presented as DISCONNECTED makes Steam log "Data is flowing" and flip it back to
+	// connected, so a powered-off controller stays in its list. Drop the dying F1 tail.
+	if (slotPoweringOff(slot))
+		return;
 	// Report ids: 0x45 = legacy state, 0x42 = extended state, 0x47 = SDL timestamped state. Forward
 	// whichever the controller actually sent, verbatim, under its own id -- all are declared in PUCK_HID_DESC
 	// and this is exactly what the real puck does. rep[0] is the id byte (rep points at it in the F1 TLV).
@@ -867,6 +871,9 @@ void SteamPuckController::onAuxReport(int slot, uint8_t rid,
 	if (g_resumeMs && millis() - g_resumeMs < POST_RESUME_MUTE_MS)
 		return;
 	if (slot < 0 || slot >= NSLOT)
+		return;
+	// Same reason as onReport45: no data to a slot Steam was told is gone.
+	if (slotPoweringOff(slot))
 		return;
 	// Forward the controller's status report VERBATIM (the real puck does this; it's how the host reads
 	// battery). Padding the report to the descriptor-declared length broke battery in both lizard and
