@@ -582,3 +582,26 @@ export async function refreshRfStatus(survey=false){
   }catch(e){ log("RF status err: "+e.message); }
   finally{ S.rfBusy=false; }
 }
+
+// RF channel data for a backup file: the enabled-channel mask (one byte array, bit i = channel 4+2i) and, when
+// every page of rows has been polled, each channel's learned history. Only the mask can be written back; the
+// history lives in the firmware's flash journal and is kept in the file for reference.
+export function rfBackupSnapshot(){
+  if(!S.rfCapable || !rfEnabled) return null;
+  const snap={ enabled: rfMaskBytes(rfEnabled) };
+  if(rfRows.length && rfRows.every(Boolean)){
+    snap.rows=rfRows.map(([ch,noise,state,worst,mean,confidence,trials,penalty,recent])=>
+      ({ch,noise,state:RF_DESIG[state]||state,worst,mean,confidence,trials,penalty,recent}));
+  }
+  return snap;
+}
+// Writes a backed-up enabled-channel mask. The caller holds the transport (S.backupBusy); returns false when
+// the puck can't take it (no v2 RF status, or the journal builder is running and refuses the write).
+export async function rfRestoreEnabled(mask){
+  if(!S.rfCapable || !rfEnabled || S.rfBuilderActive) return false;
+  await send([0x2B,...mask]);
+  const p=await readFrame(0xAD,13,256);
+  if(!p) return false;
+  applyRfStatus(p);
+  return true;
+}

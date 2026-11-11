@@ -5,6 +5,7 @@ import { CHORD_DPAD_FIELD } from './status.js';
 import { HAP_KEYS, PAD_STICK_FIELD0, TYPE_DEFS, hapField, hapValue, lizardHapticsValues } from './types.js';
 import { LZ_MAX, lizardCapable, lzReadProfile, lzWriteProfile, readLizard } from './lizard.js';
 import { modalDone, modalOpen, modalStage } from './firmware.js';
+import { rfBackupSnapshot, rfRestoreEnabled } from './rf.js';
 import { LZ_TYPE, QAM_SELECT_FIELD0, QAM_SELECT_INDEX0, profilesCapable, profilesLoad } from './profiles.js';
 
 // ---- Backup / clone ----
@@ -64,6 +65,8 @@ export function buildBackup(p, bp){
     cfg.lizardProfiles={active:lzp.active, maps:S.lizardProfileMaps.map(copy)};
     cfg.lizardMap=copy(S.lizardProfileMaps[lzp.active]).map(b=>({...b,trig:b.trig>>>0,hold:b.hold>>>0}));
   }
+  // RF channel data (v2 RF status only); older files simply lack the key
+  const rf=rfBackupSnapshot(); if(rf) cfg.rf=rf;
   return { magic:"openpuck-backup", version:(cfg.profiles?3:cfg.lizardMap?2:1), bonds, config:cfg };
 }
 function downloadBackup(obj){
@@ -136,6 +139,9 @@ export async function importBackup(file){
   const LZH_RANGE=[2,31,4,31];
   if(hc.lizardHaptics!==undefined && !(Array.isArray(hc.lizardHaptics) && hc.lizardHaptics.length===4 && hc.lizardHaptics.every((v,k)=>isInt(v,0,LZH_RANGE[k])))){
     log("import: invalid Lizard trackpad haptics");return;
+  }
+  if(hc.rf!==undefined && !(hc.rf && Array.isArray(hc.rf.enabled) && hc.rf.enabled.length===5 && hc.rf.enabled.every(v=>isInt(v,0,255)))){
+    log("import: invalid RF channel data");return;
   }
   const bondedN=obj.bonds.filter(b=>b.used).length;
   if(!confirm("Restore this backup onto the CONNECTED puck (serial "+(S.dev.serialNumber||"?")+")?\n\nMake sure this is the TARGET puck, not the one you exported from — the panel only talks to the puck you last connected.\n\nThis OVERWRITES its "+bondedN+" controller pairing(s) and ALL settings, then reboots it.\n\nResult: any controller paired to the original puck will connect to this one with no re-pairing.")) return;
@@ -274,6 +280,11 @@ export async function importBackup(file){
       await send([0x14]); // commit + persist to flash
       await readLizard(); // drain the 0xAA echo so the pipe is clean for bond writes
       log("lizard map restored — "+map.length+" bindings");
+    }
+    if(c.rf){
+      stage="Restoring RF channel set"; tick();
+      if(await rfRestoreEnabled(c.rf.enabled)) log("RF enabled channels restored");
+      else log("RF enabled channels not restored (puck lacks RF channel sets, or the journal builder is running)");
     }
     // write each bond slot with its own small command [0x0D][slot][used][24-byte rec]
     stage="Restoring controller pairings"; tick();
