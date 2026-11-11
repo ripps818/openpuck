@@ -1,0 +1,91 @@
+name: Test build
+
+# ripps818/openpuck only: a manual one-off build for bisecting a bug report. It compiles any ref, optionally with
+# some commits reverted, and attaches the UF2s to the run as a workflow artifact. It never touches the nightly or
+# any release, so the web UI's update list is unaffected. Downloading an artifact needs a GitHub login.
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Branch, tag or commit to build'
+        required: true
+        default: 'main'
+      revert:
+        description: 'Commits to revert first, space-separated (optional)'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    if: github.repository == 'ripps818/openpuck'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: 0
+
+      - name: Revert commits
+        if: inputs.revert != ''
+        env:
+          REVERT: ${{ inputs.revert }}
+        run: |
+          set -eu
+          # word splitting is intended: one argument per commit
+          # shellcheck disable=SC2086
+          git -c user.name=ci -c user.email=ci@invalid revert --no-edit $REVERT
+
+      - name: Set up Arduino CLI
+        uses: arduino/setup-arduino-cli@v2
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.x'
+
+      - name: Install adafruit-nrfutil
+        run: pip install adafruit-nrfutil
+
+      - name: Install Adafruit nRF52 core
+        run: |
+          arduino-cli config init --overwrite
+          arduino-cli config set board_manager.additional_urls https://adafruit.github.io/arduino-board-index/package_adafruit_index.json
+          arduino-cli core update-index
+          arduino-cli core install adafruit:nrf52
+
+      - name: Resolve version
+        id: version
+        # The panel's "Firmware build" field shows the first 12 characters: "test-" plus 7 hash digits.
+        run: |
+          set -eu
+          echo "version=test-$(git rev-parse --short=7 HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Generate version header
+        env:
+          OPK_BUILD_VERSION: ${{ steps.version.outputs.version }}
+        run: ./gen_version.sh
+
+      - name: Compile OpenPuck
+        run: |
+          mkdir -p build/openpuck build/cache/openpuck
+          make build BUILD_PATH=build/cache/openpuck OUTPUT_DIR=build/openpuck
+          ./gen_uf2.sh build/openpuck/OpenPuck.ino.hex build/openpuck/OpenPuck.ino.uf2
+
+      - name: Collect artifacts
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          mkdir -p test_assets
+          cp build/openpuck/OpenPuck.ino.uf2 "test_assets/OpenPuck-${VERSION}-standard.uf2"
+
+      - name: Upload UF2
+        uses: actions/upload-artifact@v7
+        with:
+          name: OpenPuck-${{ steps.version.outputs.version }}
+          path: test_assets/
+          retention-days: 14
