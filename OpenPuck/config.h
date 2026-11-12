@@ -460,7 +460,7 @@ bool ps5AudioStreaming();
 void factoryErase();
 // One-time factory reset for the -DOPK_FACTORY_RESET recovery build: wipe ONCE on the first boot after flashing
 // (tracked by a git-hash tag file so it doesn't wipe on every boot), then persist normally. buildTag = OPK_GIT_HASH.
-void factoryResetOnce(const char *buildTag);
+bool factoryResetOnce(const char *buildTag);
 // Mode switch (chord / WebUI): persist mode if the toggle is on, else arm a one-shot so this reboot lands in
 // the new mode but the next cold boot returns to Steam. Either way saveCfg + caller reboots.
 void saveMode(uint8_t m);

@@ -683,7 +683,7 @@ void factoryErase()
 //   - tag == this build's hash             -> already reset for this build: skip, boot normally.
 // Keying the tag to the git hash means flashing a DIFFERENT build re-triggers the wipe. buildTag is OPK_GIT_HASH.
 #define RESET_TAG_FILE "/rsttag"
-void factoryResetOnce(const char *buildTag)
+bool factoryResetOnce(const char *buildTag)
 {
 	char tag[24] = { 0 };
 	{
@@ -696,7 +696,7 @@ void factoryResetOnce(const char *buildTag)
 		}
 	}
 	if (strncmp(tag, buildTag, sizeof tag - 1) == 0)
-		return; // this build already did its one-time reset -> persist
+		return false; // this build already did its one-time reset -> persist
 	factoryErase(); // wipe cfg.bin + bonds.bin + the old tag
 	storageBegin(); // remount the fresh FS (re-enables saves if the boot mount had failed)
 	File g(InternalFS); // stamp the tag so subsequent boots skip the wipe
@@ -704,4 +704,5 @@ void factoryResetOnce(const char *buildTag)
 		g.write((const uint8_t *)buildTag, strlen(buildTag));
 		g.close();
 	}
+	return true;
 }

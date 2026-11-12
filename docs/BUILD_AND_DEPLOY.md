@@ -276,7 +276,7 @@ half-flashed, crash-looping state is not reachable.
 
 Re-flashing firmware does **not** erase the board's internal LittleFS. The paired-controller bond (`bonds.bin`) and every saved setting (`cfg.bin`: USB mode, mode shortcuts, button mapping, rumble and haptics settings, mouse sensitivity) survive a fresh build and upload. To bring a board up in a truly clean state — a new unit, a hand-me-down with a stale bond, or a corrupted config — wipe the filesystem with one of:
 
-- **Recovery build (`-DOPK_FACTORY_RESET=1`):** a firmware that wipes all persistent storage **once, on the first boot after flashing**, then behaves like a normal build that persists settings. Use it to recover a board from a bad config/bond without a console or panel:
+- **Recovery build (`-DOPK_FACTORY_RESET=1`):** a firmware that wipes all persistent storage, including the learned RF channel journal, **once, on the first boot after flashing**, then behaves like a normal build that persists settings. Use it to recover a board from a bad config/bond without a console or panel:
 
   ```bash
   ./gen_version.sh   # recommended: embeds version (when tagged) + git hash provenance

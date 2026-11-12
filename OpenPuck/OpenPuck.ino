@@ -177,7 +177,10 @@ void setup()
 #if OPK_FACTORY_RESET
 	// Recovery build (-DOPK_FACTORY_RESET=1): wipe ALL persistent storage ONCE on the first boot after flashing,
 	// then persist normally (tracked by a git-hash tag so it does NOT wipe every boot). See config.h / config.cpp.
-	factoryResetOnce(OPK_GIT_HASH);
+	// The learned RF channel journal is not in the filesystem, so the wipe above leaves it. A recovery image
+	// clears it too; the erase runs from the RF task once no controller is live.
+	if (factoryResetOnce(OPK_GIT_HASH))
+		(void)rfRecoveryRequestJournalClear();
 #endif
 	loadCfg();
 	rfApplyStartupLastGoodChannel();
