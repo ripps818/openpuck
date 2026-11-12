@@ -2,7 +2,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
-// 0 = unavailable, 1 = mounted, 2 = initialized blank flash, 3 = save failed.
+// 0 = unavailable, 1 = mounted, 2 = initialized blank flash, 3 = save failed,
+// 4 = a corrupted filesystem was erased and initialized (see storageBegin).
 extern uint8_t g_storageState;
 bool storageBegin();
 bool storageWriteFile(const char *path, const char *temporary,

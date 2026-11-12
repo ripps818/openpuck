@@ -10,7 +10,7 @@ test='''
 #include <cassert>
 #include <algorithm>
 bool mountOk=false,failWrite=false,failRead=false,failRename=false;
-int formats=0;
+int formats=0,erases=0;
 std::map<std::string,std::vector<uint8_t>> files;
 InternalFileSystem InternalFS;
 uint32_t testFlash[7168];
@@ -37,6 +37,6 @@ int main(){
 with tempfile.TemporaryDirectory() as td:
  (Path(td)/'class/hid').mkdir(parents=True);(Path(td)/'class/hid/hid.h').write_text(hid)
  p=Path(td)/'test.cpp';p.write_text(storage+lizard+test)
- subprocess.run(['g++','-std=c++11','-Wall','-Wextra','-Werror','-fsanitize=address,undefined','-I'+td,'-I'+str(r/'tests/storage/stubs'),'-I'+str(r/'OpenPuck'),str(p),'-o',td+'/test'],check=True)
+ subprocess.run(['g++','-std=c++11','-Wall','-Wextra','-Werror','-fsanitize=address,undefined','-I'+td,'-I'+str(r/'tests/storage/stubs'),'-I'+str(r/'OpenPuck'),str(p),str(r/'OpenPuck/lfs_check.cpp'),'-o',td+'/test'],check=True)
  subprocess.run([td+'/test'],check=True,env={'ASAN_OPTIONS':'detect_leaks=0'})
 print('Lizard map: the editor copy loads, saves and resets without touching the live map')

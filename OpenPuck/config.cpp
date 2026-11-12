@@ -686,7 +686,9 @@ void factoryErase()
 bool factoryResetOnce(const char *buildTag)
 {
 	char tag[24] = { 0 };
-	{
+	// Opening a file on a filesystem that did not mount hangs in the library, and a board whose storage would not
+	// mount is exactly the one this build exists to recover: wipe it without reading the tag.
+	if (g_storageState != 0) {
 		File f(InternalFS);
 		if (f.open(RESET_TAG_FILE, FILE_O_READ)) {
 			int n = f.read((uint8_t *)tag, sizeof tag - 1);

@@ -774,7 +774,7 @@ Messages:
     `[lizardHaptics x4][3 zero bytes]`, where `lizardProfile` (version ≥ 30, zero before) is the active Lizard
     profile and `lizardHaptics` (version ≥ 30) is Lizard mode's trackpad haptics, fields `156..159` below.
     The zero bytes held removed settings (Switch Pro profiles, rumble presets and slot, strength steps and
-    slots) and keep the layout stable; storageState 0 unavailable, 1 mounted, 2 initialized blank flash, 3 save failed.
+    slots) and keep the layout stable; storageState 0 unavailable, 1 mounted, 2 initialized blank flash, 3 save failed, 4 a corrupted settings filesystem was erased and initialized at boot (settings and pairings reset).
 
 Lizard binding wire format (16 bytes), matching `LizardBinding` in `lizard_map.h`:
 
