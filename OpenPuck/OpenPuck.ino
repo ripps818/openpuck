@@ -292,7 +292,7 @@ void setup()
 		if (puckMode)
 			usb_web.begin();
 		if (puckMode && !keepCdc)
-			wakeHidBegin(true);
+			wakeHidBegin();
 
 		g_active->begin();
 
