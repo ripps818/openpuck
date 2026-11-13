@@ -1,0 +1,38 @@
+{
+ "OpenPuck-ripps-5f17c1dc-factory-reset.uf2": {
+  "panelUpdate": true
+ },
+ "OpenPuck-ripps-5f17c1dc-standard.uf2": {
+  "panelUpdate": true
+ },
+ "OpenPuck-ripps-6c99e696-factory-reset.uf2": {
+  "panelUpdate": true
+ },
+ "OpenPuck-ripps-6c99e696-standard.uf2": {
+  "panelUpdate": true
+ },
+ "OpenPuck-ripps-7d8bbc97-factory-reset.uf2": {
+  "panelUpdate": true
+ },
+ "OpenPuck-ripps-7d8bbc97-standard.uf2": {
+  "panelUpdate": true
+ },
+ "OpenPuck-ripps-e7fb3d5a-debug.uf2": {
+  "panelUpdate": true
+ },
+ "OpenPuck-ripps-e7fb3d5a-factory-reset.uf2": {
+  "panelUpdate": true
+ },
+ "OpenPuck-ripps-e7fb3d5a-standard.uf2": {
+  "panelUpdate": true
+ },
+ "OpenPuck-ripps-ea8cf8bd-debug.uf2": {
+  "panelUpdate": true
+ },
+ "OpenPuck-ripps-ea8cf8bd-factory-reset.uf2": {
+  "panelUpdate": true
+ },
+ "OpenPuck-ripps-ea8cf8bd-standard.uf2": {
+  "panelUpdate": true
+ }
+}
