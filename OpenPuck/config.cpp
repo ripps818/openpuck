@@ -351,15 +351,21 @@ void cfgExtWrite(uint8_t index, uint8_t value)
 }
 
 static bool g_cfgSavePending;
+static uint32_t g_cfgSaveRequestedMs;
 
 void saveCfgSoon()
 {
 	g_cfgSavePending = true;
+	g_cfgSaveRequestedMs = millis();
 }
 
 void cfgSaveTask()
 {
-	if (g_cfgSavePending && !ps5AudioStreaming())
+	// A save takes ~650 ms with the CPU stopped, which is longer than the controller's link supervision allows, so
+	// every one drops the link. A slider drag asks for a save per step; waiting for the changes to stop turns the
+	// drag into a single save.
+	if (g_cfgSavePending && !ps5AudioStreaming() &&
+	    (uint32_t)(millis() - g_cfgSaveRequestedMs) >= CFG_SAVE_QUIET_MS)
 		saveCfg();
 }
 

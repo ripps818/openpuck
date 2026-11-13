@@ -448,7 +448,9 @@ void saveCfg();
 // WebUSB handlers run in the usbd task, whose 800-byte stack (fixed in the core) a LittleFS write nearly
 // exhausts, and a flash save stalls the CPU long enough to break a running DualSense USB audio stream: the game
 // loses the grip haptics and the controller's input reports stop. So the write also waits while one streams. A
-// reboot writes it first (cfgSaveFlush). Power lost before then loses it.
+// reboot writes it first (cfgSaveFlush). The write also waits until the settings have been quiet for
+// CFG_SAVE_QUIET_MS, since a save stalls the radio for ~650 ms. Power lost before then loses it.
+#define CFG_SAVE_QUIET_MS 1500u
 void saveCfgSoon();
 void cfgSaveTask();
 void cfgSaveFlush();
