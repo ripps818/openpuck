@@ -14,6 +14,10 @@ on:
         description: 'Commits to revert first, space-separated (optional)'
         required: false
         default: ''
+      debug:
+        description: 'Build the debug image (host-command capture for the panel) instead of the standard one'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -71,17 +75,20 @@ jobs:
         run: ./gen_version.sh
 
       - name: Compile OpenPuck
+        env:
+          TARGET: ${{ inputs.debug && 'build-debug' || 'build' }}
         run: |
           mkdir -p build/openpuck build/cache/openpuck
-          make build BUILD_PATH=build/cache/openpuck OUTPUT_DIR=build/openpuck
+          make "$TARGET" BUILD_PATH=build/cache/openpuck OUTPUT_DIR=build/openpuck
           ./gen_uf2.sh build/openpuck/OpenPuck.ino.hex build/openpuck/OpenPuck.ino.uf2
 
       - name: Collect artifacts
         env:
           VERSION: ${{ steps.version.outputs.version }}
+          KIND: ${{ inputs.debug && 'debug' || 'standard' }}
         run: |
           mkdir -p test_assets
-          cp build/openpuck/OpenPuck.ino.uf2 "test_assets/OpenPuck-${VERSION}-standard.uf2"
+          cp build/openpuck/OpenPuck.ino.uf2 "test_assets/OpenPuck-${VERSION}-${KIND}.uf2"
 
       - name: Upload UF2
         uses: actions/upload-artifact@v7
